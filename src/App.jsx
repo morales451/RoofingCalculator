@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Printer, Mail, Info, Hammer, Package, Droplet, Grid } from 'lucide-react';
+import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Printer, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff } from 'lucide-react';
 
 export default function App() {
   // --- STATE ---
@@ -54,6 +54,27 @@ export default function App() {
     accessory: 0,
     membrane: 0
   });
+
+  // Customer info state
+  const [customerInfo, setCustomerInfo] = useState({
+    name: '',
+    company: '',
+    address: '',
+    phone: '',
+    email: '',
+    projectAddress: ''
+  });
+  const [showCustomerInfo, setShowCustomerInfo] = useState(false);
+
+  // Quote metadata
+  const [quoteDate, setQuoteDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Profit margin
+  const [profitMargin, setProfitMargin] = useState(0);
+  const [showProfitMargin, setShowProfitMargin] = useState(false);
+
+  // Saved quotes
+  const [savedQuotes, setSavedQuotes] = useState([]);
 
   // --- PRODUCT OPTIONS ---
   const PRODUCT_OPTIONS = {
@@ -225,6 +246,94 @@ export default function App() {
   const handlePriceChange = (field, value) => {
     setPrices(prev => ({ ...prev, [field]: parseFloat(value) || 0 }));
   };
+
+  const handleCustomerInfoChange = (field, value) => {
+    setCustomerInfo(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Save/Load/Export/Import functions
+  const saveQuote = () => {
+    const quote = {
+      id: Date.now(),
+      date: quoteDate,
+      inputs,
+      prices,
+      profitMargin,
+      customerInfo,
+      savedAt: new Date().toISOString()
+    };
+
+    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+    const updatedQuotes = [quote, ...existingQuotes];
+    localStorage.setItem('savedQuotes', JSON.stringify(updatedQuotes));
+    setSavedQuotes(updatedQuotes);
+    alert('Quote saved successfully!');
+  };
+
+  const loadQuote = (quote) => {
+    setInputs(quote.inputs);
+    setPrices(quote.prices);
+    setProfitMargin(quote.profitMargin || 0);
+    setCustomerInfo(quote.customerInfo || {
+      name: '',
+      company: '',
+      address: '',
+      phone: '',
+      email: '',
+      projectAddress: ''
+    });
+    setQuoteDate(quote.date || new Date().toISOString().split('T')[0]);
+  };
+
+  const deleteQuote = (quoteId) => {
+    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+    const updatedQuotes = existingQuotes.filter(q => q.id !== quoteId);
+    localStorage.setItem('savedQuotes', JSON.stringify(updatedQuotes));
+    setSavedQuotes(updatedQuotes);
+  };
+
+  const exportQuote = () => {
+    const quote = {
+      date: quoteDate,
+      inputs,
+      prices,
+      profitMargin,
+      customerInfo,
+      exportedAt: new Date().toISOString()
+    };
+
+    const dataStr = JSON.stringify(quote, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `quote-${inputs.projectName || 'untitled'}-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importQuote = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const quote = JSON.parse(e.target.result);
+        loadQuote(quote);
+        alert('Quote imported successfully!');
+      } catch (error) {
+        alert('Error importing quote. Please check the file format.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Load saved quotes on mount
+  useEffect(() => {
+    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+    setSavedQuotes(existingQuotes);
+  }, []);
 
   // Helper for rounding to nearest 5-gal pail
   const roundToFive = (val) => {
@@ -567,17 +676,166 @@ export default function App() {
       {/* Print-Only Header */}
       <div className="hidden print:block mb-8 border-b pb-4">
         <h1 className="text-2xl font-bold text-gray-900">Material Estimate Options</h1>
-        <div className="text-sm text-gray-500 mt-1">Generated {new Date().toLocaleDateString()}</div>
+        <div className="text-sm text-gray-500 mt-1">Quote Date: {new Date(quoteDate).toLocaleDateString()}</div>
         {inputs.projectName && (
           <div className="text-xl font-semibold text-blue-800 mt-2">Project: {inputs.projectName}</div>
+        )}
+
+        {/* Customer Info (if provided) */}
+        {(customerInfo.name || customerInfo.company || customerInfo.address || customerInfo.phone || customerInfo.email) && (
+          <div className="mt-4 text-sm">
+            <div className="font-semibold text-gray-700 mb-1">Customer Information:</div>
+            {customerInfo.name && <div>{customerInfo.name}</div>}
+            {customerInfo.company && <div>{customerInfo.company}</div>}
+            {customerInfo.address && <div>{customerInfo.address}</div>}
+            {customerInfo.projectAddress && <div className="mt-1"><span className="font-medium">Project Address:</span> {customerInfo.projectAddress}</div>}
+            <div className="mt-1">
+              {customerInfo.phone && <span className="mr-4">📞 {customerInfo.phone}</span>}
+              {customerInfo.email && <span>✉️ {customerInfo.email}</span>}
+            </div>
+          </div>
         )}
       </div>
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 print:block">
-        
+
         {/* LEFT COLUMN: INPUTS */}
         <div className="lg:col-span-4 space-y-6 print:hidden">
-          
+
+          {/* SAVE/LOAD/EXPORT/IMPORT BUTTONS */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={saveQuote} className="flex items-center justify-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+                <Save size={16} /> Save Quote
+              </button>
+              <button onClick={exportQuote} className="flex items-center justify-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
+                <Download size={16} /> Export
+              </button>
+              <label className="flex items-center justify-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium cursor-pointer">
+                <Upload size={16} /> Import
+                <input type="file" accept=".json" onChange={importQuote} className="hidden" />
+              </label>
+              <button
+                onClick={() => document.getElementById('savedQuotesPanel').classList.toggle('hidden')}
+                className="flex items-center justify-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium"
+              >
+                <FileText size={16} /> Saved ({savedQuotes.length})
+              </button>
+            </div>
+
+            {/* Saved Quotes Panel */}
+            <div id="savedQuotesPanel" className="hidden mt-4 max-h-48 overflow-y-auto border-t border-gray-200 pt-4">
+              {savedQuotes.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">No saved quotes yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {savedQuotes.map(quote => (
+                    <div key={quote.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                      <button onClick={() => loadQuote(quote)} className="text-left flex-1 hover:text-blue-600">
+                        <div className="text-sm font-medium">{quote.inputs.projectName || 'Untitled'}</div>
+                        <div className="text-xs text-gray-500">{new Date(quote.savedAt).toLocaleDateString()}</div>
+                      </button>
+                      <button onClick={() => deleteQuote(quote.id)} className="text-red-600 hover:text-red-800 ml-2">
+                        <AlertTriangle size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* QUOTE DATE */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+              <Calendar size={16} /> Quote Date
+            </label>
+            <input
+              type="date"
+              value={quoteDate}
+              onChange={(e) => setQuoteDate(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+            />
+          </div>
+
+          {/* CUSTOMER INFO (COLLAPSIBLE) */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <button
+              onClick={() => setShowCustomerInfo(!showCustomerInfo)}
+              className="w-full flex items-center justify-between text-sm font-medium text-gray-700 mb-3"
+            >
+              <span className="flex items-center gap-2">
+                <User size={16} /> Customer Information (Optional)
+              </span>
+              {showCustomerInfo ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+
+            {showCustomerInfo && (
+              <div className="space-y-3 mt-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Customer Name</label>
+                  <input
+                    type="text"
+                    value={customerInfo.name}
+                    onChange={(e) => handleCustomerInfoChange('name', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder="John Doe"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
+                  <input
+                    type="text"
+                    value={customerInfo.company}
+                    onChange={(e) => handleCustomerInfoChange('company', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder="ABC Roofing Co."
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={customerInfo.address}
+                    onChange={(e) => handleCustomerInfoChange('address', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder="123 Main St, City, State 12345"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    value={customerInfo.phone}
+                    onChange={(e) => handleCustomerInfoChange('phone', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder="(555) 123-4567"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={customerInfo.email}
+                    onChange={(e) => handleCustomerInfoChange('email', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder="customer@email.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Project Address</label>
+                  <input
+                    type="text"
+                    value={customerInfo.projectAddress}
+                    onChange={(e) => handleCustomerInfoChange('projectAddress', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder="456 Project St, City, State 12345"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* PRODUCT & SYSTEM SELECTION */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
@@ -1249,6 +1507,84 @@ export default function App() {
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              {/* PROFIT MARGIN CALCULATOR (Hidden from print) */}
+              <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4 print:hidden">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-amber-900 flex items-center gap-2">
+                    <DollarSign size={18} /> Profit Margin Calculator (Internal)
+                  </h3>
+                  <button
+                    onClick={() => setShowProfitMargin(!showProfitMargin)}
+                    className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded flex items-center gap-1"
+                  >
+                    {showProfitMargin ? <EyeOff size={12}/> : <Eye size={12}/>}
+                    {showProfitMargin ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+
+                {showProfitMargin && (
+                  <div className="space-y-4">
+                    <div className="bg-white p-3 rounded border border-amber-200">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Profit Margin %</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="100"
+                        value={profitMargin}
+                        onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
+                        className="w-full p-2 border border-gray-300 rounded-lg text-center text-lg font-bold"
+                        placeholder="0"
+                      />
+                    </div>
+
+                    {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
+                      <div className="grid grid-cols-3 gap-3">
+                        {['10', '15', '20'].map(year => {
+                          const costPrice = (estimates[year].baseGal || 0) * prices.basecoat +
+                                           (estimates[year].top1Gal || 0) * prices.topcoat +
+                                           (estimates[year].top2Gal || 0) * prices.topcoat +
+                                           (estimates[year].top3Gal || 0) * prices.topcoat +
+                                           (estimates[year].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                           (estimates[year].rustPrimerGal || 0) * prices.rustPrimer +
+                                           (commonResults.accessoryQty || 0) * prices.accessory +
+                                           (commonResults.membraneRolls || 0) * prices.membrane +
+                                           (estimates[year].goldsealCost || 0);
+
+                          const sellPrice = costPrice * (1 + profitMargin / 100);
+                          const profit = sellPrice - costPrice;
+
+                          return (
+                            <div key={year} className="bg-white p-3 rounded border-2 border-amber-300">
+                              <div className="text-xs font-bold text-center text-amber-900 mb-2">{year}-Year</div>
+                              <div className="space-y-1 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">Cost:</span>
+                                  <span className="font-medium">${costPrice.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-200 pt-1">
+                                  <span className="text-gray-600">Sell:</span>
+                                  <span className="font-bold text-green-700">${sellPrice.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-200 pt-1">
+                                  <span className="text-gray-600">Profit:</span>
+                                  <span className="font-bold text-amber-700">${profit.toFixed(2)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="text-xs text-amber-800 bg-amber-100 p-2 rounded flex items-start gap-2">
+                      <Info size={14} className="mt-0.5 flex-shrink-0" />
+                      <span>This section is for internal use only and will NOT appear on printed quotes or PDFs.</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* COPY TO EMAIL SECTION */}
