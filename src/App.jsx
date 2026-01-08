@@ -80,19 +80,19 @@ export default function App() {
   const PRODUCT_OPTIONS = {
     Silicone: {
         topcoats: [
-            'Prograde 988 Silicone', 
+            'Prograde 988 Silicone',
             'Enduraroof Premium Silicone'
         ],
         basecoats: [
-            'Prograde 294 BaseCoat', 
+            'Prograde 294 BaseCoat',
             'Enduraroof BaseCoat & Sealer'
         ],
         butterGrades: [
-            'Prograde 923 Butter Grade', 
+            'Prograde 923 Butter Grade',
             'EnduraRoof Butter Grade'
         ],
         fabrics: [
-            'Prograde 195 (SOFT)', 
+            'Prograde 195 (SOFT)',
             'Prograde 196 (FIRM)',
             'Enduraroof Polyester Fabric'
         ]
@@ -117,6 +117,22 @@ export default function App() {
         butterGrades: [
             'Prograde 289 White Roofing Sealant',
             'Prograde 295 Metal Seam Sealer',
+            'Enduraroof Acrylic Roof Patch'
+        ],
+        fabrics: [
+            'Prograde 195 (SOFT)',
+            'Prograde 196 (FIRM)',
+            'Enduraroof Polyester Fabric'
+        ]
+    },
+    Aluminum: {
+        topcoats: [
+            'Pro-Grade 586',
+            'Enduraroof Fibered Aluminum'
+        ],
+        basecoats: [], // No basecoats for Aluminum
+        butterGrades: [
+            'Prograde 289 White Roofing Sealant',
             'Enduraroof Acrylic Roof Patch'
         ],
         fabrics: [
@@ -150,7 +166,7 @@ export default function App() {
       setInputs(prev => ({
           ...prev,
           selectedTopcoat: defaults.topcoats[0],
-          selectedBasecoat: defaults.basecoats[0],
+          selectedBasecoat: defaults.basecoats[0] || '', // Empty string if no basecoats (Aluminum)
           selectedButterGrade: defaults.butterGrades[0],
           selectedFabric: defaults.fabrics[0]
       }));
@@ -218,6 +234,20 @@ export default function App() {
                 '20': { base: 1.5, top1: 1.5, top2: 2.0, top3: 0 },
             }
         }
+    },
+    Aluminum: {
+        'Metal': {
+            '10': { base: 0, top1: 2.0, top2: 0, top3: 0 },
+            '15': null, // Not available
+            '20': null  // Not available
+        },
+        'Capsheet': {
+            '10': { base: 0, top1: 2.5, top2: 0, top3: 0 },
+            '15': null, // Not available
+            '20': null  // Not available
+        },
+        'Sprayfoam': null, // Not supported
+        'Single-Ply': null // Not supported
     }
   };
 
@@ -225,9 +255,18 @@ export default function App() {
   const handleChange = (field, value) => {
     if (field === 'coatingSystem') {
         let newRoofType = inputs.roofType;
+
+        // Aluminum only supports Metal and Capsheet
+        if (value === 'Aluminum') {
+            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply') {
+                newRoofType = 'Metal';
+            }
+        }
+
         setInputs(prev => ({
             ...prev,
             [field]: value,
+            roofType: newRoofType,
             acrylicSystemType: 'Standard'
         }));
     } else if (field === 'acrylicSystemType') {
@@ -841,7 +880,7 @@ export default function App() {
             <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
                 <Droplet size={16} /> Coating System
             </label>
-            <div className="grid grid-cols-2 gap-2 mb-6">
+            <div className="grid grid-cols-3 gap-2 mb-6">
                 <button
                     onClick={() => handleChange('coatingSystem', 'Silicone')}
                     className={`p-2 text-sm rounded-lg border transition-all ${inputs.coatingSystem === 'Silicone' ? 'bg-teal-600 text-white border-teal-600 font-bold' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
@@ -854,6 +893,12 @@ export default function App() {
                 >
                     Acrylic
                 </button>
+                <button
+                    onClick={() => handleChange('coatingSystem', 'Aluminum')}
+                    className={`p-2 text-sm rounded-lg border transition-all ${inputs.coatingSystem === 'Aluminum' ? 'bg-gray-600 text-white border-gray-600 font-bold' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                >
+                    Aluminum
+                </button>
             </div>
 
             {/* PRODUCT DROPDOWNS */}
@@ -864,12 +909,15 @@ export default function App() {
                         {currentOptions.topcoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
                 </div>
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Base Coat Product</label>
-                    <select className="w-full p-2 border border-gray-300 rounded-lg text-sm" value={inputs.selectedBasecoat} onChange={(e) => handleChange('selectedBasecoat', e.target.value)}>
-                        {currentOptions.basecoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                </div>
+                {/* Hide basecoat for Aluminum system */}
+                {inputs.coatingSystem !== 'Aluminum' && (
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Base Coat Product</label>
+                        <select className="w-full p-2 border border-gray-300 rounded-lg text-sm" value={inputs.selectedBasecoat} onChange={(e) => handleChange('selectedBasecoat', e.target.value)}>
+                            {currentOptions.basecoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                    </div>
+                )}
                 <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Seam Treatment (Butter Grade)</label>
                     <select className="w-full p-2 border border-gray-300 rounded-lg text-sm" value={inputs.selectedButterGrade} onChange={(e) => handleChange('selectedButterGrade', e.target.value)}>
@@ -970,19 +1018,24 @@ export default function App() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Roof Type</label>
-                <select 
+                <select
                   className="w-full p-2 border border-gray-300 rounded-lg"
                   value={inputs.roofType}
                   onChange={(e) => handleChange('roofType', e.target.value)}
                 >
                   <option value="Capsheet">Capsheet</option>
-                  <option value="Single-Ply">Single-Ply</option>
-                  {/* Metal/Sprayfoam for Silicone or Acrylic Standard */}
+                  {/* Single-Ply not available for Aluminum */}
+                  {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
+                  {/* Sprayfoam for Silicone or Acrylic Standard only */}
                   {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
-                  {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Metal">Metal</option>}
+                  {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
+                  {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
                 </select>
                 {inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Reinforced' && (
                     <div className="text-xs text-orange-600 mt-1">Reinforced Acrylic system valid for Capsheet & Single-Ply only.</div>
+                )}
+                {inputs.coatingSystem === 'Aluminum' && (
+                    <div className="text-xs text-gray-600 mt-1">Aluminum system supports Metal & Capsheet only.</div>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1017,17 +1070,22 @@ export default function App() {
               <AlertTriangle size={20} /> Conditions
             </h2>
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <span className="text-sm font-medium text-gray-700">Passed Adhesion Test?</span>
-                <button onClick={() => handleChange('passedAdhesion', !inputs.passedAdhesion)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${inputs.passedAdhesion ? 'bg-green-500' : 'bg-red-500'}`}>
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${inputs.passedAdhesion ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-              </div>
-              {!inputs.passedAdhesion && (
-                <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex gap-2"><AlertTriangle size={14} className="mt-0.5" /><span>Adhesion Failure: Extra primer added.</span></div>
+              {/* Adhesion test not needed for Aluminum */}
+              {inputs.coatingSystem !== 'Aluminum' && (
+                <>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <span className="text-sm font-medium text-gray-700">Passed Adhesion Test?</span>
+                    <button onClick={() => handleChange('passedAdhesion', !inputs.passedAdhesion)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${inputs.passedAdhesion ? 'bg-green-500' : 'bg-red-500'}`}>
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${inputs.passedAdhesion ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                  {!inputs.passedAdhesion && (
+                    <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex gap-2"><AlertTriangle size={14} className="mt-0.5" /><span>Adhesion Failure: Extra primer added.</span></div>
+                  )}
+                </>
               )}
 
-              {/* RUST TOGGLE - ONLY FOR SILICONE METAL */}
+              {/* RUST TOGGLE - ONLY FOR SILICONE METAL (not Aluminum) */}
               {inputs.coatingSystem === 'Silicone' && inputs.roofType === 'Metal' && (
                 <div className="space-y-2">
                     <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
@@ -1204,8 +1262,8 @@ export default function App() {
                   {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
                     <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
                       <div className="text-xs font-semibold text-blue-900 mb-2">PRICING PREVIEW:</div>
-                      <div className="grid grid-cols-3 gap-3 text-xs">
-                        {['10', '15', '20'].map(year => {
+                      <div className={`grid ${inputs.coatingSystem === 'Aluminum' ? 'grid-cols-1' : 'grid-cols-3'} gap-3 text-xs`}>
+                        {(inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20']).map(year => {
                           const costPrice = (estimates[year].baseGal || 0) * prices.basecoat +
                                            (estimates[year].top1Gal || 0) * prices.topcoat +
                                            (estimates[year].top2Gal || 0) * prices.topcoat +
@@ -1253,8 +1311,12 @@ export default function App() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-green-50 border-l border-r border-gray-200">Price/Unit</th>
                       <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-white border-l border-r border-gray-200">10-Year</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-blue-800 uppercase tracking-wider bg-blue-50 border-l border-r border-blue-100">15-Year</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-purple-800 uppercase tracking-wider bg-purple-50">20-Year</th>
+                      {inputs.coatingSystem !== 'Aluminum' && (
+                        <>
+                          <th className="px-4 py-3 text-center text-xs font-bold text-blue-800 uppercase tracking-wider bg-blue-50 border-l border-r border-blue-100">15-Year</th>
+                          <th className="px-4 py-3 text-center text-xs font-bold text-purple-800 uppercase tracking-wider bg-purple-50">20-Year</th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -1282,18 +1344,22 @@ export default function App() {
                                     <div className="text-xs font-bold text-green-700">${(estimates['10'].baseGal * prices.basecoat).toFixed(2)}</div>
                                 )}
                             </td>
-                            <td className="px-4 py-3 text-center text-sm text-blue-800 font-semibold bg-blue-50 border-l border-r border-blue-100">
-                                <div>{estimates['15'].baseGal} gal</div>
-                                {prices.basecoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].baseGal * prices.basecoat).toFixed(2)}</div>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-center text-sm text-purple-800 font-semibold bg-purple-50">
-                                <div>{estimates['20'].baseGal} gal</div>
-                                {prices.basecoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].baseGal * prices.basecoat).toFixed(2)}</div>
-                                )}
-                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center text-sm text-blue-800 font-semibold bg-blue-50 border-l border-r border-blue-100">
+                                        <div>{estimates['15'].baseGal} gal</div>
+                                        {prices.basecoat > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].baseGal * prices.basecoat).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-sm text-purple-800 font-semibold bg-purple-50">
+                                        <div>{estimates['20'].baseGal} gal</div>
+                                        {prices.basecoat > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].baseGal * prices.basecoat).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                </>
+                            )}
                         </tr>
                     )}
                     
@@ -1320,18 +1386,22 @@ export default function App() {
                                     <div className="text-xs font-bold text-green-700">${(estimates['10'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
                                 )}
                             </td>
-                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold border-l border-r border-orange-100">
-                                <div>{estimates['15'].rustPrimerGal} gal</div>
-                                {prices.rustPrimer > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold">
-                                <div>{estimates['20'].rustPrimerGal} gal</div>
-                                {prices.rustPrimer > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
-                                )}
-                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold border-l border-r border-orange-100">
+                                        <div>{estimates['15'].rustPrimerGal} gal</div>
+                                        {prices.rustPrimer > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold">
+                                        <div>{estimates['20'].rustPrimerGal} gal</div>
+                                        {prices.rustPrimer > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                </>
+                            )}
                         </tr>
                     )}
 
@@ -1358,18 +1428,22 @@ export default function App() {
                                     <div className="text-xs font-bold text-green-700">${(estimates['10'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
                                 )}
                             </td>
-                            <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold border-l border-r border-red-100">
-                                <div>{estimates['15'].adhesionPrimerGal} gal</div>
-                                {prices.adhesionPrimer > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold">
-                                <div>{estimates['20'].adhesionPrimerGal} gal</div>
-                                {prices.adhesionPrimer > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
-                                )}
-                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold border-l border-r border-red-100">
+                                        <div>{estimates['15'].adhesionPrimerGal} gal</div>
+                                        {prices.adhesionPrimer > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold">
+                                        <div>{estimates['20'].adhesionPrimerGal} gal</div>
+                                        {prices.adhesionPrimer > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                </>
+                            )}
                         </tr>
                     )}
 
@@ -1396,18 +1470,22 @@ export default function App() {
                                     <div className="text-xs font-bold text-green-700">${(estimates['10'].top1Gal * prices.topcoat).toFixed(2)}</div>
                                 )}
                             </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
-                                <div>{estimates['15'].top1Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].top1Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
-                                <div>{estimates['20'].top1Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].top1Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
+                                        <div>{estimates['15'].top1Gal} gal</div>
+                                        {prices.topcoat > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].top1Gal * prices.topcoat).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
+                                        <div>{estimates['20'].top1Gal} gal</div>
+                                        {prices.topcoat > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].top1Gal * prices.topcoat).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                </>
+                            )}
                         </tr>
                     )}
 
@@ -1427,18 +1505,22 @@ export default function App() {
                                     <div className="text-xs font-bold text-green-700">${(estimates['10'].top2Gal * prices.topcoat).toFixed(2)}</div>
                                 )}
                             </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
-                                <div>{estimates['15'].top2Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].top2Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
-                                <div>{estimates['20'].top2Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].top2Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
+                                        <div>{estimates['15'].top2Gal} gal</div>
+                                        {prices.topcoat > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].top2Gal * prices.topcoat).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
+                                        <div>{estimates['20'].top2Gal} gal</div>
+                                        {prices.topcoat > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].top2Gal * prices.topcoat).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                </>
+                            )}
                         </tr>
                     )}
 
@@ -1458,18 +1540,22 @@ export default function App() {
                                     <div className="text-xs font-bold text-green-700">${(estimates['10'].top3Gal * prices.topcoat).toFixed(2)}</div>
                                 )}
                             </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
-                                <div>{estimates['15'].top3Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].top3Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
-                                <div>{estimates['20'].top3Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].top3Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
+                                        <div>{estimates['15'].top3Gal} gal</div>
+                                        {prices.topcoat > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].top3Gal * prices.topcoat).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
+                                        <div>{estimates['20'].top3Gal} gal</div>
+                                        {prices.topcoat > 0 && (
+                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].top3Gal * prices.topcoat).toFixed(2)}</div>
+                                        )}
+                                    </td>
+                                </>
+                            )}
                         </tr>
                     )}
 
@@ -1492,32 +1578,36 @@ export default function App() {
                                 </div>
                             )}
                         </td>
-                        <td className="px-4 py-3 text-center text-lg font-black text-blue-900 bg-blue-100 border-l border-r border-blue-200">
-                            <div>{estimates['15'].totalGallons} gal</div>
-                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
-                                <div className="text-sm font-black text-green-700">
-                                    ${((estimates['15'].baseGal || 0) * prices.basecoat +
-                                       (estimates['15'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['15'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['15'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
-                                </div>
-                            )}
-                        </td>
-                        <td className="px-4 py-3 text-center text-lg font-black text-purple-900 bg-purple-100">
-                            <div>{estimates['20'].totalGallons} gal</div>
-                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
-                                <div className="text-sm font-black text-green-700">
-                                    ${((estimates['20'].baseGal || 0) * prices.basecoat +
-                                       (estimates['20'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['20'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['20'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
-                                </div>
-                            )}
-                        </td>
+                        {inputs.coatingSystem !== 'Aluminum' && (
+                            <>
+                                <td className="px-4 py-3 text-center text-lg font-black text-blue-900 bg-blue-100 border-l border-r border-blue-200">
+                                    <div>{estimates['15'].totalGallons} gal</div>
+                                    {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
+                                        <div className="text-sm font-black text-green-700">
+                                            ${((estimates['15'].baseGal || 0) * prices.basecoat +
+                                               (estimates['15'].top1Gal || 0) * prices.topcoat +
+                                               (estimates['15'].top2Gal || 0) * prices.topcoat +
+                                               (estimates['15'].top3Gal || 0) * prices.topcoat +
+                                               (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                               (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
+                                        </div>
+                                    )}
+                                </td>
+                                <td className="px-4 py-3 text-center text-lg font-black text-purple-900 bg-purple-100">
+                                    <div>{estimates['20'].totalGallons} gal</div>
+                                    {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
+                                        <div className="text-sm font-black text-green-700">
+                                            ${((estimates['20'].baseGal || 0) * prices.basecoat +
+                                               (estimates['20'].top1Gal || 0) * prices.topcoat +
+                                               (estimates['20'].top2Gal || 0) * prices.topcoat +
+                                               (estimates['20'].top3Gal || 0) * prices.topcoat +
+                                               (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                               (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
+                                        </div>
+                                    )}
+                                </td>
+                            </>
+                        )}
                     </tr>
 
                     {/* Goldseal */}
@@ -1528,8 +1618,12 @@ export default function App() {
                                 <div className="text-xs text-gray-500">Warranty Cost</div>
                             </td>
                             <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-50 border-l border-r border-yellow-200">{formatCurrency(estimates['10'].goldsealCost)}</td>
-                            <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-100 border-l border-r border-yellow-200">{formatCurrency(estimates['15'].goldsealCost)}</td>
-                            <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-100">{formatCurrency(estimates['20'].goldsealCost)}</td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-100 border-l border-r border-yellow-200">{formatCurrency(estimates['15'].goldsealCost)}</td>
+                                    <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-100">{formatCurrency(estimates['20'].goldsealCost)}</td>
+                                </>
+                            )}
                         </tr>
                     )}
 
@@ -1560,40 +1654,44 @@ export default function App() {
                                 <div className="text-sm text-gray-500">Enter prices</div>
                             )}
                         </td>
-                        <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
-                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
-                                <div className="text-xl font-black text-blue-700">
-                                    ${((estimates['15'].baseGal || 0) * prices.basecoat +
-                                       (estimates['15'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['15'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['15'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
-                                       (commonResults.accessoryQty || 0) * prices.accessory +
-                                       (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['15'].goldsealCost || 0)).toFixed(2)}
-                                </div>
-                            ) : (
-                                <div className="text-sm text-gray-500">Enter prices</div>
-                            )}
-                        </td>
-                        <td className="px-4 py-4 text-center bg-purple-50">
-                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
-                                <div className="text-xl font-black text-blue-700">
-                                    ${((estimates['20'].baseGal || 0) * prices.basecoat +
-                                       (estimates['20'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['20'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['20'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
-                                       (commonResults.accessoryQty || 0) * prices.accessory +
-                                       (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['20'].goldsealCost || 0)).toFixed(2)}
-                                </div>
-                            ) : (
-                                <div className="text-sm text-gray-500">Enter prices</div>
-                            )}
-                        </td>
+                        {inputs.coatingSystem !== 'Aluminum' && (
+                            <>
+                                <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
+                                    {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
+                                        <div className="text-xl font-black text-blue-700">
+                                            ${((estimates['15'].baseGal || 0) * prices.basecoat +
+                                               (estimates['15'].top1Gal || 0) * prices.topcoat +
+                                               (estimates['15'].top2Gal || 0) * prices.topcoat +
+                                               (estimates['15'].top3Gal || 0) * prices.topcoat +
+                                               (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                               (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
+                                               (commonResults.accessoryQty || 0) * prices.accessory +
+                                               (commonResults.membraneRolls || 0) * prices.membrane +
+                                               (estimates['15'].goldsealCost || 0)).toFixed(2)}
+                                        </div>
+                                    ) : (
+                                        <div className="text-sm text-gray-500">Enter prices</div>
+                                    )}
+                                </td>
+                                <td className="px-4 py-4 text-center bg-purple-50">
+                                    {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
+                                        <div className="text-xl font-black text-blue-700">
+                                            ${((estimates['20'].baseGal || 0) * prices.basecoat +
+                                               (estimates['20'].top1Gal || 0) * prices.topcoat +
+                                               (estimates['20'].top2Gal || 0) * prices.topcoat +
+                                               (estimates['20'].top3Gal || 0) * prices.topcoat +
+                                               (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                               (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
+                                               (commonResults.accessoryQty || 0) * prices.accessory +
+                                               (commonResults.membraneRolls || 0) * prices.membrane +
+                                               (estimates['20'].goldsealCost || 0)).toFixed(2)}
+                                        </div>
+                                    ) : (
+                                        <div className="text-sm text-gray-500">Enter prices</div>
+                                    )}
+                                </td>
+                            </>
+                        )}
                     </tr>
 
                     {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
@@ -1616,32 +1714,36 @@ export default function App() {
                                        (estimates['10'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
                                 </div>
                             </td>
-                            <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
-                                <div className="text-2xl font-black text-green-700">
-                                    ${(((estimates['15'].baseGal || 0) * prices.basecoat +
-                                       (estimates['15'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['15'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['15'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
-                                       (commonResults.accessoryQty || 0) * prices.accessory +
-                                       (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['15'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
-                                </div>
-                            </td>
-                            <td className="px-4 py-4 text-center bg-purple-50">
-                                <div className="text-2xl font-black text-green-700">
-                                    ${(((estimates['20'].baseGal || 0) * prices.basecoat +
-                                       (estimates['20'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['20'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['20'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
-                                       (commonResults.accessoryQty || 0) * prices.accessory +
-                                       (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['20'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
-                                </div>
-                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
+                                        <div className="text-2xl font-black text-green-700">
+                                            ${(((estimates['15'].baseGal || 0) * prices.basecoat +
+                                               (estimates['15'].top1Gal || 0) * prices.topcoat +
+                                               (estimates['15'].top2Gal || 0) * prices.topcoat +
+                                               (estimates['15'].top3Gal || 0) * prices.topcoat +
+                                               (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                               (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
+                                               (commonResults.accessoryQty || 0) * prices.accessory +
+                                               (commonResults.membraneRolls || 0) * prices.membrane +
+                                               (estimates['15'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-4 text-center bg-purple-50">
+                                        <div className="text-2xl font-black text-green-700">
+                                            ${(((estimates['20'].baseGal || 0) * prices.basecoat +
+                                               (estimates['20'].top1Gal || 0) * prices.topcoat +
+                                               (estimates['20'].top2Gal || 0) * prices.topcoat +
+                                               (estimates['20'].top3Gal || 0) * prices.topcoat +
+                                               (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                               (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
+                                               (commonResults.accessoryQty || 0) * prices.accessory +
+                                               (commonResults.membraneRolls || 0) * prices.membrane +
+                                               (estimates['20'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
+                                        </div>
+                                    </td>
+                                </>
+                            )}
                         </tr>
                     )}
                   </tbody>
