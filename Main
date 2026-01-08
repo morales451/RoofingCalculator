@@ -993,9 +993,6 @@ export default function App() {
                     <option value="0.05">5%</option>
                     <option value="0.10">10%</option>
                     <option value="0.15">15%</option>
-                    <option value="0.20">20%</option>
-                    <option value="0.25">25%</option>
-                    <option value="0.30">30%</option>
                   </select>
                 </div>
                 <div>
@@ -1004,6 +1001,10 @@ export default function App() {
                     <option value="0">0%</option>
                     <option value="0.05">5%</option>
                     <option value="0.10">10%</option>
+                    <option value="0.15">15%</option>
+                    <option value="0.20">20%</option>
+                    <option value="0.25">25%</option>
+                    <option value="0.30">30%</option>
                   </select>
                 </div>
               </div>
@@ -1072,7 +1073,8 @@ export default function App() {
               <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 print:border-gray-300">
                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Required Accessories</h3>
                  
-                 {inputs.linearFeet <= 0 ? (
+                 {/* Warning message when linear feet is missing */}
+                 {inputs.linearFeet <= 0 && (
                     <div className="bg-orange-50 border-l-4 border-orange-500 p-4 mb-4">
                         <div className="flex items-center">
                             <div className="flex-shrink-0"><AlertTriangle className="h-5 w-5 text-orange-500" /></div>
@@ -1086,15 +1088,22 @@ export default function App() {
                             </div>
                         </div>
                     </div>
-                 ) : (
+                 )}
+
+                 {/* Accessory pricing section - shows when there ARE linear feet OR when there are metal screws to encapsulate */}
+                 {(inputs.linearFeet > 0 || (inputs.roofType === 'Metal' && commonResults.screwBuckets > 0)) && (
                     <div className="mb-4">
                         <div className="flex justify-between items-center">
                             <div className="flex-1">
-                                <div className="font-bold text-lg text-gray-900">{commonResults.accessoryName}</div>
-                                <div className="text-sm text-gray-500">{commonResults.accessoryDesc}</div>
+                                <div className="font-bold text-lg text-gray-900">
+                                    {inputs.linearFeet > 0 ? commonResults.accessoryName : 'Fastener Encapsulation'}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                    {inputs.linearFeet > 0 ? commonResults.accessoryDesc : 'Metal roof screw encapsulation'}
+                                </div>
                                 {commonResults.screwBuckets > 0 && (
                                     <div className="flex items-center gap-1 text-xs text-blue-600 mt-1 font-medium bg-blue-50 px-2 py-1 rounded w-fit">
-                                        <Info size={12} /> Includes {commonResults.screwBuckets} buckets for ~{commonResults.screwCount} screws
+                                        <Info size={12} /> {inputs.linearFeet > 0 ? 'Includes' : ''} {commonResults.screwBuckets} buckets for ~{commonResults.screwCount} screws
                                     </div>
                                 )}
                             </div>
