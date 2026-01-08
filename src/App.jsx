@@ -1168,20 +1168,20 @@ export default function App() {
                  )}
               </div>
 
-              {/* DISTRIBUTOR MARKUP SECTION */}
+              {/* DISTRIBUTOR MARGIN SECTION */}
               <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-5 print:hidden">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="bg-blue-600 p-2 rounded-lg">
                     <DollarSign className="w-6 h-6 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-blue-900">Distributor Markup</h3>
-                    <p className="text-xs text-blue-700">Add your markup % to calculate contractor pricing</p>
+                    <h3 className="text-lg font-bold text-blue-900">Distributor Margin</h3>
+                    <p className="text-xs text-blue-700">Add your margin % to calculate contractor pricing</p>
                   </div>
                 </div>
 
                 <div className="bg-white p-4 rounded-lg border border-blue-200">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Your Markup Percentage</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Your Margin Percentage</label>
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
@@ -1196,7 +1196,7 @@ export default function App() {
                     <span className="text-2xl font-bold text-blue-900">%</span>
                     {profitMargin > 0 && (
                       <div className="ml-4 text-sm text-green-700 font-medium">
-                        ✓ Contractor prices will show {profitMargin}% markup
+                        ✓ Contractor prices will show {profitMargin}% margin
                       </div>
                     )}
                   </div>
@@ -1216,7 +1216,7 @@ export default function App() {
                                            (commonResults.membraneRolls || 0) * prices.membrane +
                                            (estimates[year].goldsealCost || 0);
 
-                          const sellPrice = costPrice * (1 + profitMargin / 100);
+                          const sellPrice = costPrice / (1 - profitMargin / 100);
                           const profit = sellPrice - costPrice;
 
                           return (
@@ -1596,12 +1596,12 @@ export default function App() {
                         </td>
                     </tr>
 
-                    {/* CONTRACTOR PRICE (With Markup) - Only shows when markup is applied */}
+                    {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
                     {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
                         <tr className="bg-gradient-to-r from-green-100 to-emerald-100 border-t-2 border-green-500">
                             <td className="px-4 py-4 text-base font-black text-gray-900">CONTRACTOR PRICE</td>
                             <td className="px-4 py-4 text-center bg-green-50 border-l border-r border-green-200">
-                                <div className="text-xs text-green-700 font-semibold print:hidden">+{profitMargin}% Markup</div>
+                                <div className="text-xs text-green-700 font-semibold print:hidden">{profitMargin}% Margin</div>
                             </td>
                             <td className="px-4 py-4 text-center border-l border-r border-green-200">
                                 <div className="text-2xl font-black text-green-700">
@@ -1613,7 +1613,7 @@ export default function App() {
                                        (estimates['10'].rustPrimerGal || 0) * prices.rustPrimer +
                                        (commonResults.accessoryQty || 0) * prices.accessory +
                                        (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['10'].goldsealCost || 0)) * (1 + profitMargin / 100)).toFixed(2)}
+                                       (estimates['10'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
                                 </div>
                             </td>
                             <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
@@ -1626,7 +1626,7 @@ export default function App() {
                                        (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
                                        (commonResults.accessoryQty || 0) * prices.accessory +
                                        (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['15'].goldsealCost || 0)) * (1 + profitMargin / 100)).toFixed(2)}
+                                       (estimates['15'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
                                 </div>
                             </td>
                             <td className="px-4 py-4 text-center bg-purple-50">
@@ -1639,7 +1639,7 @@ export default function App() {
                                        (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
                                        (commonResults.accessoryQty || 0) * prices.accessory +
                                        (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['20'].goldsealCost || 0)) * (1 + profitMargin / 100)).toFixed(2)}
+                                       (estimates['20'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
                                 </div>
                             </td>
                         </tr>
