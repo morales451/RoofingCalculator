@@ -935,6 +935,13 @@ export default function App() {
                         {currentOptions.fabrics.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
                 </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Detailing Preference</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => handleChange('accessoryType', 'Butter Grade')} className={`p-2 text-sm rounded-lg border ${inputs.accessoryType === 'Butter Grade' ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-gray-300 text-gray-600'}`}>Butter Grade</button>
+                        <button onClick={() => handleChange('accessoryType', 'Fabric')} className={`p-2 text-sm rounded-lg border ${inputs.accessoryType === 'Fabric' ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-gray-300 text-gray-600'}`}>Fabric</button>
+                    </div>
+                </div>
             </div>
 
             {/* ACRYLIC SYSTEM TYPE TOGGLE */}
@@ -992,20 +999,13 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Linear Feet</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={inputs.linearFeet || ''}
                   onChange={(e) => handleChange('linearFeet', parseFloat(e.target.value) || 0)}
                   className="w-full p-2 border border-gray-300 rounded-lg"
                   placeholder="e.g. 250"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Detailing Preference</label>
-                <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => handleChange('accessoryType', 'Butter Grade')} className={`p-2 text-sm rounded-lg border ${inputs.accessoryType === 'Butter Grade' ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-gray-300 text-gray-600'}`}>Butter Grade</button>
-                    <button onClick={() => handleChange('accessoryType', 'Fabric')} className={`p-2 text-sm rounded-lg border ${inputs.accessoryType === 'Fabric' ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-gray-300 text-gray-600'}`}>Fabric</button>
-                </div>
               </div>
             </div>
           </div>
