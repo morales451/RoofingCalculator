@@ -45,6 +45,16 @@ export default function App() {
   const [emailText, setEmailText] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // Pricing state
+  const [prices, setPrices] = useState({
+    basecoat: 0,
+    topcoat: 0,
+    adhesionPrimer: 0,
+    rustPrimer: 0,
+    accessory: 0,
+    membrane: 0
+  });
+
   // --- PRODUCT OPTIONS ---
   const PRODUCT_OPTIONS = {
     Silicone: {
@@ -194,9 +204,9 @@ export default function App() {
   const handleChange = (field, value) => {
     if (field === 'coatingSystem') {
         let newRoofType = inputs.roofType;
-        setInputs(prev => ({ 
-            ...prev, 
-            [field]: value, 
+        setInputs(prev => ({
+            ...prev,
+            [field]: value,
             acrylicSystemType: 'Standard'
         }));
     } else if (field === 'acrylicSystemType') {
@@ -210,6 +220,10 @@ export default function App() {
     } else {
         setInputs(prev => ({ ...prev, [field]: value }));
     }
+  };
+
+  const handlePriceChange = (field, value) => {
+    setPrices(prev => ({ ...prev, [field]: parseFloat(value) || 0 }));
   };
 
   // Helper for rounding to nearest 5-gal pail
@@ -404,21 +418,69 @@ export default function App() {
     ['10', '15', '20'].forEach(year => {
         const est = estimates[year];
         if (!est || (est.top1Gal === undefined && est.baseGal === undefined)) return;
-        
+
         text += `\n--- ${year}-YEAR OPTION ---\n`;
-        
-        if (est.baseGal > 0) text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat}) @ ${est.rates.base} gal/sq\n`;
-        
-        if (est.rustPrimerGal > 0) text += `Rust Primer: ${est.rustPrimerGal} gal (${primerSet.rust}) @ 0.5 gal/sq\n`;
-        if (est.adhesionPrimerGal > 0) text += `Adhesion Primer: ${est.adhesionPrimerGal} gal (${primerSet.adhesion}) @ 0.2 gal/sq\n`;
-        
-        if (est.top1Gal > 0) text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat}) @ ${est.rates.top1} gal/sq\n`;
-        if (est.top2Gal > 0) text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat}) @ ${est.rates.top2} gal/sq\n`;
-        if (est.top3Gal > 0) text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat}) @ ${est.rates.top3} gal/sq\n`;
-        
-        text += `TOTAL SYSTEM: ${est.totalGallons} Gallons\n`;
+
+        if (est.baseGal > 0) {
+            text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat}) @ ${est.rates.base} gal/sq`;
+            if (prices.basecoat > 0) text += ` = $${(est.baseGal * prices.basecoat).toFixed(2)}`;
+            text += `\n`;
+        }
+
+        if (est.rustPrimerGal > 0) {
+            text += `Rust Primer: ${est.rustPrimerGal} gal (${primerSet.rust}) @ 0.5 gal/sq`;
+            if (prices.rustPrimer > 0) text += ` = $${(est.rustPrimerGal * prices.rustPrimer).toFixed(2)}`;
+            text += `\n`;
+        }
+        if (est.adhesionPrimerGal > 0) {
+            text += `Adhesion Primer: ${est.adhesionPrimerGal} gal (${primerSet.adhesion}) @ 0.2 gal/sq`;
+            if (prices.adhesionPrimer > 0) text += ` = $${(est.adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}`;
+            text += `\n`;
+        }
+
+        if (est.top1Gal > 0) {
+            text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat}) @ ${est.rates.top1} gal/sq`;
+            if (prices.topcoat > 0) text += ` = $${(est.top1Gal * prices.topcoat).toFixed(2)}`;
+            text += `\n`;
+        }
+        if (est.top2Gal > 0) {
+            text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat}) @ ${est.rates.top2} gal/sq`;
+            if (prices.topcoat > 0) text += ` = $${(est.top2Gal * prices.topcoat).toFixed(2)}`;
+            text += `\n`;
+        }
+        if (est.top3Gal > 0) {
+            text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat}) @ ${est.rates.top3} gal/sq`;
+            if (prices.topcoat > 0) text += ` = $${(est.top3Gal * prices.topcoat).toFixed(2)}`;
+            text += `\n`;
+        }
+
+        text += `TOTAL SYSTEM: ${est.totalGallons} Gallons`;
+        if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) {
+            const materialsTotal = (est.baseGal || 0) * prices.basecoat +
+                                   (est.top1Gal || 0) * prices.topcoat +
+                                   (est.top2Gal || 0) * prices.topcoat +
+                                   (est.top3Gal || 0) * prices.topcoat +
+                                   (est.adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                   (est.rustPrimerGal || 0) * prices.rustPrimer;
+            text += ` = $${materialsTotal.toFixed(2)}`;
+        }
+        text += `\n`;
 
         if (est.goldsealCost > 0) text += `Goldseal Warranty: $${est.goldsealCost.toLocaleString()}\n`;
+
+        // Add grand total if pricing is entered
+        if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) {
+            const grandTotal = (est.baseGal || 0) * prices.basecoat +
+                              (est.top1Gal || 0) * prices.topcoat +
+                              (est.top2Gal || 0) * prices.topcoat +
+                              (est.top3Gal || 0) * prices.topcoat +
+                              (est.adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                              (est.rustPrimerGal || 0) * prices.rustPrimer +
+                              (commonResults.accessoryQty || 0) * prices.accessory +
+                              (commonResults.membraneRolls || 0) * prices.membrane +
+                              (est.goldsealCost || 0);
+            text += `GRAND TOTAL (Materials + Accessories + Warranty): $${grandTotal.toFixed(2)}\n`;
+        }
     });
 
     text += `\n\n*** IMPORTANT: ESTIMATE DISCLAIMER ***\n`;
@@ -426,7 +488,7 @@ export default function App() {
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
     setEmailText(text);
-  }, [inputs, estimates, commonResults]);
+  }, [inputs, estimates, commonResults, prices]);
 
   const handlePrint = () => {
       window.focus();
@@ -558,7 +620,12 @@ export default function App() {
                 </div>
                 <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fabric / Mesh</label>
-                    <select className="w-full p-2 border border-gray-300 rounded-lg text-sm" value={inputs.selectedFabric} onChange={(e) => handleChange('selectedFabric', e.target.value)}>
+                    <select
+                        className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                        value={inputs.selectedFabric}
+                        onChange={(e) => handleChange('selectedFabric', e.target.value)}
+                        disabled={inputs.accessoryType === 'Butter Grade'}
+                    >
                         {currentOptions.fabrics.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
                 </div>
@@ -669,6 +736,8 @@ export default function App() {
                     <option value="0.10">10%</option>
                     <option value="0.15">15%</option>
                     <option value="0.20">20%</option>
+                    <option value="0.25">25%</option>
+                    <option value="0.30">30%</option>
                   </select>
                 </div>
                 <div>
@@ -760,18 +829,40 @@ export default function App() {
                         </div>
                     </div>
                  ) : (
-                    <div className="flex justify-between items-center mb-4">
-                        <div>
-                            <div className="font-bold text-lg text-gray-900">{commonResults.accessoryName}</div>
-                            <div className="text-sm text-gray-500">{commonResults.accessoryDesc}</div>
-                            {commonResults.screwBuckets > 0 && (
-                                <div className="flex items-center gap-1 text-xs text-blue-600 mt-1 font-medium bg-blue-50 px-2 py-1 rounded w-fit">
-                                    <Info size={12} /> Includes {commonResults.screwBuckets} buckets for ~{commonResults.screwCount} screws
+                    <div className="mb-4">
+                        <div className="flex justify-between items-center">
+                            <div className="flex-1">
+                                <div className="font-bold text-lg text-gray-900">{commonResults.accessoryName}</div>
+                                <div className="text-sm text-gray-500">{commonResults.accessoryDesc}</div>
+                                {commonResults.screwBuckets > 0 && (
+                                    <div className="flex items-center gap-1 text-xs text-blue-600 mt-1 font-medium bg-blue-50 px-2 py-1 rounded w-fit">
+                                        <Info size={12} /> Includes {commonResults.screwBuckets} buckets for ~{commonResults.screwCount} screws
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <div className="text-center">
+                                    <div className="text-xs text-gray-500 mb-1">Price/{commonResults.accessoryUnit === 'Buckets' ? 'Bucket' : 'Roll'}</div>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="$0.00"
+                                        value={prices.accessory || ''}
+                                        onChange={(e) => handlePriceChange('accessory', e.target.value)}
+                                        className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
+                                    />
                                 </div>
-                            )}
-                        </div>
-                        <div className="text-2xl font-bold text-blue-700">
-                            {commonResults.accessoryQty} <span className="text-sm text-gray-600 font-normal">{commonResults.accessoryUnit}</span>
+                                <div className="text-right">
+                                    <div className="text-2xl font-bold text-blue-700">
+                                        {commonResults.accessoryQty} <span className="text-sm text-gray-600 font-normal">{commonResults.accessoryUnit}</span>
+                                    </div>
+                                    {prices.accessory > 0 && (
+                                        <div className="text-sm font-bold text-green-700">
+                                            = ${(commonResults.accessoryQty * prices.accessory).toFixed(2)}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                  )}
@@ -779,12 +870,32 @@ export default function App() {
                  {/* ACRYLIC MEMBRANE ROW (Only for Reinforced) */}
                  {inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Reinforced' && (
                     <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                        <div>
+                        <div className="flex-1">
                             <div className="font-bold text-lg text-gray-900">Reinforcement Membrane</div>
                             <div className="text-sm text-gray-500">Full System Reinforcement (40" x 324' rolls)</div>
                         </div>
-                        <div className="text-2xl font-bold text-orange-600">
-                            {commonResults.membraneRolls} <span className="text-sm text-gray-600 font-normal">Rolls</span>
+                        <div className="flex items-center gap-4">
+                            <div className="text-center">
+                                <div className="text-xs text-gray-500 mb-1">Price/Roll</div>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="$0.00"
+                                    value={prices.membrane || ''}
+                                    onChange={(e) => handlePriceChange('membrane', e.target.value)}
+                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
+                                />
+                            </div>
+                            <div className="text-right">
+                                <div className="text-2xl font-bold text-orange-600">
+                                    {commonResults.membraneRolls} <span className="text-sm text-gray-600 font-normal">Rolls</span>
+                                </div>
+                                {prices.membrane > 0 && (
+                                    <div className="text-sm font-bold text-green-700">
+                                        = ${(commonResults.membraneRolls * prices.membrane).toFixed(2)}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                  )}
@@ -795,10 +906,11 @@ export default function App() {
                 <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg print:border-gray-300">
                   <thead>
                     <tr className="bg-gray-100">
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">Product</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-white border-l border-r border-gray-200 w-1/5">10-Year</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-blue-800 uppercase tracking-wider bg-blue-50 border-l border-r border-blue-100 w-1/5">15-Year</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-purple-800 uppercase tracking-wider bg-purple-50 w-1/5">20-Year</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-green-50 border-l border-r border-gray-200">Price/Unit</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-white border-l border-r border-gray-200">10-Year</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-blue-800 uppercase tracking-wider bg-blue-50 border-l border-r border-blue-100">15-Year</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-purple-800 uppercase tracking-wider bg-purple-50">20-Year</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -810,14 +922,33 @@ export default function App() {
                                 <div className="text-sm font-bold text-gray-900">Basecoat</div>
                                 <div className="text-xs text-gray-500">{inputs.selectedBasecoat}</div>
                             </td>
+                            <td className="px-4 py-3 text-center bg-green-50 border-l border-r border-gray-200">
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="$/gal"
+                                    value={prices.basecoat || ''}
+                                    onChange={(e) => handlePriceChange('basecoat', e.target.value)}
+                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
+                                />
+                            </td>
                             <td className="px-4 py-3 text-center text-sm text-gray-600 border-l border-r border-gray-200">
-                                {estimates['10'].baseGal}
+                                <div>{estimates['10'].baseGal} gal</div>
+                                {prices.basecoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].baseGal * prices.basecoat).toFixed(2)}</div>
+                                )}
                             </td>
                             <td className="px-4 py-3 text-center text-sm text-blue-800 font-semibold bg-blue-50 border-l border-r border-blue-100">
-                                {estimates['15'].baseGal}
+                                <div>{estimates['15'].baseGal} gal</div>
+                                {prices.basecoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].baseGal * prices.basecoat).toFixed(2)}</div>
+                                )}
                             </td>
                             <td className="px-4 py-3 text-center text-sm text-purple-800 font-semibold bg-purple-50">
-                                {estimates['20'].baseGal}
+                                <div>{estimates['20'].baseGal} gal</div>
+                                {prices.basecoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].baseGal * prices.basecoat).toFixed(2)}</div>
+                                )}
                             </td>
                         </tr>
                     )}
@@ -829,9 +960,34 @@ export default function App() {
                                 <div className="text-sm font-bold text-orange-900">Rust Primer</div>
                                 <div className="text-xs text-orange-700">{currentPrimers.rust} (Sold in 5-gal pails)</div>
                             </td>
-                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold border-l border-r border-orange-100">{estimates['10'].rustPrimerGal}</td>
-                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold border-l border-r border-orange-100">{estimates['15'].rustPrimerGal}</td>
-                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold">{estimates['20'].rustPrimerGal}</td>
+                            <td className="px-4 py-3 text-center bg-green-50 border-l border-r border-orange-100">
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="$/gal"
+                                    value={prices.rustPrimer || ''}
+                                    onChange={(e) => handlePriceChange('rustPrimer', e.target.value)}
+                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
+                                />
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold border-l border-r border-orange-100">
+                                <div>{estimates['10'].rustPrimerGal} gal</div>
+                                {prices.rustPrimer > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold border-l border-r border-orange-100">
+                                <div>{estimates['15'].rustPrimerGal} gal</div>
+                                {prices.rustPrimer > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold">
+                                <div>{estimates['20'].rustPrimerGal} gal</div>
+                                {prices.rustPrimer > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
+                                )}
+                            </td>
                         </tr>
                     )}
 
@@ -842,9 +998,34 @@ export default function App() {
                                 <div className="flex items-center gap-2 text-sm font-bold text-red-900"><AlertTriangle size={14}/> Adhesion Primer</div>
                                 <div className="text-xs text-red-700">{currentPrimers.adhesion} (Sold in 1-gal containers)</div>
                             </td>
-                            <td className="px-4 py-3 text-center text-sm text-red-700 border-l border-r border-red-100">{estimates['10'].adhesionPrimerGal}</td>
-                            <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold border-l border-r border-red-100">{estimates['15'].adhesionPrimerGal}</td>
-                            <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold">{estimates['20'].adhesionPrimerGal}</td>
+                            <td className="px-4 py-3 text-center bg-green-50 border-l border-r border-red-100">
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="$/gal"
+                                    value={prices.adhesionPrimer || ''}
+                                    onChange={(e) => handlePriceChange('adhesionPrimer', e.target.value)}
+                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
+                                />
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-red-700 border-l border-r border-red-100">
+                                <div>{estimates['10'].adhesionPrimerGal} gal</div>
+                                {prices.adhesionPrimer > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold border-l border-r border-red-100">
+                                <div>{estimates['15'].adhesionPrimerGal} gal</div>
+                                {prices.adhesionPrimer > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold">
+                                <div>{estimates['20'].adhesionPrimerGal} gal</div>
+                                {prices.adhesionPrimer > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
+                                )}
+                            </td>
                         </tr>
                     )}
 
@@ -855,9 +1036,34 @@ export default function App() {
                                 <div className="text-sm font-bold text-gray-900">Topcoat 1</div>
                                 <div className="text-xs text-gray-500">{inputs.selectedTopcoat}</div>
                             </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">{estimates['10'].top1Gal}</td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">{estimates['15'].top1Gal}</td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">{estimates['20'].top1Gal}</td>
+                            <td className="px-4 py-3 text-center bg-green-50 border-l border-r border-gray-200">
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="$/gal"
+                                    value={prices.topcoat || ''}
+                                    onChange={(e) => handlePriceChange('topcoat', e.target.value)}
+                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
+                                />
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">
+                                <div>{estimates['10'].top1Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].top1Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
+                                <div>{estimates['15'].top1Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].top1Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
+                                <div>{estimates['20'].top1Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].top1Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
                         </tr>
                     )}
 
@@ -868,9 +1074,27 @@ export default function App() {
                                 <div className="text-sm font-bold text-gray-900">Topcoat 2</div>
                                 <div className="text-xs text-gray-500">{inputs.selectedTopcoat}</div>
                             </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">{estimates['10'].top2Gal}</td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">{estimates['15'].top2Gal}</td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">{estimates['20'].top2Gal}</td>
+                            <td className="px-4 py-3 text-center bg-gray-50 border-l border-r border-gray-200">
+                                <div className="text-xs text-gray-500">Same as above</div>
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">
+                                <div>{estimates['10'].top2Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].top2Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
+                                <div>{estimates['15'].top2Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].top2Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
+                                <div>{estimates['20'].top2Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].top2Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
                         </tr>
                     )}
 
@@ -881,29 +1105,148 @@ export default function App() {
                                 <div className="text-sm font-bold text-gray-900">Topcoat 3</div>
                                 <div className="text-xs text-gray-500">{inputs.selectedTopcoat}</div>
                             </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">{estimates['10'].top3Gal}</td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">{estimates['15'].top3Gal}</td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">{estimates['20'].top3Gal}</td>
+                            <td className="px-4 py-3 text-center bg-gray-50 border-l border-r border-gray-200">
+                                <div className="text-xs text-gray-500">Same as above</div>
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">
+                                <div>{estimates['10'].top3Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].top3Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
+                                <div>{estimates['15'].top3Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['15'].top3Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
+                                <div>{estimates['20'].top3Gal} gal</div>
+                                {prices.topcoat > 0 && (
+                                    <div className="text-xs font-bold text-green-700">${(estimates['20'].top3Gal * prices.topcoat).toFixed(2)}</div>
+                                )}
+                            </td>
                         </tr>
                     )}
 
                     {/* Total System Gallons */}
                     <tr className="bg-gray-200">
                         <td className="px-4 py-3 text-sm font-bold text-gray-900">TOTAL SYSTEM (Gallons)</td>
-                        <td className="px-4 py-3 text-center text-lg font-black text-gray-900 border-l border-r border-gray-300">{estimates['10'].totalGallons}</td>
-                        <td className="px-4 py-3 text-center text-lg font-black text-blue-900 bg-blue-100 border-l border-r border-blue-200">{estimates['15'].totalGallons}</td>
-                        <td className="px-4 py-3 text-center text-lg font-black text-purple-900 bg-purple-100">{estimates['20'].totalGallons}</td>
+                        <td className="px-4 py-3 text-center bg-gray-100 border-l border-r border-gray-300">
+                            <div className="text-xs text-gray-600">Materials Subtotal</div>
+                        </td>
+                        <td className="px-4 py-3 text-center text-lg font-black text-gray-900 border-l border-r border-gray-300">
+                            <div>{estimates['10'].totalGallons} gal</div>
+                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
+                                <div className="text-sm font-black text-green-700">
+                                    ${((estimates['10'].baseGal || 0) * prices.basecoat +
+                                       (estimates['10'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['10'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['10'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['10'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['10'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
+                                </div>
+                            )}
+                        </td>
+                        <td className="px-4 py-3 text-center text-lg font-black text-blue-900 bg-blue-100 border-l border-r border-blue-200">
+                            <div>{estimates['15'].totalGallons} gal</div>
+                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
+                                <div className="text-sm font-black text-green-700">
+                                    ${((estimates['15'].baseGal || 0) * prices.basecoat +
+                                       (estimates['15'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['15'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['15'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
+                                </div>
+                            )}
+                        </td>
+                        <td className="px-4 py-3 text-center text-lg font-black text-purple-900 bg-purple-100">
+                            <div>{estimates['20'].totalGallons} gal</div>
+                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
+                                <div className="text-sm font-black text-green-700">
+                                    ${((estimates['20'].baseGal || 0) * prices.basecoat +
+                                       (estimates['20'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['20'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['20'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
+                                </div>
+                            )}
+                        </td>
                     </tr>
 
                     {/* Goldseal */}
                     {inputs.goldseal && (
                          <tr>
                             <td className="px-4 py-3 text-sm font-medium text-yellow-900 bg-yellow-50">Goldseal Warranty</td>
-                            <td className="px-4 py-3 text-center text-sm text-yellow-900 bg-yellow-50 border-l border-r border-yellow-200">{formatCurrency(estimates['10'].goldsealCost)}</td>
+                            <td className="px-4 py-3 text-center bg-yellow-50 border-l border-r border-yellow-200">
+                                <div className="text-xs text-gray-500">Warranty Cost</div>
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-50 border-l border-r border-yellow-200">{formatCurrency(estimates['10'].goldsealCost)}</td>
                             <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-100 border-l border-r border-yellow-200">{formatCurrency(estimates['15'].goldsealCost)}</td>
                             <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-100">{formatCurrency(estimates['20'].goldsealCost)}</td>
                         </tr>
                     )}
+
+                    {/* GRAND TOTAL */}
+                    <tr className="bg-green-100 border-t-4 border-green-600">
+                        <td className="px-4 py-4 text-base font-black text-gray-900">GRAND TOTAL</td>
+                        <td className="px-4 py-4 text-center bg-green-50 border-l border-r border-green-200">
+                            <div className="text-xs text-gray-600">All Costs</div>
+                        </td>
+                        <td className="px-4 py-4 text-center border-l border-r border-green-200">
+                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
+                                <div className="text-xl font-black text-green-800">
+                                    ${((estimates['10'].baseGal || 0) * prices.basecoat +
+                                       (estimates['10'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['10'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['10'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['10'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['10'].rustPrimerGal || 0) * prices.rustPrimer +
+                                       (commonResults.accessoryQty || 0) * prices.accessory +
+                                       (commonResults.membraneRolls || 0) * prices.membrane +
+                                       (estimates['10'].goldsealCost || 0)).toFixed(2)}
+                                </div>
+                            ) : (
+                                <div className="text-sm text-gray-500">Enter prices</div>
+                            )}
+                        </td>
+                        <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
+                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
+                                <div className="text-xl font-black text-green-800">
+                                    ${((estimates['15'].baseGal || 0) * prices.basecoat +
+                                       (estimates['15'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['15'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['15'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
+                                       (commonResults.accessoryQty || 0) * prices.accessory +
+                                       (commonResults.membraneRolls || 0) * prices.membrane +
+                                       (estimates['15'].goldsealCost || 0)).toFixed(2)}
+                                </div>
+                            ) : (
+                                <div className="text-sm text-gray-500">Enter prices</div>
+                            )}
+                        </td>
+                        <td className="px-4 py-4 text-center bg-purple-50">
+                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
+                                <div className="text-xl font-black text-green-800">
+                                    ${((estimates['20'].baseGal || 0) * prices.basecoat +
+                                       (estimates['20'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['20'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['20'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
+                                       (commonResults.accessoryQty || 0) * prices.accessory +
+                                       (commonResults.membraneRolls || 0) * prices.membrane +
+                                       (estimates['20'].goldsealCost || 0)).toFixed(2)}
+                                </div>
+                            ) : (
+                                <div className="text-sm text-gray-500">Enter prices</div>
+                            )}
+                        </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
