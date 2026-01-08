@@ -1159,6 +1159,83 @@ export default function App() {
                  )}
               </div>
 
+              {/* DISTRIBUTOR MARKUP SECTION */}
+              <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-5 print:hidden">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="bg-blue-600 p-2 rounded-lg">
+                    <DollarSign className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-blue-900">Distributor Markup</h3>
+                    <p className="text-xs text-blue-700">Add your markup % to calculate contractor pricing</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-lg border border-blue-200">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Your Markup Percentage</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="100"
+                      value={profitMargin}
+                      onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
+                      className="w-32 p-3 border-2 border-blue-300 rounded-lg text-center text-2xl font-bold focus:ring-2 focus:ring-blue-500"
+                      placeholder="0"
+                    />
+                    <span className="text-2xl font-bold text-blue-900">%</span>
+                    {profitMargin > 0 && (
+                      <div className="ml-4 text-sm text-green-700 font-medium">
+                        ✓ Contractor prices will show {profitMargin}% markup
+                      </div>
+                    )}
+                  </div>
+
+                  {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
+                    <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+                      <div className="text-xs font-semibold text-blue-900 mb-2">PRICING PREVIEW:</div>
+                      <div className="grid grid-cols-3 gap-3 text-xs">
+                        {['10', '15', '20'].map(year => {
+                          const costPrice = (estimates[year].baseGal || 0) * prices.basecoat +
+                                           (estimates[year].top1Gal || 0) * prices.topcoat +
+                                           (estimates[year].top2Gal || 0) * prices.topcoat +
+                                           (estimates[year].top3Gal || 0) * prices.topcoat +
+                                           (estimates[year].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                           (estimates[year].rustPrimerGal || 0) * prices.rustPrimer +
+                                           (commonResults.accessoryQty || 0) * prices.accessory +
+                                           (commonResults.membraneRolls || 0) * prices.membrane +
+                                           (estimates[year].goldsealCost || 0);
+
+                          const sellPrice = costPrice * (1 + profitMargin / 100);
+                          const profit = sellPrice - costPrice;
+
+                          return (
+                            <div key={year} className="bg-white p-2 rounded border border-blue-200">
+                              <div className="font-bold text-center text-blue-900 mb-1">{year}-Year</div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">Your Cost:</span>
+                                  <span className="font-semibold text-blue-700">${costPrice.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between border-t pt-1">
+                                  <span className="text-gray-600">Sell Price:</span>
+                                  <span className="font-bold text-green-700">${sellPrice.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between border-t pt-1">
+                                  <span className="text-gray-600">Your Profit:</span>
+                                  <span className="font-bold text-amber-600">${profit.toFixed(2)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* COMPARISON TABLE */}
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg print:border-gray-300">
@@ -1449,13 +1526,17 @@ export default function App() {
 
                     {/* GRAND TOTAL */}
                     <tr className="bg-green-100 border-t-4 border-green-600">
-                        <td className="px-4 py-4 text-base font-black text-gray-900">GRAND TOTAL</td>
+                        <td className="px-4 py-4 text-base font-black text-gray-900">
+                            {profitMargin > 0 ? 'COST TO DISTRIBUTOR' : 'GRAND TOTAL'}
+                        </td>
                         <td className="px-4 py-4 text-center bg-green-50 border-l border-r border-green-200">
-                            <div className="text-xs text-gray-600">All Costs</div>
+                            <div className="text-xs text-gray-600 print:hidden">
+                                {profitMargin > 0 ? 'Your Cost' : 'All Costs'}
+                            </div>
                         </td>
                         <td className="px-4 py-4 text-center border-l border-r border-green-200">
                             {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
-                                <div className="text-xl font-black text-green-800">
+                                <div className="text-xl font-black text-blue-700">
                                     ${((estimates['10'].baseGal || 0) * prices.basecoat +
                                        (estimates['10'].top1Gal || 0) * prices.topcoat +
                                        (estimates['10'].top2Gal || 0) * prices.topcoat +
@@ -1472,7 +1553,7 @@ export default function App() {
                         </td>
                         <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
                             {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
-                                <div className="text-xl font-black text-green-800">
+                                <div className="text-xl font-black text-blue-700">
                                     ${((estimates['15'].baseGal || 0) * prices.basecoat +
                                        (estimates['15'].top1Gal || 0) * prices.topcoat +
                                        (estimates['15'].top2Gal || 0) * prices.topcoat +
@@ -1489,7 +1570,7 @@ export default function App() {
                         </td>
                         <td className="px-4 py-4 text-center bg-purple-50">
                             {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
-                                <div className="text-xl font-black text-green-800">
+                                <div className="text-xl font-black text-blue-700">
                                     ${((estimates['20'].baseGal || 0) * prices.basecoat +
                                        (estimates['20'].top1Gal || 0) * prices.topcoat +
                                        (estimates['20'].top2Gal || 0) * prices.topcoat +
@@ -1505,86 +1586,57 @@ export default function App() {
                             )}
                         </td>
                     </tr>
+
+                    {/* CONTRACTOR PRICE (With Markup) - Only shows when markup is applied */}
+                    {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
+                        <tr className="bg-gradient-to-r from-green-100 to-emerald-100 border-t-2 border-green-500">
+                            <td className="px-4 py-4 text-base font-black text-gray-900">CONTRACTOR PRICE</td>
+                            <td className="px-4 py-4 text-center bg-green-50 border-l border-r border-green-200">
+                                <div className="text-xs text-green-700 font-semibold print:hidden">+{profitMargin}% Markup</div>
+                            </td>
+                            <td className="px-4 py-4 text-center border-l border-r border-green-200">
+                                <div className="text-2xl font-black text-green-700">
+                                    ${(((estimates['10'].baseGal || 0) * prices.basecoat +
+                                       (estimates['10'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['10'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['10'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['10'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['10'].rustPrimerGal || 0) * prices.rustPrimer +
+                                       (commonResults.accessoryQty || 0) * prices.accessory +
+                                       (commonResults.membraneRolls || 0) * prices.membrane +
+                                       (estimates['10'].goldsealCost || 0)) * (1 + profitMargin / 100)).toFixed(2)}
+                                </div>
+                            </td>
+                            <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
+                                <div className="text-2xl font-black text-green-700">
+                                    ${(((estimates['15'].baseGal || 0) * prices.basecoat +
+                                       (estimates['15'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['15'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['15'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
+                                       (commonResults.accessoryQty || 0) * prices.accessory +
+                                       (commonResults.membraneRolls || 0) * prices.membrane +
+                                       (estimates['15'].goldsealCost || 0)) * (1 + profitMargin / 100)).toFixed(2)}
+                                </div>
+                            </td>
+                            <td className="px-4 py-4 text-center bg-purple-50">
+                                <div className="text-2xl font-black text-green-700">
+                                    ${(((estimates['20'].baseGal || 0) * prices.basecoat +
+                                       (estimates['20'].top1Gal || 0) * prices.topcoat +
+                                       (estimates['20'].top2Gal || 0) * prices.topcoat +
+                                       (estimates['20'].top3Gal || 0) * prices.topcoat +
+                                       (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                       (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
+                                       (commonResults.accessoryQty || 0) * prices.accessory +
+                                       (commonResults.membraneRolls || 0) * prices.membrane +
+                                       (estimates['20'].goldsealCost || 0)) * (1 + profitMargin / 100)).toFixed(2)}
+                                </div>
+                            </td>
+                        </tr>
+                    )}
                   </tbody>
                 </table>
-              </div>
-
-              {/* PROFIT MARGIN CALCULATOR (Hidden from print) */}
-              <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4 print:hidden">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-amber-900 flex items-center gap-2">
-                    <DollarSign size={18} /> Profit Margin Calculator (Internal)
-                  </h3>
-                  <button
-                    onClick={() => setShowProfitMargin(!showProfitMargin)}
-                    className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded flex items-center gap-1"
-                  >
-                    {showProfitMargin ? <EyeOff size={12}/> : <Eye size={12}/>}
-                    {showProfitMargin ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-
-                {showProfitMargin && (
-                  <div className="space-y-4">
-                    <div className="bg-white p-3 rounded border border-amber-200">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Profit Margin %</label>
-                      <input
-                        type="number"
-                        step="1"
-                        min="0"
-                        max="100"
-                        value={profitMargin}
-                        onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
-                        className="w-full p-2 border border-gray-300 rounded-lg text-center text-lg font-bold"
-                        placeholder="0"
-                      />
-                    </div>
-
-                    {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
-                      <div className="grid grid-cols-3 gap-3">
-                        {['10', '15', '20'].map(year => {
-                          const costPrice = (estimates[year].baseGal || 0) * prices.basecoat +
-                                           (estimates[year].top1Gal || 0) * prices.topcoat +
-                                           (estimates[year].top2Gal || 0) * prices.topcoat +
-                                           (estimates[year].top3Gal || 0) * prices.topcoat +
-                                           (estimates[year].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                           (estimates[year].rustPrimerGal || 0) * prices.rustPrimer +
-                                           (commonResults.accessoryQty || 0) * prices.accessory +
-                                           (commonResults.membraneRolls || 0) * prices.membrane +
-                                           (estimates[year].goldsealCost || 0);
-
-                          const sellPrice = costPrice * (1 + profitMargin / 100);
-                          const profit = sellPrice - costPrice;
-
-                          return (
-                            <div key={year} className="bg-white p-3 rounded border-2 border-amber-300">
-                              <div className="text-xs font-bold text-center text-amber-900 mb-2">{year}-Year</div>
-                              <div className="space-y-1 text-xs">
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">Cost:</span>
-                                  <span className="font-medium">${costPrice.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between border-t border-gray-200 pt-1">
-                                  <span className="text-gray-600">Sell:</span>
-                                  <span className="font-bold text-green-700">${sellPrice.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between border-t border-gray-200 pt-1">
-                                  <span className="text-gray-600">Profit:</span>
-                                  <span className="font-bold text-amber-700">${profit.toFixed(2)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    <div className="text-xs text-amber-800 bg-amber-100 p-2 rounded flex items-start gap-2">
-                      <Info size={14} className="mt-0.5 flex-shrink-0" />
-                      <span>This section is for internal use only and will NOT appear on printed quotes or PDFs.</span>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* COPY TO EMAIL SECTION */}
