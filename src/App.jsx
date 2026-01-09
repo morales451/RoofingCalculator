@@ -630,7 +630,7 @@ export default function App() {
                               (commonResults.accessoryQty || 0) * prices.accessory +
                               (commonResults.membraneRolls || 0) * prices.membrane +
                               (est.goldsealCost || 0);
-            text += `GRAND TOTAL (Materials + Accessories + Warranty): $${grandTotal.toFixed(2)}\n`;
+            text += `GRAND TOTAL (Materials + Accessories): $${grandTotal.toFixed(2)}\n`;
         }
     });
 
