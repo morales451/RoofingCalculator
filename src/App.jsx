@@ -450,6 +450,8 @@ export default function App() {
     let systemSpec = null;
     if (coatingSystem === 'Silicone') {
         systemSpec = SYSTEM_DATA['Silicone'][roofType];
+    } else if (coatingSystem === 'Aluminum') {
+        systemSpec = SYSTEM_DATA['Aluminum'][roofType];
     } else {
         systemSpec = SYSTEM_DATA['Acrylic'][acrylicSystemType]?.[roofType];
     }
@@ -458,7 +460,8 @@ export default function App() {
         if (!systemSpec) return;
 
         const rates = systemSpec[year];
-        
+        if (!rates) return; // Skip if this warranty year is not available (e.g., Aluminum 15/20-year)
+
         // Calculate Base - ROUND TO 5
         const rawBase = squares * (rates.base || 0);
         const baseGal = roundToFive(rawBase * totalFactor);
@@ -569,7 +572,7 @@ export default function App() {
 
         text += `\n--- ${year}-YEAR OPTION ---\n`;
 
-        if (est.baseGal > 0) {
+        if (coatingSystem !== 'Aluminum' && est.baseGal > 0) {
             text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat}) @ ${est.rates.base} gal/sq`;
             if (prices.basecoat > 0) text += ` = $${(est.baseGal * prices.basecoat).toFixed(2)}`;
             text += `\n`;
@@ -1322,7 +1325,7 @@ export default function App() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     
                     {/* Base Coat (Acrylic) OR System Primer (Silicone) */}
-                    {(estimates['10'].baseGal > 0 || (inputs.coatingSystem === 'Silicone' && estimates['10'].baseGal > 0)) && (
+                    {inputs.coatingSystem !== 'Aluminum' && (estimates['10'].baseGal > 0 || (inputs.coatingSystem === 'Silicone' && estimates['10'].baseGal > 0)) && (
                         <tr>
                             <td className="px-4 py-3">
                                 <div className="text-sm font-bold text-gray-900">Basecoat</div>
