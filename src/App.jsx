@@ -1267,15 +1267,15 @@ export default function App() {
                       <div className="text-xs font-semibold text-blue-900 mb-2">PRICING PREVIEW:</div>
                       <div className={`grid ${inputs.coatingSystem === 'Aluminum' ? 'grid-cols-1' : 'grid-cols-3'} gap-3 text-xs`}>
                         {(inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20']).map(year => {
-                          const costPrice = (estimates[year].baseGal || 0) * prices.basecoat +
-                                           (estimates[year].top1Gal || 0) * prices.topcoat +
-                                           (estimates[year].top2Gal || 0) * prices.topcoat +
-                                           (estimates[year].top3Gal || 0) * prices.topcoat +
-                                           (estimates[year].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                           (estimates[year].rustPrimerGal || 0) * prices.rustPrimer +
+                          const costPrice = (estimates[year]?.baseGal || 0) * prices.basecoat +
+                                           (estimates[year]?.top1Gal || 0) * prices.topcoat +
+                                           (estimates[year]?.top2Gal || 0) * prices.topcoat +
+                                           (estimates[year]?.top3Gal || 0) * prices.topcoat +
+                                           (estimates[year]?.adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                                           (estimates[year]?.rustPrimerGal || 0) * prices.rustPrimer +
                                            (commonResults.accessoryQty || 0) * prices.accessory +
                                            (commonResults.membraneRolls || 0) * prices.membrane +
-                                           (estimates[year].goldsealCost || 0);
+                                           (estimates[year]?.goldsealCost || 0);
 
                           const sellPrice = costPrice / (1 - profitMargin / 100);
                           const profit = sellPrice - costPrice;
@@ -1325,7 +1325,7 @@ export default function App() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     
                     {/* Base Coat (Acrylic) OR System Primer (Silicone) */}
-                    {inputs.coatingSystem !== 'Aluminum' && (estimates['10'].baseGal > 0 || (inputs.coatingSystem === 'Silicone' && estimates['10'].baseGal > 0)) && (
+                    {inputs.coatingSystem !== 'Aluminum' && (estimates['10']?.baseGal > 0 || (inputs.coatingSystem === 'Silicone' && estimates['10']?.baseGal > 0)) && (
                         <tr>
                             <td className="px-4 py-3">
                                 <div className="text-sm font-bold text-gray-900">Basecoat</div>
@@ -1367,7 +1367,7 @@ export default function App() {
                     )}
                     
                     {/* Rust Primer (Silicone Metal Only) */}
-                    {(estimates['10'].rustPrimerGal > 0) && (
+                    {(estimates['10']?.rustPrimerGal > 0) && (
                         <tr className="bg-orange-50">
                             <td className="px-4 py-3">
                                 <div className="text-sm font-bold text-orange-900">Rust Primer</div>
@@ -1451,7 +1451,7 @@ export default function App() {
                     )}
 
                     {/* Top Coat 1 */}
-                    {(estimates['10'].top1Gal > 0 || estimates['15'].top1Gal > 0 || estimates['20'].top1Gal > 0) && (
+                    {(estimates['10']?.top1Gal > 0 || estimates['15']?.top1Gal > 0 || estimates['20']?.top1Gal > 0) && (
                         <tr>
                             <td className="px-4 py-3">
                                 <div className="text-sm font-bold text-gray-900">Topcoat 1</div>
@@ -1493,7 +1493,7 @@ export default function App() {
                     )}
 
                     {/* Top Coat 2 */}
-                    {(estimates['10'].top2Gal > 0 || estimates['15'].top2Gal > 0 || estimates['20'].top2Gal > 0) && (
+                    {(estimates['10']?.top2Gal > 0 || estimates['15']?.top2Gal > 0 || estimates['20']?.top2Gal > 0) && (
                         <tr>
                             <td className="px-4 py-3">
                                 <div className="text-sm font-bold text-gray-900">Topcoat 2</div>
@@ -1528,7 +1528,7 @@ export default function App() {
                     )}
 
                     {/* Top Coat 3 */}
-                    {(estimates['10'].top3Gal > 0 || estimates['15'].top3Gal > 0 || estimates['20'].top3Gal > 0) && (
+                    {(estimates['10']?.top3Gal > 0 || estimates['15']?.top3Gal > 0 || estimates['20']?.top3Gal > 0) && (
                         <tr>
                             <td className="px-4 py-3">
                                 <div className="text-sm font-bold text-gray-900">Topcoat 3</div>
