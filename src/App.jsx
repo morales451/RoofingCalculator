@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Printer, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown } from 'lucide-react';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 
 export default function App() {
