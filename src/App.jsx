@@ -630,7 +630,8 @@ export default function App() {
                               (commonResults.accessoryQty || 0) * prices.accessory +
                               (commonResults.membraneRolls || 0) * prices.membrane +
                               (est.goldsealCost || 0);
-            text += `GRAND TOTAL (Materials + Accessories): $${grandTotal.toFixed(2)}\n`;
+            const warrantyLabel = inputs.goldseal ? ' + Warranty' : '';
+            text += `GRAND TOTAL (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}\n`;
         }
     });
 
