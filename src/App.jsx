@@ -690,26 +690,7 @@ export default function App() {
   const generatePDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
-    let yPos = 0;
-
-    // Add dark blue background bar for logos (Brand Color: PMS 295 C)
-    doc.setFillColor(0, 45, 91); // RGB = 0 / 45 / 91 (HEX #002d5b)
-    doc.rect(0, 0, pageWidth, 30, 'F'); // Fill rectangle from top
-
-    // Add both logos side by side on the blue background
-    try {
-      const henryLogo = '/logos/henry-logo.png';
-      const enduraroofLogo = '/logos/enduraroof-logo.png';
-
-      // Henry logo on the left (white logo on blue background)
-      doc.addImage(henryLogo, 'PNG', 15, 7, 40, 16);
-      // Enduraroof logo on the right (white logo on blue background)
-      doc.addImage(enduraroofLogo, 'PNG', pageWidth - 55, 7, 40, 16);
-      yPos = 35;
-    } catch (error) {
-      console.log('Logos not found, continuing without logos');
-      yPos = 35;
-    }
+    let yPos = 20;
 
     // Title
     doc.setFontSize(18);
