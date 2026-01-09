@@ -1029,8 +1029,8 @@ export default function App() {
                   <option value="Capsheet">Capsheet</option>
                   {/* Single-Ply not available for Aluminum */}
                   {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
-                  {/* Sprayfoam for Silicone or Acrylic Standard only */}
-                  {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
+                  {/* Sprayfoam for Silicone or Acrylic Standard only, NOT Aluminum */}
+                  {inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
                   {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
                   {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
                 </select>
