@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Printer, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown } from 'lucide-react';
+import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -644,11 +644,6 @@ export default function App() {
     setEmailText(text);
   }, [inputs, estimates, commonResults, prices]);
 
-  const handlePrint = () => {
-      window.focus();
-      window.print();
-  };
-
   const copyToClipboard = () => {
     const copyText = (text) => {
       if (navigator.clipboard && window.isSecureContext) {
@@ -920,37 +915,6 @@ export default function App() {
             <p className="text-gray-500">Supports Silicone & Acrylic (Reinforced vs Standard) Systems</p>
           </div>
         </div>
-        <button 
-          onClick={handlePrint}
-          className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors shadow-md"
-        >
-          <Printer size={18} />
-          Print / Save PDF
-        </button>
-      </div>
-
-      {/* Print-Only Header */}
-      <div className="hidden print:block mb-8 border-b pb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Material Estimate Options</h1>
-        <div className="text-sm text-gray-500 mt-1">Quote Date: {new Date(quoteDate).toLocaleDateString()}</div>
-        {inputs.projectName && (
-          <div className="text-xl font-semibold text-blue-800 mt-2">Project: {inputs.projectName}</div>
-        )}
-
-        {/* Customer Info (if provided) */}
-        {(customerInfo.name || customerInfo.company || customerInfo.address || customerInfo.phone || customerInfo.email) && (
-          <div className="mt-4 text-sm">
-            <div className="font-semibold text-gray-700 mb-1">Customer Information:</div>
-            {customerInfo.name && <div>{customerInfo.name}</div>}
-            {customerInfo.company && <div>{customerInfo.company}</div>}
-            {customerInfo.address && <div>{customerInfo.address}</div>}
-            {customerInfo.projectAddress && <div className="mt-1"><span className="font-medium">Project Address:</span> {customerInfo.projectAddress}</div>}
-            <div className="mt-1">
-              {customerInfo.phone && <span className="mr-4">📞 {customerInfo.phone}</span>}
-              {customerInfo.email && <span>✉️ {customerInfo.email}</span>}
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 print:block">
