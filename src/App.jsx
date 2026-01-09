@@ -863,7 +863,7 @@ export default function App() {
       }
     });
 
-    yPos = doc.previousAutoTable.finalY + 10;
+    yPos = doc.lastAutoTable.finalY + 10;
 
     // Pricing Summary (if prices are entered)
     if (profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0)) {
