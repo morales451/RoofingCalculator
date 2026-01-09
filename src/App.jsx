@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Printer, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff } from 'lucide-react';
+import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Printer, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 export default function App() {
   // --- STATE ---
@@ -683,6 +685,232 @@ export default function App() {
       document.body.removeChild(textArea);
     };
     copyText(emailText);
+  };
+
+  const generatePDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    let yPos = 20;
+
+    // Add both logos side by side at the top
+    try {
+      const henryLogo = '/logos/henry-logo.png';
+      const enduraroofLogo = '/logos/enduraroof-logo.png';
+
+      // Henry logo on the left
+      doc.addImage(henryLogo, 'PNG', 15, yPos, 40, 15);
+      // Enduraroof logo on the right
+      doc.addImage(enduraroofLogo, 'PNG', pageWidth - 55, yPos, 40, 15);
+      yPos += 25;
+    } catch (error) {
+      console.log('Logos not found, continuing without logos');
+      yPos += 10;
+    }
+
+    // Title
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('ROOFING SYSTEM ESTIMATE', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 10;
+
+    // Project Info
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    if (inputs.projectName) {
+      doc.text(`Project: ${inputs.projectName}`, 15, yPos);
+      yPos += 7;
+    }
+    if (inputs.quoteDate) {
+      doc.text(`Date: ${inputs.quoteDate}`, 15, yPos);
+      yPos += 7;
+    }
+    yPos += 5;
+
+    // Customer Info (if provided)
+    if (inputs.customerName || inputs.customerCompany || inputs.customerEmail || inputs.customerPhone) {
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('CUSTOMER INFORMATION', 15, yPos);
+      yPos += 7;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+
+      if (inputs.customerName) {
+        doc.text(`Name: ${inputs.customerName}`, 15, yPos);
+        yPos += 6;
+      }
+      if (inputs.customerCompany) {
+        doc.text(`Company: ${inputs.customerCompany}`, 15, yPos);
+        yPos += 6;
+      }
+      if (inputs.customerEmail) {
+        doc.text(`Email: ${inputs.customerEmail}`, 15, yPos);
+        yPos += 6;
+      }
+      if (inputs.customerPhone) {
+        doc.text(`Phone: ${inputs.customerPhone}`, 15, yPos);
+        yPos += 6;
+      }
+      yPos += 5;
+    }
+
+    // System Specifications
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SYSTEM SPECIFICATIONS', 15, yPos);
+    yPos += 7;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Coating System: ${inputs.coatingSystem}`, 15, yPos);
+    yPos += 6;
+    doc.text(`Roof Type: ${inputs.roofType}`, 15, yPos);
+    yPos += 6;
+    doc.text(`Roof Size: ${inputs.roofSizeSqFt.toLocaleString()} sq ft (${commonResults.squares} squares)`, 15, yPos);
+    yPos += 6;
+    if (inputs.linearFeet > 0) {
+      doc.text(`Linear Feet: ${inputs.linearFeet}`, 15, yPos);
+      yPos += 6;
+    }
+    yPos += 5;
+
+    // Materials Table - Only show 10-year for Aluminum
+    const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
+    const tableData = [];
+
+    // Build table rows based on what's in the estimates
+    if (inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0) {
+      const row = ['Basecoat', inputs.selectedBasecoat];
+      yearsToShow.forEach(year => {
+        row.push(`${estimates[year]?.baseGal || 0} gal`);
+      });
+      tableData.push(row);
+    }
+
+    if (estimates['10']?.top1Gal > 0) {
+      const row = ['Topcoat 1', inputs.selectedTopcoat];
+      yearsToShow.forEach(year => {
+        row.push(`${estimates[year]?.top1Gal || 0} gal`);
+      });
+      tableData.push(row);
+    }
+
+    if (estimates['10']?.top2Gal > 0) {
+      const row = ['Topcoat 2', inputs.selectedTopcoat];
+      yearsToShow.forEach(year => {
+        row.push(`${estimates[year]?.top2Gal || 0} gal`);
+      });
+      tableData.push(row);
+    }
+
+    if (estimates['10']?.top3Gal > 0) {
+      const row = ['Topcoat 3', inputs.selectedTopcoat];
+      yearsToShow.forEach(year => {
+        row.push(`${estimates[year]?.top3Gal || 0} gal`);
+      });
+      tableData.push(row);
+    }
+
+    if (estimates['10']?.rustPrimerGal > 0) {
+      const row = ['Rust Primer', currentPrimers.rust];
+      yearsToShow.forEach(year => {
+        row.push(`${estimates[year]?.rustPrimerGal || 0} gal`);
+      });
+      tableData.push(row);
+    }
+
+    if (estimates['10']?.adhesionPrimerGal > 0) {
+      const row = ['Adhesion Primer', currentPrimers.adhesion];
+      yearsToShow.forEach(year => {
+        row.push(`${estimates[year]?.adhesionPrimerGal || 0} gal`);
+      });
+      tableData.push(row);
+    }
+
+    // Accessories
+    if (commonResults.accessoryQty > 0) {
+      const row = ['Accessories', commonResults.accessoryName, `${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
+      tableData.push(row);
+    }
+
+    // Membrane (if Reinforced Acrylic)
+    if (commonResults.membraneRolls > 0) {
+      const row = ['Reinforcement Membrane', '40" x 324\' rolls', `${commonResults.membraneRolls} rolls`, '', ''];
+      tableData.push(row);
+    }
+
+    // Goldseal Warranty
+    if (inputs.goldseal) {
+      const row = ['Goldseal Warranty', ''];
+      yearsToShow.forEach(year => {
+        row.push(formatCurrency(estimates[year]?.goldsealCost || 0));
+      });
+      tableData.push(row);
+    }
+
+    // Create table headers dynamically
+    const headers = ['Product', 'Description', ...yearsToShow.map(y => `${y}-Year`)];
+
+    doc.autoTable({
+      startY: yPos,
+      head: [headers],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [66, 139, 202], textColor: 255, fontStyle: 'bold' },
+      styles: { fontSize: 9 },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 35 },
+        1: { cellWidth: 'auto' }
+      }
+    });
+
+    yPos = doc.lastAutoTable.finalY + 10;
+
+    // Pricing Summary (if prices are entered)
+    if (profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0)) {
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PRICING SUMMARY', 15, yPos);
+      yPos += 7;
+
+      yearsToShow.forEach(year => {
+        const costPrice = (estimates[year]?.baseGal || 0) * prices.basecoat +
+                         (estimates[year]?.top1Gal || 0) * prices.topcoat +
+                         (estimates[year]?.top2Gal || 0) * prices.topcoat +
+                         (estimates[year]?.top3Gal || 0) * prices.topcoat +
+                         (estimates[year]?.adhesionPrimerGal || 0) * prices.adhesionPrimer +
+                         (estimates[year]?.rustPrimerGal || 0) * prices.rustPrimer +
+                         (commonResults.accessoryQty || 0) * prices.accessory +
+                         (commonResults.membraneRolls || 0) * prices.membrane +
+                         (estimates[year]?.goldsealCost || 0);
+
+        const sellPrice = costPrice / (1 - profitMargin / 100);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${year}-Year System:`, 15, yPos);
+        doc.setFont('helvetica', 'normal');
+        yPos += 6;
+        doc.text(`  Contractor Price: ${formatCurrency(sellPrice)}`, 15, yPos);
+        yPos += 8;
+      });
+    }
+
+    // Disclaimer
+    yPos += 5;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('IMPORTANT DISCLAIMER:', 15, yPos);
+    yPos += 5;
+    doc.setFont('helvetica', 'normal');
+    const disclaimerText = 'THIS QUOTE IS PROVIDED AS A GUIDELINE AND ESTIMATE ONLY. ACTUAL MATERIAL QUANTITIES MAY VARY DEPENDING ON FACTORS INCLUDING BUT NOT LIMITED TO: APPLICATION RATES, TRUE MEASUREMENTS, AND WASTE FACTORS. THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.';
+    const splitDisclaimer = doc.splitTextToSize(disclaimerText, pageWidth - 30);
+    doc.text(splitDisclaimer, 15, yPos);
+
+    // Save PDF
+    const fileName = inputs.projectName
+      ? `${inputs.projectName.replace(/[^a-z0-9]/gi, '_')}_Estimate.pdf`
+      : 'Roofing_Estimate.pdf';
+    doc.save(fileName);
   };
 
   const formatCurrency = (val) => {
@@ -1754,8 +1982,19 @@ export default function App() {
                 </table>
               </div>
 
+              {/* PDF DOWNLOAD BUTTON */}
+              <div className="mt-8 print:hidden">
+                <button
+                  onClick={generatePDF}
+                  className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-4 px-6 rounded-lg shadow-lg flex items-center justify-center gap-3 transition-all transform hover:scale-105"
+                >
+                  <FileDown size={24} />
+                  <span className="text-lg">Download PDF Quote</span>
+                </button>
+              </div>
+
               {/* COPY TO EMAIL SECTION */}
-              <div className="mt-8 bg-slate-800 rounded-lg p-4 print:hidden">
+              <div className="mt-4 bg-slate-800 rounded-lg p-4 print:hidden">
                 <div className="flex justify-between items-center mb-2">
                     <h3 className="text-white font-semibold flex items-center gap-2"><Mail size={16}/> Copy for Email</h3>
                     <button onClick={copyToClipboard} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded flex items-center gap-1 transition-colors">
