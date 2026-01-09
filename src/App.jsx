@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Printer, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 export default function App() {
   // --- STATE ---
@@ -850,7 +850,7 @@ export default function App() {
     // Create table headers dynamically
     const headers = ['Product', 'Description', ...yearsToShow.map(y => `${y}-Year`)];
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: yPos,
       head: [headers],
       body: tableData,
@@ -863,7 +863,7 @@ export default function App() {
       }
     });
 
-    yPos = doc.lastAutoTable.finalY + 10;
+    yPos = doc.previousAutoTable.finalY + 10;
 
     // Pricing Summary (if prices are entered)
     if (profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0)) {
