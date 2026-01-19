@@ -554,7 +554,7 @@ export default function App() {
 
     if (linearFeet <= 0) {
         text += `\n*** WARNING: INCOMPLETE QUOTE ***\n`;
-        text += `Missing Linear Feet for seams/penetrations.\n`;
+        text += `Missing Linear Feet - required to calculate butter grade (seam sealant) quantity.\n`;
         if (roofType === 'Metal' && commonResults.screwBuckets > 0) {
              text += `(Note: Fastener encapsulation for ~${commonResults.screwCount} screws IS included based on roof area.)\n`;
         }
@@ -752,6 +752,25 @@ export default function App() {
       yPos += 6;
     }
     yPos += 5;
+
+    // Warning for missing linear feet
+    if (inputs.linearFeet <= 0) {
+      doc.setFontSize(10);
+      doc.setFillColor(255, 237, 213); // Orange background
+      doc.rect(10, yPos, pageWidth - 20, 20, 'F');
+      doc.setTextColor(156, 63, 12); // Orange text
+      doc.setFont('helvetica', 'bold');
+      doc.text('⚠ WARNING: INCOMPLETE QUOTE', 15, yPos + 7);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Missing Linear Feet - required to calculate butter grade (seam sealant) quantity.', 15, yPos + 14);
+      if (inputs.roofType === 'Metal' && commonResults.screwBuckets > 0) {
+        doc.setFontSize(8);
+        doc.text(`(Note: Fastener encapsulation for ~${commonResults.screwCount} screws IS included based on roof area.)`, 15, yPos + 19);
+      }
+      doc.setTextColor(0, 0, 0); // Reset to black
+      doc.setFontSize(10); // Reset font size
+      yPos += 25;
+    }
 
     // Materials Table - Only show 10-year for Aluminum
     const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
@@ -1318,7 +1337,7 @@ export default function App() {
                         <div className="flex items-center">
                             <div className="flex-shrink-0"><AlertTriangle className="h-5 w-5 text-orange-500" /></div>
                             <div className="ml-3">
-                                <p className="text-sm text-orange-700"><span className="font-bold">Quote Incomplete:</span> Missing Linear Feet for seams and penetrations.</p>
+                                <p className="text-sm text-orange-700"><span className="font-bold">Quote Incomplete:</span> Missing Linear Feet - required to calculate butter grade (seam sealant) quantity.</p>
                                 {inputs.roofType === 'Metal' && commonResults.screwBuckets > 0 && (
                                    <p className="text-xs text-orange-600 mt-1 font-semibold">
                                      (Note: Fastener encapsulation for ~{commonResults.screwCount} screws IS included based on roof area.)
