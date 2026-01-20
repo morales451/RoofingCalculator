@@ -78,6 +78,8 @@ export default function App() {
 
   // Energy savings estimator
   const [showEnergySavings, setShowEnergySavings] = useState(false);
+  const [energySavingsResults, setEnergySavingsResults] = useState(null);
+  const [energyElectricityRate, setEnergyElectricityRate] = useState(0.12);
 
   // Saved quotes
   const [savedQuotes, setSavedQuotes] = useState([]);
@@ -641,12 +643,36 @@ export default function App() {
         }
     });
 
+    // Add energy savings if toggled on
+    if (showEnergySavings && energySavingsResults) {
+        text += `\n\n=== ENERGY SAVINGS ESTIMATE (OPTIONAL) ===\n`;
+        text += `Converting to reflective white coating can reduce cooling costs:\n\n`;
+        text += `ESTIMATED ANNUAL SAVINGS:\n`;
+        text += `  Conservative Range: $${energySavingsResults.annualSavingsLow.toLocaleString()} - $${energySavingsResults.annualSavingsHigh.toLocaleString()}/year\n`;
+        text += `  Energy Reduction: ${energySavingsResults.annualKwhSavings.toLocaleString()} kWh/year\n`;
+        text += `  Peak Cooling Reduction: ${energySavingsResults.tonsOfCooling} Tons of AC\n\n`;
+        text += `LONG-TERM ROI (Warranty Periods):\n`;
+        text += `  10-Year Savings: $${energySavingsResults.roi10Year.toLocaleString()}\n`;
+        text += `  15-Year Savings: $${energySavingsResults.roi15Year.toLocaleString()}\n`;
+        text += `  20-Year Savings: $${energySavingsResults.roi20Year.toLocaleString()}\n\n`;
+        text += `CALCULATION ASSUMPTIONS (Highly Conservative):\n`;
+        text += `  • Reflectivity Change: ${energySavingsResults.beforeRoof} → ${energySavingsResults.afterRoof} (+${energySavingsResults.deltaReflectance}%)\n`;
+        text += `  • Texas Climate: 2650 Cooling Degree Days, 1450 kWh/m²/year solar radiation\n`;
+        text += `  • HVAC Efficiency: SEER 13 (typical commercial)\n`;
+        text += `  • Electricity Rate: $${energyElectricityRate}/kWh\n`;
+        text += `  • Conservative Factors: Cooling season only (60%), building reality (40%), heat transfer (35%)\n`;
+        text += `  • Targets LOW END of industry range: $0.25-$0.75 per sq ft/year\n`;
+        text += `  • ROI includes 3% annual electricity rate increase\n\n`;
+        text += `* Energy savings are estimates based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards.\n`;
+        text += `  Actual savings vary by building characteristics, HVAC efficiency, occupancy, and weather.\n`;
+    }
+
     text += `\n\n*** IMPORTANT: ESTIMATE DISCLAIMER ***\n`;
     text += `THIS QUOTE IS PROVIDED AS A GUIDELINE AND ESTIMATE ONLY. ACTUAL MATERIAL QUANTITIES MAY VARY DEPENDING ON FACTORS INCLUDING BUT NOT LIMITED TO: APPLICATION RATES, TRUE MEASUREMENTS, AND WASTE FACTORS.\n\n`;
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
     setEmailText(text);
-  }, [inputs, estimates, commonResults, prices]);
+  }, [inputs, estimates, commonResults, prices, showEnergySavings, energySavingsResults, energyElectricityRate]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -896,6 +922,77 @@ export default function App() {
         doc.text(`  Contractor Price: ${formatCurrency(sellPrice)}`, 15, yPos);
         yPos += 8;
       });
+    }
+
+    // Energy Savings Section (if toggled on)
+    if (showEnergySavings && energySavingsResults) {
+      // Check if we need a new page
+      if (yPos > 240) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('ENERGY SAVINGS ESTIMATE (OPTIONAL)', 15, yPos);
+      yPos += 7;
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Converting to reflective white coating can reduce cooling costs:', 15, yPos);
+      yPos += 8;
+
+      // Annual Savings
+      doc.setFont('helvetica', 'bold');
+      doc.text('Estimated Annual Savings:', 15, yPos);
+      yPos += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`  Conservative Range: $${energySavingsResults.annualSavingsLow.toLocaleString()} - $${energySavingsResults.annualSavingsHigh.toLocaleString()}/year`, 15, yPos);
+      yPos += 4;
+      doc.text(`  Energy Reduction: ${energySavingsResults.annualKwhSavings.toLocaleString()} kWh/year`, 15, yPos);
+      yPos += 4;
+      doc.text(`  Peak Cooling Reduction: ${energySavingsResults.tonsOfCooling} Tons of AC`, 15, yPos);
+      yPos += 7;
+
+      // Long-Term ROI
+      doc.setFont('helvetica', 'bold');
+      doc.text('Long-Term ROI (Warranty Periods):', 15, yPos);
+      yPos += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`  10-Year Savings: $${energySavingsResults.roi10Year.toLocaleString()}`, 15, yPos);
+      yPos += 4;
+      doc.text(`  15-Year Savings: $${energySavingsResults.roi15Year.toLocaleString()}`, 15, yPos);
+      yPos += 4;
+      doc.text(`  20-Year Savings: $${energySavingsResults.roi20Year.toLocaleString()}`, 15, yPos);
+      yPos += 7;
+
+      // Assumptions
+      doc.setFont('helvetica', 'bold');
+      doc.text('Calculation Assumptions (Highly Conservative):', 15, yPos);
+      yPos += 5;
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`• Reflectivity Change: ${energySavingsResults.beforeRoof} → ${energySavingsResults.afterRoof} (+${energySavingsResults.deltaReflectance}%)`, 15, yPos);
+      yPos += 4;
+      doc.text(`• Texas Climate: 2650 Cooling Degree Days, 1450 kWh/m²/year solar radiation`, 15, yPos);
+      yPos += 4;
+      doc.text(`• HVAC Efficiency: SEER 13 (typical commercial)`, 15, yPos);
+      yPos += 4;
+      doc.text(`• Electricity Rate: $${energyElectricityRate}/kWh`, 15, yPos);
+      yPos += 4;
+      doc.text(`• Conservative Factors: Cooling season only (60%), building reality (40%), heat transfer (35%)`, 15, yPos);
+      yPos += 4;
+      doc.text(`• Targets LOW END of industry range: $0.25-$0.75 per sq ft/year`, 15, yPos);
+      yPos += 4;
+      doc.text(`• ROI includes 3% annual electricity rate increase`, 15, yPos);
+      yPos += 6;
+
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'italic');
+      const energyDisclaimer = '* Energy savings are estimates based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards. Actual savings vary by building characteristics, HVAC efficiency, occupancy patterns, and weather conditions.';
+      const splitEnergyDisclaimer = doc.splitTextToSize(energyDisclaimer, pageWidth - 30);
+      doc.text(splitEnergyDisclaimer, 15, yPos);
+      yPos += splitEnergyDisclaimer.length * 3 + 10;
     }
 
     // Disclaimer
@@ -1973,6 +2070,10 @@ export default function App() {
                       roofSize={inputs.roofSizeSqFt}
                       roofType={inputs.roofType}
                       coatingSystem={inputs.coatingSystem}
+                      onResultsChange={(results, rate) => {
+                        setEnergySavingsResults(results);
+                        setEnergyElectricityRate(rate);
+                      }}
                     />
                   </div>
                 )}

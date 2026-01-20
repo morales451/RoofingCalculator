@@ -14,7 +14,7 @@ import { Zap, DollarSign, TrendingDown, Thermometer, Info } from 'lucide-react';
  * - Building R-value: R-20 roof assembly (standard commercial)
  */
 
-const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem }) => {
+const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsChange }) => {
   const [electricityRate, setElectricityRate] = useState(0.12);
   const [currentBill, setCurrentBill] = useState('');
   const [showInfo, setShowInfo] = useState(false);
@@ -117,20 +117,22 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem }) => {
     }
 
     /**
-     * CONSERVATIVE ROOF FACTOR CALCULATION
+     * HIGHLY CONSERVATIVE ROOF FACTOR CALCULATION
      * Industry studies show cool roof savings are typically $0.25-$0.75 per sq ft/year
+     * This calculator targets the LOW END of that range for credibility
      *
      * This factor accounts for:
      * - Only cooling season matters (April-Oct in Texas = ~60% of year)
      * - Heat transfer through R-20 roof (~35% efficiency)
-     * - Building characteristics (thermal mass, occupancy patterns)
-     * - Only conditioned space benefits
-     * - Time lag effects
+     * - Building characteristics (thermal mass, occupancy patterns, internal gains)
+     * - Only conditioned space benefits (not warehouses or unconditioned areas)
+     * - Time lag effects and thermal inertia
+     * - Real-world HVAC cycling and inefficiencies
      *
-     * Combined realistic factor: 0.60 (cooling season) × 0.35 (heat transfer) × 0.50 (building factors) = 0.105
-     * Using 0.12 to be slightly less conservative but still realistic
+     * Combined conservative factor: 0.60 (cooling season) × 0.35 (heat transfer) × 0.40 (building reality) = 0.084
+     * Using 0.08 to target ~$0.30/sq ft/year (low end of industry range)
      */
-    const ROOF_FACTOR = 0.12;
+    const ROOF_FACTOR = 0.08;
 
     /**
      * STEP 1: Calculate Annual Solar Heat Gain Reduction (kWh/year)
@@ -196,6 +198,13 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem }) => {
 
   const results = calculateSavings();
 
+  // Send results back to parent component when they change
+  useEffect(() => {
+    if (onResultsChange) {
+      onResultsChange(results, electricityRate);
+    }
+  }, [results, electricityRate, onResultsChange]);
+
   if (!results) {
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mt-6">
@@ -229,15 +238,15 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem }) => {
       {/* Methodology Info Panel */}
       {showInfo && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm">
-          <h4 className="font-bold text-blue-900 mb-2">Calculation Methodology (Conservative)</h4>
+          <h4 className="font-bold text-blue-900 mb-2">Calculation Methodology (Highly Conservative)</h4>
           <ul className="text-blue-800 space-y-1 list-disc list-inside">
             <li>Based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards</li>
             <li>Texas climate: {COOLING_DEGREE_DAYS} Cooling Degree Days, {SOLAR_RADIATION_KWH_M2} kWh/m²/year solar radiation</li>
             <li>Commercial HVAC: SEER {HVAC_SEER} efficiency assumed</li>
             <li>Roof assembly: R-20 insulation (standard commercial construction)</li>
             <li>Reflectance change: {results.beforeRoof} → {results.afterRoof} (+{results.deltaReflectance}% reflectivity)</li>
-            <li><strong>Conservative factors applied:</strong> Cooling season only (60%), building characteristics (50%), realistic heat transfer</li>
-            <li>Typical cool roof savings: $0.25-$0.75 per sq ft/year (industry standard)</li>
+            <li><strong>Highly conservative factors applied:</strong> Cooling season only (60%), building reality (40%), realistic heat transfer (35%)</li>
+            <li><strong>Targets LOW END of industry range:</strong> $0.25-$0.75 per sq ft/year (aiming for ~$0.30/sq ft)</li>
             <li>ROI calculations include 3% annual electricity rate increase</li>
           </ul>
         </div>
