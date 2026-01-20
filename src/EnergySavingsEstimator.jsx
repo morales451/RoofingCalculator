@@ -117,13 +117,20 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem }) => {
     }
 
     /**
-     * ROOF FACTOR CALCULATION
-     * Accounts for actual heat transfer through roof assembly
-     * - Commercial roof R-20 typical: Factor = 0.35
-     * - This means ~35% of prevented solar gain translates to cooling savings
-     * - Remaining 65% is lost to re-radiation, conduction, etc.
+     * CONSERVATIVE ROOF FACTOR CALCULATION
+     * Industry studies show cool roof savings are typically $0.25-$0.75 per sq ft/year
+     *
+     * This factor accounts for:
+     * - Only cooling season matters (April-Oct in Texas = ~60% of year)
+     * - Heat transfer through R-20 roof (~35% efficiency)
+     * - Building characteristics (thermal mass, occupancy patterns)
+     * - Only conditioned space benefits
+     * - Time lag effects
+     *
+     * Combined realistic factor: 0.60 (cooling season) × 0.35 (heat transfer) × 0.50 (building factors) = 0.105
+     * Using 0.12 to be slightly less conservative but still realistic
      */
-    const ROOF_FACTOR = 0.35;
+    const ROOF_FACTOR = 0.12;
 
     /**
      * STEP 1: Calculate Annual Solar Heat Gain Reduction (kWh/year)
@@ -222,13 +229,15 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem }) => {
       {/* Methodology Info Panel */}
       {showInfo && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm">
-          <h4 className="font-bold text-blue-900 mb-2">Calculation Methodology</h4>
+          <h4 className="font-bold text-blue-900 mb-2">Calculation Methodology (Conservative)</h4>
           <ul className="text-blue-800 space-y-1 list-disc list-inside">
             <li>Based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards</li>
             <li>Texas climate: {COOLING_DEGREE_DAYS} Cooling Degree Days, {SOLAR_RADIATION_KWH_M2} kWh/m²/year solar radiation</li>
             <li>Commercial HVAC: SEER {HVAC_SEER} efficiency assumed</li>
             <li>Roof assembly: R-20 insulation (standard commercial construction)</li>
             <li>Reflectance change: {results.beforeRoof} → {results.afterRoof} (+{results.deltaReflectance}% reflectivity)</li>
+            <li><strong>Conservative factors applied:</strong> Cooling season only (60%), building characteristics (50%), realistic heat transfer</li>
+            <li>Typical cool roof savings: $0.25-$0.75 per sq ft/year (industry standard)</li>
             <li>ROI calculations include 3% annual electricity rate increase</li>
           </ul>
         </div>
