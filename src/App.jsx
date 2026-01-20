@@ -76,6 +76,9 @@ export default function App() {
   const [profitMargin, setProfitMargin] = useState(0);
   const [showProfitMargin, setShowProfitMargin] = useState(false);
 
+  // Energy savings estimator
+  const [showEnergySavings, setShowEnergySavings] = useState(false);
+
   // Saved quotes
   const [savedQuotes, setSavedQuotes] = useState([]);
 
@@ -1951,12 +1954,29 @@ export default function App() {
                 </table>
               </div>
 
-              {/* ENERGY SAVINGS ESTIMATOR */}
-              <EnergySavingsEstimator
-                roofSize={inputs.roofSizeSqFt}
-                roofType={inputs.roofType}
-                coatingSystem={inputs.coatingSystem}
-              />
+              {/* ENERGY SAVINGS ESTIMATOR (TOGGLEABLE) */}
+              <div className="mt-6 print:hidden">
+                <button
+                  onClick={() => setShowEnergySavings(!showEnergySavings)}
+                  className="w-full bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-300 rounded-lg p-4 flex items-center justify-between text-left hover:from-green-100 hover:to-blue-100 transition-all shadow-sm"
+                >
+                  <span className="flex items-center gap-2 font-semibold text-gray-700">
+                    <Zap className="text-green-600" size={20} />
+                    Energy Savings Estimator (Optional)
+                  </span>
+                  {showEnergySavings ? <ChevronUp size={20} className="text-gray-600" /> : <ChevronDown size={20} className="text-gray-600" />}
+                </button>
+
+                {showEnergySavings && (
+                  <div className="mt-2">
+                    <EnergySavingsEstimator
+                      roofSize={inputs.roofSizeSqFt}
+                      roofType={inputs.roofType}
+                      coatingSystem={inputs.coatingSystem}
+                    />
+                  </div>
+                )}
+              </div>
 
               {/* PDF DOWNLOAD BUTTON */}
               <div className="mt-8 print:hidden">
