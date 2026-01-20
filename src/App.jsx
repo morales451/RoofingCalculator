@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import EnergySavingsEstimator from './EnergySavingsEstimator';
 
 export default function App() {
   // --- STATE ---
@@ -1949,6 +1950,13 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+
+              {/* ENERGY SAVINGS ESTIMATOR */}
+              <EnergySavingsEstimator
+                roofSize={inputs.roofSizeSqFt}
+                roofType={inputs.roofType}
+                coatingSystem={inputs.coatingSystem}
+              />
 
               {/* PDF DOWNLOAD BUTTON */}
               <div className="mt-8 print:hidden">
