@@ -107,46 +107,46 @@ export default function App() {
     },
     Acrylic: {
         topcoats: [
+            'Enduraroof Elastomeric',
+            'Enduraroof Premium Acrylic',
             'Acryshield 400',
             'Acryshield 510',
             'Acryshield 550HT',
-            'Acryshield 610',
-            'Enduraroof Elastomeric',
-            'Enduraroof Premium Acrylic'
+            'Acryshield 610'
         ],
         basecoats: [
-            'Acryshield Basecoat',
-            'Acryshield 400',
-            'Acryshield 505',
             'Enduraroof Basecoat',
             'Enduraroof Elastomeric',
-            'Enduraroof Premium Acrylic'
+            'Enduraroof Premium Acrylic',
+            'Acryshield Basecoat',
+            'Acryshield 400',
+            'Acryshield 505'
         ],
         butterGrades: [
+            'Enduraroof Acrylic Roof Patch',
             'Prograde 289 White Roofing Sealant',
-            'Prograde 295 Metal Seam Sealer',
-            'Enduraroof Acrylic Roof Patch'
+            'Prograde 295 Metal Seam Sealer'
         ],
         fabrics: [
+            'Enduraroof Polyester Fabric',
             'Prograde 195 (SOFT)',
-            'Prograde 196 (FIRM)',
-            'Enduraroof Polyester Fabric'
+            'Prograde 196 (FIRM)'
         ]
     },
     Aluminum: {
         topcoats: [
-            'Pro-Grade 586',
-            'Enduraroof Fibered Aluminum'
+            'Enduraroof Fibered Aluminum',
+            'Pro-Grade 586'
         ],
         basecoats: [], // No basecoats for Aluminum
         butterGrades: [
-            'Prograde 289 White Roofing Sealant',
-            'Enduraroof Acrylic Roof Patch'
+            'Enduraroof Acrylic Roof Patch',
+            'Prograde 289 White Roofing Sealant'
         ],
         fabrics: [
+            'Enduraroof Polyester Fabric',
             'Prograde 195 (SOFT)',
-            'Prograde 196 (FIRM)',
-            'Enduraroof Polyester Fabric'
+            'Prograde 196 (FIRM)'
         ]
     }
   };
