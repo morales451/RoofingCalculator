@@ -88,21 +88,21 @@ export default function App() {
   const PRODUCT_OPTIONS = {
     Silicone: {
         topcoats: [
-            'Prograde 988 Silicone',
-            'Enduraroof Premium Silicone'
+            'Enduraroof Premium Silicone',
+            'Prograde 988 Silicone'
         ],
         basecoats: [
-            'Prograde 294 BaseCoat',
-            'Enduraroof BaseCoat & Sealer'
+            'Enduraroof BaseCoat & Sealer',
+            'Prograde 294 BaseCoat'
         ],
         butterGrades: [
-            'Prograde 923 Butter Grade',
-            'EnduraRoof Butter Grade'
+            'EnduraRoof Butter Grade',
+            'Prograde 923 Butter Grade'
         ],
         fabrics: [
+            'Enduraroof Polyester Fabric',
             'Prograde 195 (SOFT)',
-            'Prograde 196 (FIRM)',
-            'Enduraroof Polyester Fabric'
+            'Prograde 196 (FIRM)'
         ]
     },
     Acrylic: {
