@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Zap, DollarSign, TrendingDown, Thermometer, Info } from 'lucide-react';
 
 /**
@@ -196,7 +196,8 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
     };
   };
 
-  const results = calculateSavings();
+  // Memoize results to prevent infinite loop - only recalculate when inputs actually change
+  const results = useMemo(() => calculateSavings(), [roofSize, roofType, coatingSystem, electricityRate]);
 
   // Send results back to parent component when they change
   useEffect(() => {
