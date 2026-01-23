@@ -644,27 +644,30 @@ export default function App() {
     });
 
     // Add energy savings if toggled on
-    if (showEnergySavings && energySavingsResults) {
-        text += `\n\n=== ENERGY SAVINGS ESTIMATE (OPTIONAL) ===\n`;
-        text += `Converting to reflective white coating can reduce cooling costs:\n\n`;
-        text += `ESTIMATED ANNUAL SAVINGS:\n`;
-        text += `  Conservative Range: $${energySavingsResults.annualSavingsLow.toLocaleString()} - $${energySavingsResults.annualSavingsHigh.toLocaleString()}/year\n`;
-        text += `  Energy Reduction: ${energySavingsResults.annualKwhSavings.toLocaleString()} kWh/year\n`;
-        text += `  Peak Cooling Reduction: ${energySavingsResults.tonsOfCooling} Tons of AC\n\n`;
-        text += `LONG-TERM ROI (Warranty Periods):\n`;
-        text += `  10-Year Savings: $${energySavingsResults.roi10Year.toLocaleString()}\n`;
-        text += `  15-Year Savings: $${energySavingsResults.roi15Year.toLocaleString()}\n`;
-        text += `  20-Year Savings: $${energySavingsResults.roi20Year.toLocaleString()}\n\n`;
-        text += `CALCULATION ASSUMPTIONS (Highly Conservative):\n`;
-        text += `  • Reflectivity Change: ${energySavingsResults.beforeRoof} → ${energySavingsResults.afterRoof} (+${energySavingsResults.deltaReflectance}%)\n`;
-        text += `  • Texas Climate: 2650 Cooling Degree Days, 1450 kWh/m²/year solar radiation\n`;
-        text += `  • HVAC Efficiency: SEER 13 (typical commercial)\n`;
-        text += `  • Electricity Rate: $${energyElectricityRate}/kWh\n`;
-        text += `  • Conservative Factors: Cooling season only (60%), building reality (40%), heat transfer (35%)\n`;
-        text += `  • Targets LOW END of industry range: $0.25-$0.75 per sq ft/year\n`;
-        text += `  • ROI includes 3% annual electricity rate increase\n\n`;
-        text += `* Energy savings are estimates based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards.\n`;
-        text += `  Actual savings vary by building characteristics, HVAC efficiency, occupancy, and weather.\n`;
+    if (showEnergySavings) {
+        const energySavingsForEmail = calculateEnergySavingsForExport(energyElectricityRate);
+        if (energySavingsForEmail) {
+            text += `\n\n=== ENERGY SAVINGS ESTIMATE (OPTIONAL) ===\n`;
+            text += `Converting to reflective white coating can reduce cooling costs:\n\n`;
+            text += `ESTIMATED ANNUAL SAVINGS:\n`;
+            text += `  Conservative Range: $${energySavingsForEmail.annualSavingsLow.toLocaleString()} - $${energySavingsForEmail.annualSavingsHigh.toLocaleString()}/year\n`;
+            text += `  Energy Reduction: ${energySavingsForEmail.annualKwhSavings.toLocaleString()} kWh/year\n`;
+            text += `  Peak Cooling Reduction: ${energySavingsForEmail.tonsOfCooling} Tons of AC\n\n`;
+            text += `LONG-TERM ROI (Warranty Periods):\n`;
+            text += `  10-Year Savings: $${energySavingsForEmail.roi10Year.toLocaleString()}\n`;
+            text += `  15-Year Savings: $${energySavingsForEmail.roi15Year.toLocaleString()}\n`;
+            text += `  20-Year Savings: $${energySavingsForEmail.roi20Year.toLocaleString()}\n\n`;
+            text += `CALCULATION ASSUMPTIONS (Highly Conservative):\n`;
+            text += `  • Reflectivity Change: ${energySavingsForEmail.beforeRoof} → ${energySavingsForEmail.afterRoof} (+${energySavingsForEmail.deltaReflectance}%)\n`;
+            text += `  • Texas Climate: 2650 Cooling Degree Days, 1450 kWh/m²/year solar radiation\n`;
+            text += `  • HVAC Efficiency: SEER 13 (typical commercial)\n`;
+            text += `  • Electricity Rate: $${energyElectricityRate}/kWh\n`;
+            text += `  • Conservative Factors: Cooling season only (60%), building reality (40%), heat transfer (35%)\n`;
+            text += `  • Targets LOW END of industry range: $0.25-$0.75 per sq ft/year\n`;
+            text += `  • ROI includes 3% annual electricity rate increase\n\n`;
+            text += `* Energy savings are estimates based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards.\n`;
+            text += `  Actual savings vary by building characteristics, HVAC efficiency, occupancy, and weather.\n`;
+        }
     }
 
     text += `\n\n*** IMPORTANT: ESTIMATE DISCLAIMER ***\n`;
@@ -672,7 +675,7 @@ export default function App() {
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
     setEmailText(text);
-  }, [inputs, estimates, commonResults, prices, showEnergySavings, energySavingsResults, energyElectricityRate]);
+  }, [inputs, estimates, commonResults, prices, showEnergySavings, energyElectricityRate]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -710,6 +713,76 @@ export default function App() {
       document.body.removeChild(textArea);
     };
     copyText(emailText);
+  };
+
+  // Calculate energy savings for PDF/Email (same logic as EnergySavingsEstimator component)
+  const calculateEnergySavingsForExport = (electricityRateOverride) => {
+    const roofSize = inputs.roofSizeSqFt;
+    const roofType = inputs.roofType;
+    const coatingSystem = inputs.coatingSystem;
+    const electricityRate = electricityRateOverride || energyElectricityRate;
+
+    if (!roofSize || roofSize <= 0) return null;
+
+    // Roof properties
+    const ROOF_PROPERTIES = {
+      blackCapsheet: { solarReflectance: 0.06, name: 'Black Capsheet' },
+      darkMetal: { solarReflectance: 0.25, name: 'Dark/Weathered Metal' },
+      whiteSilicone: { solarReflectance: 0.88, name: 'White Silicone Coating' },
+      whiteAcrylic: { solarReflectance: 0.85, name: 'White Acrylic Coating' },
+      whiteAluminum: { solarReflectance: 0.70, name: 'Aluminum Coating' }
+    };
+
+    let beforeRoof, afterRoof;
+    if (roofType === 'Capsheet') beforeRoof = ROOF_PROPERTIES.blackCapsheet;
+    else if (roofType === 'Metal') beforeRoof = ROOF_PROPERTIES.darkMetal;
+    else beforeRoof = { solarReflectance: 0.15, name: 'Existing Roof' };
+
+    if (coatingSystem === 'Silicone') afterRoof = ROOF_PROPERTIES.whiteSilicone;
+    else if (coatingSystem === 'Acrylic') afterRoof = ROOF_PROPERTIES.whiteAcrylic;
+    else if (coatingSystem === 'Aluminum') afterRoof = ROOF_PROPERTIES.whiteAluminum;
+    else afterRoof = ROOF_PROPERTIES.whiteSilicone;
+
+    const deltaReflectance = afterRoof.solarReflectance - beforeRoof.solarReflectance;
+    if (deltaReflectance <= 0) return null;
+
+    const ROOF_FACTOR = 0.08;
+    const SOLAR_RADIATION_KWH_M2 = 1450;
+    const HVAC_EER = 13 * 0.875;
+
+    const roofAreaM2 = roofSize * 0.092903;
+    const solarHeatGainReduction = roofAreaM2 * SOLAR_RADIATION_KWH_M2 * deltaReflectance * ROOF_FACTOR;
+    const annualCoolingSavingsKWh = solarHeatGainReduction / (HVAC_EER / 3.412);
+
+    const peakHeatReductionWatts = roofAreaM2 * 250 * deltaReflectance;
+    const peakHeatReductionBTU = peakHeatReductionWatts * 3.412;
+    const tonsOfCoolingReduction = peakHeatReductionBTU / 12000;
+
+    const annualSavingsBase = annualCoolingSavingsKWh * electricityRate;
+    const annualSavingsLow = annualSavingsBase * 0.85;
+    const annualSavingsHigh = annualSavingsBase * 1.15;
+
+    const calculateCompoundSavings = (years) => {
+      let total = 0;
+      for (let year = 1; year <= years; year++) {
+        total += annualSavingsBase * Math.pow(1.03, year - 1);
+      }
+      return total;
+    };
+
+    return {
+      beforeRoof: beforeRoof.name,
+      afterRoof: afterRoof.name,
+      deltaReflectance: (deltaReflectance * 100).toFixed(0),
+      annualKwhSavings: Math.round(annualCoolingSavingsKWh),
+      annualSavingsLow: Math.round(annualSavingsLow),
+      annualSavingsHigh: Math.round(annualSavingsHigh),
+      annualSavingsBase: Math.round(annualSavingsBase),
+      tonsOfCooling: tonsOfCoolingReduction.toFixed(1),
+      roi10Year: Math.round(calculateCompoundSavings(10)),
+      roi15Year: Math.round(calculateCompoundSavings(15)),
+      roi20Year: Math.round(calculateCompoundSavings(20)),
+    };
   };
 
   const generatePDF = () => {
@@ -925,7 +998,8 @@ export default function App() {
     }
 
     // Energy Savings Section (if toggled on)
-    if (showEnergySavings && energySavingsResults) {
+    const energySavingsForPDF = showEnergySavings ? calculateEnergySavingsForExport(energyElectricityRate) : null;
+    if (energySavingsForPDF) {
       // Check if we need a new page
       if (yPos > 240) {
         doc.addPage();
@@ -947,11 +1021,11 @@ export default function App() {
       doc.text('Estimated Annual Savings:', 15, yPos);
       yPos += 5;
       doc.setFont('helvetica', 'normal');
-      doc.text(`  Conservative Range: $${energySavingsResults.annualSavingsLow.toLocaleString()} - $${energySavingsResults.annualSavingsHigh.toLocaleString()}/year`, 15, yPos);
+      doc.text(`  Conservative Range: $${energySavingsForPDF.annualSavingsLow.toLocaleString()} - $${energySavingsForPDF.annualSavingsHigh.toLocaleString()}/year`, 15, yPos);
       yPos += 4;
-      doc.text(`  Energy Reduction: ${energySavingsResults.annualKwhSavings.toLocaleString()} kWh/year`, 15, yPos);
+      doc.text(`  Energy Reduction: ${energySavingsForPDF.annualKwhSavings.toLocaleString()} kWh/year`, 15, yPos);
       yPos += 4;
-      doc.text(`  Peak Cooling Reduction: ${energySavingsResults.tonsOfCooling} Tons of AC`, 15, yPos);
+      doc.text(`  Peak Cooling Reduction: ${energySavingsForPDF.tonsOfCooling} Tons of AC`, 15, yPos);
       yPos += 7;
 
       // Long-Term ROI
@@ -959,11 +1033,11 @@ export default function App() {
       doc.text('Long-Term ROI (Warranty Periods):', 15, yPos);
       yPos += 5;
       doc.setFont('helvetica', 'normal');
-      doc.text(`  10-Year Savings: $${energySavingsResults.roi10Year.toLocaleString()}`, 15, yPos);
+      doc.text(`  10-Year Savings: $${energySavingsForPDF.roi10Year.toLocaleString()}`, 15, yPos);
       yPos += 4;
-      doc.text(`  15-Year Savings: $${energySavingsResults.roi15Year.toLocaleString()}`, 15, yPos);
+      doc.text(`  15-Year Savings: $${energySavingsForPDF.roi15Year.toLocaleString()}`, 15, yPos);
       yPos += 4;
-      doc.text(`  20-Year Savings: $${energySavingsResults.roi20Year.toLocaleString()}`, 15, yPos);
+      doc.text(`  20-Year Savings: $${energySavingsForPDF.roi20Year.toLocaleString()}`, 15, yPos);
       yPos += 7;
 
       // Assumptions
@@ -972,7 +1046,7 @@ export default function App() {
       yPos += 5;
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      doc.text(`• Reflectivity Change: ${energySavingsResults.beforeRoof} → ${energySavingsResults.afterRoof} (+${energySavingsResults.deltaReflectance}%)`, 15, yPos);
+      doc.text(`• Reflectivity Change: ${energySavingsForPDF.beforeRoof} → ${energySavingsForPDF.afterRoof} (+${energySavingsForPDF.deltaReflectance}%)`, 15, yPos);
       yPos += 4;
       doc.text(`• Texas Climate: 2650 Cooling Degree Days, 1450 kWh/m²/year solar radiation`, 15, yPos);
       yPos += 4;
