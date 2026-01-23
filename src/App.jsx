@@ -527,6 +527,77 @@ export default function App() {
 
   }, [inputs]);
 
+  // Calculate energy savings for PDF/Email (same logic as EnergySavingsEstimator component)
+  // MUST be defined BEFORE the TEXT GENERATION EFFECT useEffect below
+  const calculateEnergySavingsForExport = (electricityRateOverride) => {
+    const roofSize = inputs.roofSizeSqFt;
+    const roofType = inputs.roofType;
+    const coatingSystem = inputs.coatingSystem;
+    const electricityRate = electricityRateOverride || energyElectricityRate;
+
+    if (!roofSize || roofSize <= 0) return null;
+
+    // Roof properties
+    const ROOF_PROPERTIES = {
+      blackCapsheet: { solarReflectance: 0.06, name: 'Black Capsheet' },
+      darkMetal: { solarReflectance: 0.25, name: 'Dark/Weathered Metal' },
+      whiteSilicone: { solarReflectance: 0.88, name: 'White Silicone Coating' },
+      whiteAcrylic: { solarReflectance: 0.85, name: 'White Acrylic Coating' },
+      whiteAluminum: { solarReflectance: 0.70, name: 'Aluminum Coating' }
+    };
+
+    let beforeRoof, afterRoof;
+    if (roofType === 'Capsheet') beforeRoof = ROOF_PROPERTIES.blackCapsheet;
+    else if (roofType === 'Metal') beforeRoof = ROOF_PROPERTIES.darkMetal;
+    else beforeRoof = { solarReflectance: 0.15, name: 'Existing Roof' };
+
+    if (coatingSystem === 'Silicone') afterRoof = ROOF_PROPERTIES.whiteSilicone;
+    else if (coatingSystem === 'Acrylic') afterRoof = ROOF_PROPERTIES.whiteAcrylic;
+    else if (coatingSystem === 'Aluminum') afterRoof = ROOF_PROPERTIES.whiteAluminum;
+    else afterRoof = ROOF_PROPERTIES.whiteSilicone;
+
+    const deltaReflectance = afterRoof.solarReflectance - beforeRoof.solarReflectance;
+    if (deltaReflectance <= 0) return null;
+
+    const ROOF_FACTOR = 0.08;
+    const SOLAR_RADIATION_KWH_M2 = 1450;
+    const HVAC_EER = 13 * 0.875;
+
+    const roofAreaM2 = roofSize * 0.092903;
+    const solarHeatGainReduction = roofAreaM2 * SOLAR_RADIATION_KWH_M2 * deltaReflectance * ROOF_FACTOR;
+    const annualCoolingSavingsKWh = solarHeatGainReduction / (HVAC_EER / 3.412);
+
+    const peakHeatReductionWatts = roofAreaM2 * 250 * deltaReflectance;
+    const peakHeatReductionBTU = peakHeatReductionWatts * 3.412;
+    const tonsOfCoolingReduction = peakHeatReductionBTU / 12000;
+
+    const annualSavingsBase = annualCoolingSavingsKWh * electricityRate;
+    const annualSavingsLow = annualSavingsBase * 0.85;
+    const annualSavingsHigh = annualSavingsBase * 1.15;
+
+    const calculateCompoundSavings = (years) => {
+      let total = 0;
+      for (let year = 1; year <= years; year++) {
+        total += annualSavingsBase * Math.pow(1.03, year - 1);
+      }
+      return total;
+    };
+
+    return {
+      beforeRoof: beforeRoof.name,
+      afterRoof: afterRoof.name,
+      deltaReflectance: (deltaReflectance * 100).toFixed(0),
+      annualKwhSavings: Math.round(annualCoolingSavingsKWh),
+      annualSavingsLow: Math.round(annualSavingsLow),
+      annualSavingsHigh: Math.round(annualSavingsHigh),
+      annualSavingsBase: Math.round(annualSavingsBase),
+      tonsOfCooling: tonsOfCoolingReduction.toFixed(1),
+      roi10Year: Math.round(calculateCompoundSavings(10)),
+      roi15Year: Math.round(calculateCompoundSavings(15)),
+      roi20Year: Math.round(calculateCompoundSavings(20)),
+    };
+  };
+
   // --- TEXT GENERATION EFFECT ---
   useEffect(() => {
     const { 
@@ -713,76 +784,6 @@ export default function App() {
       document.body.removeChild(textArea);
     };
     copyText(emailText);
-  };
-
-  // Calculate energy savings for PDF/Email (same logic as EnergySavingsEstimator component)
-  const calculateEnergySavingsForExport = (electricityRateOverride) => {
-    const roofSize = inputs.roofSizeSqFt;
-    const roofType = inputs.roofType;
-    const coatingSystem = inputs.coatingSystem;
-    const electricityRate = electricityRateOverride || energyElectricityRate;
-
-    if (!roofSize || roofSize <= 0) return null;
-
-    // Roof properties
-    const ROOF_PROPERTIES = {
-      blackCapsheet: { solarReflectance: 0.06, name: 'Black Capsheet' },
-      darkMetal: { solarReflectance: 0.25, name: 'Dark/Weathered Metal' },
-      whiteSilicone: { solarReflectance: 0.88, name: 'White Silicone Coating' },
-      whiteAcrylic: { solarReflectance: 0.85, name: 'White Acrylic Coating' },
-      whiteAluminum: { solarReflectance: 0.70, name: 'Aluminum Coating' }
-    };
-
-    let beforeRoof, afterRoof;
-    if (roofType === 'Capsheet') beforeRoof = ROOF_PROPERTIES.blackCapsheet;
-    else if (roofType === 'Metal') beforeRoof = ROOF_PROPERTIES.darkMetal;
-    else beforeRoof = { solarReflectance: 0.15, name: 'Existing Roof' };
-
-    if (coatingSystem === 'Silicone') afterRoof = ROOF_PROPERTIES.whiteSilicone;
-    else if (coatingSystem === 'Acrylic') afterRoof = ROOF_PROPERTIES.whiteAcrylic;
-    else if (coatingSystem === 'Aluminum') afterRoof = ROOF_PROPERTIES.whiteAluminum;
-    else afterRoof = ROOF_PROPERTIES.whiteSilicone;
-
-    const deltaReflectance = afterRoof.solarReflectance - beforeRoof.solarReflectance;
-    if (deltaReflectance <= 0) return null;
-
-    const ROOF_FACTOR = 0.08;
-    const SOLAR_RADIATION_KWH_M2 = 1450;
-    const HVAC_EER = 13 * 0.875;
-
-    const roofAreaM2 = roofSize * 0.092903;
-    const solarHeatGainReduction = roofAreaM2 * SOLAR_RADIATION_KWH_M2 * deltaReflectance * ROOF_FACTOR;
-    const annualCoolingSavingsKWh = solarHeatGainReduction / (HVAC_EER / 3.412);
-
-    const peakHeatReductionWatts = roofAreaM2 * 250 * deltaReflectance;
-    const peakHeatReductionBTU = peakHeatReductionWatts * 3.412;
-    const tonsOfCoolingReduction = peakHeatReductionBTU / 12000;
-
-    const annualSavingsBase = annualCoolingSavingsKWh * electricityRate;
-    const annualSavingsLow = annualSavingsBase * 0.85;
-    const annualSavingsHigh = annualSavingsBase * 1.15;
-
-    const calculateCompoundSavings = (years) => {
-      let total = 0;
-      for (let year = 1; year <= years; year++) {
-        total += annualSavingsBase * Math.pow(1.03, year - 1);
-      }
-      return total;
-    };
-
-    return {
-      beforeRoof: beforeRoof.name,
-      afterRoof: afterRoof.name,
-      deltaReflectance: (deltaReflectance * 100).toFixed(0),
-      annualKwhSavings: Math.round(annualCoolingSavingsKWh),
-      annualSavingsLow: Math.round(annualSavingsLow),
-      annualSavingsHigh: Math.round(annualSavingsHigh),
-      annualSavingsBase: Math.round(annualSavingsBase),
-      tonsOfCooling: tonsOfCoolingReduction.toFixed(1),
-      roi10Year: Math.round(calculateCompoundSavings(10)),
-      roi15Year: Math.round(calculateCompoundSavings(15)),
-      roi20Year: Math.round(calculateCompoundSavings(20)),
-    };
   };
 
   const generatePDF = () => {
