@@ -176,7 +176,9 @@ export default function App() {
           selectedTopcoat: defaults.topcoats[0],
           selectedBasecoat: defaults.basecoats[0] || '', // Empty string if no basecoats (Aluminum)
           selectedButterGrade: defaults.butterGrades[0],
-          selectedFabric: defaults.fabrics[0]
+          selectedFabric: defaults.fabrics[0],
+          // Ensure acrylicSystemType is set to Standard when switching to Acrylic
+          acrylicSystemType: inputs.coatingSystem === 'Acrylic' ? (prev.acrylicSystemType || 'Standard') : prev.acrylicSystemType
       }));
   }, [inputs.coatingSystem]);
 
