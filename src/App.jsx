@@ -177,8 +177,8 @@ export default function App() {
           selectedBasecoat: defaults.basecoats[0] || '', // Empty string if no basecoats (Aluminum)
           selectedButterGrade: defaults.butterGrades[0],
           selectedFabric: defaults.fabrics[0],
-          // Ensure acrylicSystemType is set to Standard when switching to Acrylic
-          acrylicSystemType: inputs.coatingSystem === 'Acrylic' ? (prev.acrylicSystemType || 'Standard') : prev.acrylicSystemType
+          // Always ensure acrylicSystemType has a valid value to prevent undefined access
+          acrylicSystemType: prev.acrylicSystemType || 'Standard'
       }));
   }, [inputs.coatingSystem]);
 
@@ -463,7 +463,9 @@ export default function App() {
     } else if (coatingSystem === 'Aluminum') {
         systemSpec = SYSTEM_DATA['Aluminum'][roofType];
     } else {
-        systemSpec = SYSTEM_DATA['Acrylic'][acrylicSystemType]?.[roofType];
+        // Defensive fallback: ensure acrylicSystemType is never undefined
+        const safeAcrylicSystemType = acrylicSystemType || 'Standard';
+        systemSpec = SYSTEM_DATA['Acrylic'][safeAcrylicSystemType]?.[roofType];
     }
 
     ['10', '15', '20'].forEach(year => {
