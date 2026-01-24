@@ -790,10 +790,19 @@ export default function App() {
     copyText(emailText);
   };
 
+  // Helper function for formatting currency - must be defined before generatePDF
+  const formatCurrency = (val) => {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+  };
+
   const generatePDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     let yPos = 20;
+
+    // Calculate primers locally to avoid hoisting issues
+    const pdfBrand = getBrandFromTopcoat(inputs.selectedTopcoat);
+    const pdfPrimers = PRIMER_LOOKUP[pdfBrand];
 
     // Title
     doc.setFontSize(18);
@@ -918,7 +927,7 @@ export default function App() {
     }
 
     if (estimates['10']?.rustPrimerGal > 0) {
-      const row = ['Rust Primer', currentPrimers.rust];
+      const row = ['Rust Primer', pdfPrimers.rust];
       yearsToShow.forEach(year => {
         row.push(`${estimates[year]?.rustPrimerGal || 0} gal`);
       });
@@ -926,7 +935,7 @@ export default function App() {
     }
 
     if (estimates['10']?.adhesionPrimerGal > 0) {
-      const row = ['Adhesion Primer', currentPrimers.adhesion];
+      const row = ['Adhesion Primer', pdfPrimers.adhesion];
       yearsToShow.forEach(year => {
         row.push(`${estimates[year]?.adhesionPrimerGal || 0} gal`);
       });
@@ -1090,10 +1099,6 @@ export default function App() {
       ? `${inputs.projectName.replace(/[^a-z0-9]/gi, '_')}_Estimate.pdf`
       : 'Roofing_Estimate.pdf';
     doc.save(fileName);
-  };
-
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
 
   const currentOptions = PRODUCT_OPTIONS[inputs.coatingSystem];
