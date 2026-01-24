@@ -204,7 +204,11 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
     if (onResultsChange) {
       onResultsChange(results, electricityRate);
     }
-  }, [results, electricityRate, onResultsChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally excluding onResultsChange from dependencies to prevent infinite loop
+    // The callback is created inline in parent, so it changes every render
+    // We only want to run this effect when the actual data (results/electricityRate) changes
+  }, [results, electricityRate]);
 
   if (!results) {
     return (
