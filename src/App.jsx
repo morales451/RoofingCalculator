@@ -381,8 +381,12 @@ export default function App() {
 
   // Load saved quotes on mount
   useEffect(() => {
-    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
-    setSavedQuotes(existingQuotes);
+    try {
+      const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+      setSavedQuotes(existingQuotes);
+    } catch {
+      setSavedQuotes([]);
+    }
   }, []);
 
   // Helper for rounding to nearest 5-gal pail
@@ -1219,7 +1223,7 @@ export default function App() {
                 <input type="file" accept=".json" onChange={importQuote} className="hidden" />
               </label>
               <button
-                onClick={() => document.getElementById('savedQuotesPanel').classList.toggle('hidden')}
+                onClick={() => document.getElementById('savedQuotesPanel')?.classList.toggle('hidden')}
                 className="flex items-center justify-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium"
               >
                 <FileText size={16} /> Saved ({savedQuotes.length})
