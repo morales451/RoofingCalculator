@@ -632,7 +632,7 @@ export default function App() {
 
     text += `Roof Size: ${roofSizeSqFt} sqft (${commonResults.squares} Squares)\n`;
     text += `Calculation Factors: ${Math.round(wasteFactor * 100)}% Waste, ${Math.round(stretchFactor * 100)}% Stretch\n`;
-    text += `Note: Base, Topcoat, and Rust Primer round to 5-gal. Adhesion Primer rounds to 1-gal.\n`;
+    text += `Note: All quantities are rounded up to the nearest full pail where applicable.\n`;
 
     if (linearFeet > 0 || commonResults.screwBuckets > 0) {
         text += `\nAccessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}`;
