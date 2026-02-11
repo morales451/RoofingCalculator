@@ -381,8 +381,12 @@ export default function App() {
 
   // Load saved quotes on mount
   useEffect(() => {
-    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
-    setSavedQuotes(existingQuotes);
+    try {
+      const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+      setSavedQuotes(existingQuotes);
+    } catch {
+      setSavedQuotes([]);
+    }
   }, []);
 
   // Helper for rounding to nearest 5-gal pail
@@ -909,7 +913,7 @@ export default function App() {
 
     // Build table rows based on what's in the estimates
     if (inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0) {
-      const row = ['Basecoat', inputs.selectedBasecoat];
+      const row = ['Basecoat', inputs.selectedBasecoat, prices.basecoat > 0 ? `${formatCurrency(prices.basecoat)}/gal` : ''];
       yearsToShow.forEach(year => {
         row.push(`${estimates[year]?.baseGal || 0} gal`);
       });
@@ -917,7 +921,7 @@ export default function App() {
     }
 
     if (estimates['10']?.top1Gal > 0) {
-      const row = ['Topcoat 1', inputs.selectedTopcoat];
+      const row = ['Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : ''];
       yearsToShow.forEach(year => {
         row.push(`${estimates[year]?.top1Gal || 0} gal`);
       });
@@ -925,7 +929,7 @@ export default function App() {
     }
 
     if (estimates['10']?.top2Gal > 0) {
-      const row = ['Topcoat 2', inputs.selectedTopcoat];
+      const row = ['Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : ''];
       yearsToShow.forEach(year => {
         row.push(`${estimates[year]?.top2Gal || 0} gal`);
       });
@@ -933,7 +937,7 @@ export default function App() {
     }
 
     if (estimates['10']?.top3Gal > 0) {
-      const row = ['Topcoat 3', inputs.selectedTopcoat];
+      const row = ['Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : ''];
       yearsToShow.forEach(year => {
         row.push(`${estimates[year]?.top3Gal || 0} gal`);
       });
@@ -941,7 +945,7 @@ export default function App() {
     }
 
     if (estimates['10']?.rustPrimerGal > 0) {
-      const row = ['Rust Primer', pdfPrimers.rust];
+      const row = ['Rust Primer', pdfPrimers.rust, prices.rustPrimer > 0 ? `${formatCurrency(prices.rustPrimer)}/gal` : ''];
       yearsToShow.forEach(year => {
         row.push(`${estimates[year]?.rustPrimerGal || 0} gal`);
       });
@@ -949,7 +953,7 @@ export default function App() {
     }
 
     if (estimates['10']?.adhesionPrimerGal > 0) {
-      const row = ['Adhesion Primer', pdfPrimers.adhesion];
+      const row = ['Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(prices.adhesionPrimer)}/gal` : ''];
       yearsToShow.forEach(year => {
         row.push(`${estimates[year]?.adhesionPrimerGal || 0} gal`);
       });
@@ -958,19 +962,20 @@ export default function App() {
 
     // Accessories
     if (commonResults.accessoryQty > 0) {
-      const row = ['Accessories', commonResults.accessoryName, `${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
+      const priceUnit = prices.accessory > 0 ? `${formatCurrency(prices.accessory)}/${commonResults.accessoryUnit}` : '';
+      const row = ['Accessories', commonResults.accessoryName, priceUnit, `${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
       tableData.push(row);
     }
 
     // Membrane (if Reinforced Acrylic)
     if (commonResults.membraneRolls > 0) {
-      const row = ['Reinforcement Membrane', '40" x 324\' rolls', `${commonResults.membraneRolls} rolls`, '', ''];
+      const row = ['Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(prices.membrane)}/roll` : '', `${commonResults.membraneRolls} rolls`, '', ''];
       tableData.push(row);
     }
 
     // Goldseal Warranty
     if (inputs.goldseal) {
-      const row = ['Goldseal Warranty', ''];
+      const row = ['Goldseal Warranty', '', ''];
       yearsToShow.forEach(year => {
         row.push(formatCurrency(estimates[year]?.goldsealCost || 0));
       });
@@ -978,7 +983,7 @@ export default function App() {
     }
 
     // Create table headers dynamically
-    const headers = ['Product', 'Description', ...yearsToShow.map(y => `${y}-Year`)];
+    const headers = ['Product', 'Description', 'Price/Unit', ...yearsToShow.map(y => `${y}-Year`)];
 
     autoTable(doc, {
       startY: yPos,
@@ -989,7 +994,8 @@ export default function App() {
       styles: { fontSize: 9 },
       columnStyles: {
         0: { fontStyle: 'bold', cellWidth: 35 },
-        1: { cellWidth: 'auto' }
+        1: { cellWidth: 'auto' },
+        2: { cellWidth: 25 }
       }
     });
 
@@ -1217,7 +1223,7 @@ export default function App() {
                 <input type="file" accept=".json" onChange={importQuote} className="hidden" />
               </label>
               <button
-                onClick={() => document.getElementById('savedQuotesPanel').classList.toggle('hidden')}
+                onClick={() => document.getElementById('savedQuotesPanel')?.classList.toggle('hidden')}
                 className="flex items-center justify-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium"
               >
                 <FileText size={16} /> Saved ({savedQuotes.length})
