@@ -85,6 +85,11 @@ export default function App() {
   // Saved quotes
   const [savedQuotes, setSavedQuotes] = useState([]);
 
+  // Quote comparison
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedForCompare, setSelectedForCompare] = useState([]);
+  const [showComparison, setShowComparison] = useState(false);
+
   // --- PRODUCT OPTIONS ---
   const PRODUCT_OPTIONS = {
     Silicone: {
@@ -310,6 +315,8 @@ export default function App() {
       prices,
       profitMargin,
       customerInfo,
+      estimates,
+      commonResults,
       savedAt: new Date().toISOString()
     };
 
@@ -725,13 +732,19 @@ export default function App() {
             const warrantyLabel = inputs.goldseal ? ' + Warranty' : '';
 
             if (profitMargin > 0) {
-                text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}\n`;
+                text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
+                if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
+                text += `\n`;
                 const sellPrice = grandTotal / (1 - profitMargin / 100);
                 const profit = sellPrice - grandTotal;
-                text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}\n`;
+                text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}`;
+                if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
+                text += `\n`;
                 text += `MARGIN: $${profit.toFixed(2)}\n`;
             } else {
-                text += `\nGRAND TOTAL (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}\n`;
+                text += `\nGRAND TOTAL (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
+                if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
+                text += `\n`;
             }
         }
     });
@@ -842,7 +855,7 @@ export default function App() {
     yPos += 5;
 
     // Customer Info (if provided)
-    if (inputs.customerName || inputs.customerCompany || inputs.customerEmail || inputs.customerPhone) {
+    if (customerInfo.name || customerInfo.company || customerInfo.email || customerInfo.phone) {
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text('CUSTOMER INFORMATION', 15, yPos);
@@ -850,20 +863,28 @@ export default function App() {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
 
-      if (inputs.customerName) {
-        doc.text(`Name: ${inputs.customerName}`, 15, yPos);
+      if (customerInfo.name) {
+        doc.text(`Name: ${customerInfo.name}`, 15, yPos);
         yPos += 6;
       }
-      if (inputs.customerCompany) {
-        doc.text(`Company: ${inputs.customerCompany}`, 15, yPos);
+      if (customerInfo.company) {
+        doc.text(`Company: ${customerInfo.company}`, 15, yPos);
         yPos += 6;
       }
-      if (inputs.customerEmail) {
-        doc.text(`Email: ${inputs.customerEmail}`, 15, yPos);
+      if (customerInfo.email) {
+        doc.text(`Email: ${customerInfo.email}`, 15, yPos);
         yPos += 6;
       }
-      if (inputs.customerPhone) {
-        doc.text(`Phone: ${inputs.customerPhone}`, 15, yPos);
+      if (customerInfo.phone) {
+        doc.text(`Phone: ${customerInfo.phone}`, 15, yPos);
+        yPos += 6;
+      }
+      if (customerInfo.address) {
+        doc.text(`Address: ${customerInfo.address}`, 15, yPos);
+        yPos += 6;
+      }
+      if (customerInfo.projectAddress) {
+        doc.text(`Project Address: ${customerInfo.projectAddress}`, 15, yPos);
         yPos += 6;
       }
       yPos += 5;
@@ -1078,16 +1099,31 @@ export default function App() {
         if (profitMargin > 0) {
           doc.text(`  Distributor Cost: ${formatCurrency(grandTotal)}`, 15, yPos);
           yPos += 5;
+          if (inputs.roofSizeSqFt > 0) {
+            doc.setFont('helvetica', 'normal');
+            doc.text(`  Distributor Cost per Sq Ft: ${formatCurrency(grandTotal / inputs.roofSizeSqFt)}`, 15, yPos);
+            yPos += 5;
+            doc.setFont('helvetica', 'bold');
+          }
           const sellPrice = grandTotal / (1 - profitMargin / 100);
           const profit = sellPrice - grandTotal;
           doc.text(`  Contractor Price (${profitMargin}% margin): ${formatCurrency(sellPrice)}`, 15, yPos);
           yPos += 5;
+          if (inputs.roofSizeSqFt > 0) {
+            doc.text(`  Contractor Price per Sq Ft: ${formatCurrency(sellPrice / inputs.roofSizeSqFt)}`, 15, yPos);
+            yPos += 5;
+          }
           doc.setFont('helvetica', 'normal');
           doc.text(`  Margin: ${formatCurrency(profit)}`, 15, yPos);
           yPos += 5;
         } else {
           doc.text(`  Grand Total: ${formatCurrency(grandTotal)}`, 15, yPos);
           yPos += 5;
+          if (inputs.roofSizeSqFt > 0) {
+            doc.setFont('helvetica', 'normal');
+            doc.text(`  Cost per Sq Ft: ${formatCurrency(grandTotal / inputs.roofSizeSqFt)}`, 15, yPos);
+            yPos += 5;
+          }
         }
         doc.setFont('helvetica', 'normal');
         yPos += 5;
@@ -1188,6 +1224,23 @@ export default function App() {
   const brand = getBrandFromTopcoat(inputs.selectedTopcoat);
   const currentPrimers = PRIMER_LOOKUP[brand];
 
+  // Compute grand totals per warranty year for reuse in table and $/sqft
+  const hasPrices = prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0;
+  const grandTotals = {};
+  ['10', '15', '20'].forEach(year => {
+    const est = estimates[year];
+    if (!est) return;
+    grandTotals[year] = (est.baseGal || 0) * prices.basecoat +
+      (est.top1Gal || 0) * prices.topcoat +
+      (est.top2Gal || 0) * prices.topcoat +
+      (est.top3Gal || 0) * prices.topcoat +
+      (est.adhesionPrimerGal || 0) * prices.adhesionPrimer +
+      (est.rustPrimerGal || 0) * prices.rustPrimer +
+      (commonResults.accessoryQty || 0) * prices.accessory +
+      (commonResults.membraneRolls || 0) * prices.membrane +
+      (est.goldsealCost || 0);
+  });
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800 print:bg-white print:p-0">
       
@@ -1231,20 +1284,57 @@ export default function App() {
             </div>
 
             {/* Saved Quotes Panel */}
-            <div id="savedQuotesPanel" className="hidden mt-4 max-h-48 overflow-y-auto border-t border-gray-200 pt-4">
+            <div id="savedQuotesPanel" className="hidden mt-4 max-h-64 overflow-y-auto border-t border-gray-200 pt-4">
+              {savedQuotes.length >= 2 && (
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    onClick={() => { setCompareMode(!compareMode); setSelectedForCompare([]); }}
+                    className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${compareMode ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                  >
+                    {compareMode ? 'Cancel Compare' : 'Compare Quotes'}
+                  </button>
+                  {compareMode && selectedForCompare.length >= 2 && (
+                    <button
+                      onClick={() => setShowComparison(true)}
+                      className="text-xs px-3 py-1 rounded-full font-medium bg-green-600 text-white hover:bg-green-700"
+                    >
+                      Compare ({selectedForCompare.length})
+                    </button>
+                  )}
+                </div>
+              )}
               {savedQuotes.length === 0 ? (
                 <p className="text-sm text-gray-500 text-center py-4">No saved quotes yet</p>
               ) : (
                 <div className="space-y-2">
                   {savedQuotes.map(quote => (
                     <div key={quote.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                      <button onClick={() => loadQuote(quote)} className="text-left flex-1 hover:text-blue-600">
+                      {compareMode && (
+                        <input
+                          type="checkbox"
+                          checked={selectedForCompare.includes(quote.id)}
+                          onChange={(e) => {
+                            if (e.target.checked && selectedForCompare.length < 3) {
+                              setSelectedForCompare([...selectedForCompare, quote.id]);
+                            } else if (!e.target.checked) {
+                              setSelectedForCompare(selectedForCompare.filter(id => id !== quote.id));
+                            }
+                          }}
+                          disabled={!selectedForCompare.includes(quote.id) && selectedForCompare.length >= 3}
+                          className="mr-2 accent-blue-600"
+                        />
+                      )}
+                      <button onClick={() => !compareMode && loadQuote(quote)} className={`text-left flex-1 ${compareMode ? 'cursor-default' : 'hover:text-blue-600'}`}>
                         <div className="text-sm font-medium">{quote.inputs.projectName || 'Untitled'}</div>
-                        <div className="text-xs text-gray-500">{new Date(quote.savedAt).toLocaleDateString()}</div>
+                        <div className="text-xs text-gray-500">
+                          {quote.inputs.coatingSystem} on {quote.inputs.roofType} &middot; {new Date(quote.savedAt).toLocaleDateString()}
+                        </div>
                       </button>
-                      <button onClick={() => deleteQuote(quote.id)} className="text-red-600 hover:text-red-800 ml-2">
-                        <AlertTriangle size={16} />
-                      </button>
+                      {!compareMode && (
+                        <button onClick={() => deleteQuote(quote.id)} className="text-red-600 hover:text-red-800 ml-2">
+                          <AlertTriangle size={16} />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2106,17 +2196,9 @@ export default function App() {
                             </div>
                         </td>
                         <td className="px-4 py-4 text-center border-l border-r border-green-200">
-                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
+                            {hasPrices ? (
                                 <div className="text-xl font-black text-blue-700">
-                                    ${((estimates['10'].baseGal || 0) * prices.basecoat +
-                                       (estimates['10'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['10'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['10'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['10'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['10'].rustPrimerGal || 0) * prices.rustPrimer +
-                                       (commonResults.accessoryQty || 0) * prices.accessory +
-                                       (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['10'].goldsealCost || 0)).toFixed(2)}
+                                    ${(grandTotals['10'] || 0).toFixed(2)}
                                 </div>
                             ) : (
                                 <div className="text-sm text-gray-500">Enter prices</div>
@@ -2125,34 +2207,18 @@ export default function App() {
                         {inputs.coatingSystem !== 'Aluminum' && (
                             <>
                                 <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
-                                    {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
+                                    {hasPrices ? (
                                         <div className="text-xl font-black text-blue-700">
-                                            ${((estimates['15'].baseGal || 0) * prices.basecoat +
-                                               (estimates['15'].top1Gal || 0) * prices.topcoat +
-                                               (estimates['15'].top2Gal || 0) * prices.topcoat +
-                                               (estimates['15'].top3Gal || 0) * prices.topcoat +
-                                               (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                               (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
-                                               (commonResults.accessoryQty || 0) * prices.accessory +
-                                               (commonResults.membraneRolls || 0) * prices.membrane +
-                                               (estimates['15'].goldsealCost || 0)).toFixed(2)}
+                                            ${(grandTotals['15'] || 0).toFixed(2)}
                                         </div>
                                     ) : (
                                         <div className="text-sm text-gray-500">Enter prices</div>
                                     )}
                                 </td>
                                 <td className="px-4 py-4 text-center bg-purple-50">
-                                    {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) ? (
+                                    {hasPrices ? (
                                         <div className="text-xl font-black text-blue-700">
-                                            ${((estimates['20'].baseGal || 0) * prices.basecoat +
-                                               (estimates['20'].top1Gal || 0) * prices.topcoat +
-                                               (estimates['20'].top2Gal || 0) * prices.topcoat +
-                                               (estimates['20'].top3Gal || 0) * prices.topcoat +
-                                               (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                               (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
-                                               (commonResults.accessoryQty || 0) * prices.accessory +
-                                               (commonResults.membraneRolls || 0) * prices.membrane +
-                                               (estimates['20'].goldsealCost || 0)).toFixed(2)}
+                                            ${(grandTotals['20'] || 0).toFixed(2)}
                                         </div>
                                     ) : (
                                         <div className="text-sm text-gray-500">Enter prices</div>
@@ -2162,8 +2228,39 @@ export default function App() {
                         )}
                     </tr>
 
+                    {/* COST PER SQ FT */}
+                    {hasPrices && inputs.roofSizeSqFt > 0 && (
+                        <tr className="bg-green-50 border-t border-green-300">
+                            <td className="px-4 py-3 text-sm font-bold text-gray-700">
+                                {profitMargin > 0 ? 'DISTRIBUTOR $/SQ FT' : 'COST PER SQ FT'}
+                            </td>
+                            <td className="px-4 py-3 text-center border-l border-r border-green-200">
+                                <div className="text-xs text-gray-500">Material Cost</div>
+                            </td>
+                            <td className="px-4 py-3 text-center border-l border-r border-green-200">
+                                <div className="text-base font-bold text-blue-700">
+                                    {formatCurrency((grandTotals['10'] || 0) / inputs.roofSizeSqFt)}/sqft
+                                </div>
+                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center bg-blue-50 border-l border-r border-blue-200">
+                                        <div className="text-base font-bold text-blue-700">
+                                            {formatCurrency((grandTotals['15'] || 0) / inputs.roofSizeSqFt)}/sqft
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-center bg-purple-50">
+                                        <div className="text-base font-bold text-blue-700">
+                                            {formatCurrency((grandTotals['20'] || 0) / inputs.roofSizeSqFt)}/sqft
+                                        </div>
+                                    </td>
+                                </>
+                            )}
+                        </tr>
+                    )}
+
                     {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
-                    {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
+                    {profitMargin > 0 && hasPrices && (
                         <tr className="bg-gradient-to-r from-green-100 to-emerald-100 border-t-2 border-green-500">
                             <td className="px-4 py-4 text-base font-black text-gray-900">CONTRACTOR PRICE</td>
                             <td className="px-4 py-4 text-center bg-green-50 border-l border-r border-green-200">
@@ -2171,43 +2268,48 @@ export default function App() {
                             </td>
                             <td className="px-4 py-4 text-center border-l border-r border-green-200">
                                 <div className="text-2xl font-black text-green-700">
-                                    ${(((estimates['10'].baseGal || 0) * prices.basecoat +
-                                       (estimates['10'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['10'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['10'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['10'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['10'].rustPrimerGal || 0) * prices.rustPrimer +
-                                       (commonResults.accessoryQty || 0) * prices.accessory +
-                                       (commonResults.membraneRolls || 0) * prices.membrane +
-                                       (estimates['10'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
+                                    ${((grandTotals['10'] || 0) / (1 - profitMargin / 100)).toFixed(2)}
                                 </div>
                             </td>
                             {inputs.coatingSystem !== 'Aluminum' && (
                                 <>
                                     <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
                                         <div className="text-2xl font-black text-green-700">
-                                            ${(((estimates['15'].baseGal || 0) * prices.basecoat +
-                                               (estimates['15'].top1Gal || 0) * prices.topcoat +
-                                               (estimates['15'].top2Gal || 0) * prices.topcoat +
-                                               (estimates['15'].top3Gal || 0) * prices.topcoat +
-                                               (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                               (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer +
-                                               (commonResults.accessoryQty || 0) * prices.accessory +
-                                               (commonResults.membraneRolls || 0) * prices.membrane +
-                                               (estimates['15'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
+                                            ${((grandTotals['15'] || 0) / (1 - profitMargin / 100)).toFixed(2)}
                                         </div>
                                     </td>
                                     <td className="px-4 py-4 text-center bg-purple-50">
                                         <div className="text-2xl font-black text-green-700">
-                                            ${(((estimates['20'].baseGal || 0) * prices.basecoat +
-                                               (estimates['20'].top1Gal || 0) * prices.topcoat +
-                                               (estimates['20'].top2Gal || 0) * prices.topcoat +
-                                               (estimates['20'].top3Gal || 0) * prices.topcoat +
-                                               (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                               (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer +
-                                               (commonResults.accessoryQty || 0) * prices.accessory +
-                                               (commonResults.membraneRolls || 0) * prices.membrane +
-                                               (estimates['20'].goldsealCost || 0)) / (1 - profitMargin / 100)).toFixed(2)}
+                                            ${((grandTotals['20'] || 0) / (1 - profitMargin / 100)).toFixed(2)}
+                                        </div>
+                                    </td>
+                                </>
+                            )}
+                        </tr>
+                    )}
+
+                    {/* CONTRACTOR $/SQ FT */}
+                    {profitMargin > 0 && hasPrices && inputs.roofSizeSqFt > 0 && (
+                        <tr className="bg-emerald-50 border-t border-green-300">
+                            <td className="px-4 py-3 text-sm font-bold text-gray-700">CONTRACTOR $/SQ FT</td>
+                            <td className="px-4 py-3 text-center border-l border-r border-green-200">
+                                <div className="text-xs text-gray-500">Sell Price</div>
+                            </td>
+                            <td className="px-4 py-3 text-center border-l border-r border-green-200">
+                                <div className="text-base font-bold text-green-700">
+                                    {formatCurrency((grandTotals['10'] || 0) / (1 - profitMargin / 100) / inputs.roofSizeSqFt)}/sqft
+                                </div>
+                            </td>
+                            {inputs.coatingSystem !== 'Aluminum' && (
+                                <>
+                                    <td className="px-4 py-3 text-center bg-blue-50 border-l border-r border-blue-200">
+                                        <div className="text-base font-bold text-green-700">
+                                            {formatCurrency((grandTotals['15'] || 0) / (1 - profitMargin / 100) / inputs.roofSizeSqFt)}/sqft
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-center bg-purple-50">
+                                        <div className="text-base font-bold text-green-700">
+                                            {formatCurrency((grandTotals['20'] || 0) / (1 - profitMargin / 100) / inputs.roofSizeSqFt)}/sqft
                                         </div>
                                     </td>
                                 </>
@@ -2279,6 +2381,189 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* QUOTE COMPARISON VIEW */}
+      {showComparison && selectedForCompare.length >= 2 && (
+        <div className="max-w-6xl mx-auto mt-8 print:hidden">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Layers size={20} /> Quote Comparison
+              </h2>
+              <button
+                onClick={() => { setShowComparison(false); setCompareMode(false); setSelectedForCompare([]); }}
+                className="text-white hover:text-blue-200 text-sm font-medium px-3 py-1 border border-white/30 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-700 w-40"></th>
+                    {selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      return (
+                        <th key={id} className="text-center px-4 py-3 font-bold text-gray-900">
+                          {q?.inputs.projectName || 'Untitled'}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-gray-100">
+                    <td className="px-4 py-2 font-medium text-gray-600">System</td>
+                    {selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      return (
+                        <td key={id} className="px-4 py-2 text-center">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                            {q?.inputs.coatingSystem}
+                          </span>
+                          {q?.inputs.coatingSystem === 'Acrylic' && (
+                            <span className="inline-block ml-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
+                              {q?.inputs.acrylicSystemType}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <td className="px-4 py-2 font-medium text-gray-600">Roof Type</td>
+                    {selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      return <td key={id} className="px-4 py-2 text-center">{q?.inputs.roofType}</td>;
+                    })}
+                  </tr>
+                  <tr className="border-b border-gray-100">
+                    <td className="px-4 py-2 font-medium text-gray-600">Roof Size</td>
+                    {selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      return <td key={id} className="px-4 py-2 text-center">{(q?.inputs.roofSizeSqFt || 0).toLocaleString()} sqft</td>;
+                    })}
+                  </tr>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <td className="px-4 py-2 font-medium text-gray-600">Customer</td>
+                    {selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      return <td key={id} className="px-4 py-2 text-center">{q?.customerInfo?.name || q?.customerInfo?.company || '-'}</td>;
+                    })}
+                  </tr>
+                  {/* Totals for each warranty year */}
+                  {['10', '15', '20'].map(year => {
+                    const totals = selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      if (!q?.estimates?.[year]) return null;
+                      const est = q.estimates[year];
+                      const p = q.prices || {};
+                      return (est.baseGal || 0) * (p.basecoat || 0) +
+                        (est.top1Gal || 0) * (p.topcoat || 0) +
+                        (est.top2Gal || 0) * (p.topcoat || 0) +
+                        (est.top3Gal || 0) * (p.topcoat || 0) +
+                        (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) +
+                        (est.rustPrimerGal || 0) * (p.rustPrimer || 0) +
+                        ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) +
+                        ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) +
+                        (est.goldsealCost || 0);
+                    });
+                    // Skip row if all quotes lack this year's data
+                    if (totals.every(t => t === null)) return null;
+                    const validTotals = totals.filter(t => t !== null && t > 0);
+                    const minTotal = validTotals.length > 0 ? Math.min(...validTotals) : null;
+                    return (
+                      <tr key={year} className="border-b border-gray-200 bg-blue-50">
+                        <td className="px-4 py-3 font-bold text-gray-700">{year}-Year Total</td>
+                        {totals.map((total, i) => (
+                          <td key={selectedForCompare[i]} className="px-4 py-3 text-center">
+                            {total === null ? (
+                              <span className="text-gray-400 text-xs">N/A</span>
+                            ) : total === 0 ? (
+                              <span className="text-gray-400 text-xs">No prices</span>
+                            ) : (
+                              <span className={`text-lg font-bold ${total === minTotal && validTotals.length > 1 ? 'text-green-700' : 'text-blue-700'}`}>
+                                {formatCurrency(total)}
+                                {total === minTotal && validTotals.length > 1 && (
+                                  <span className="block text-xs text-green-600 font-normal">Best Value</span>
+                                )}
+                              </span>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {/* $/sqft for each warranty year */}
+                  {['10', '15', '20'].map(year => {
+                    const sqftData = selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      if (!q?.estimates?.[year] || !q?.inputs.roofSizeSqFt) return null;
+                      const est = q.estimates[year];
+                      const p = q.prices || {};
+                      const total = (est.baseGal || 0) * (p.basecoat || 0) +
+                        (est.top1Gal || 0) * (p.topcoat || 0) +
+                        (est.top2Gal || 0) * (p.topcoat || 0) +
+                        (est.top3Gal || 0) * (p.topcoat || 0) +
+                        (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) +
+                        (est.rustPrimerGal || 0) * (p.rustPrimer || 0) +
+                        ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) +
+                        ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) +
+                        (est.goldsealCost || 0);
+                      if (total === 0) return null;
+                      return total / q.inputs.roofSizeSqFt;
+                    });
+                    if (sqftData.every(d => d === null)) return null;
+                    const validSqft = sqftData.filter(d => d !== null && d > 0);
+                    const minSqft = validSqft.length > 0 ? Math.min(...validSqft) : null;
+                    return (
+                      <tr key={`sqft-${year}`} className="border-b border-gray-100">
+                        <td className="px-4 py-2 font-medium text-gray-600">{year}-Year $/sqft</td>
+                        {sqftData.map((val, i) => (
+                          <td key={selectedForCompare[i]} className="px-4 py-2 text-center">
+                            {val === null ? (
+                              <span className="text-gray-400 text-xs">-</span>
+                            ) : (
+                              <span className={`font-bold ${val === minSqft && validSqft.length > 1 ? 'text-green-700' : 'text-gray-700'}`}>
+                                {formatCurrency(val)}/sqft
+                              </span>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <td className="px-4 py-2 font-medium text-gray-600">Total Gallons (10yr)</td>
+                    {selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      return <td key={id} className="px-4 py-2 text-center font-semibold">{q?.estimates?.['10']?.totalGallons || '-'}</td>;
+                    })}
+                  </tr>
+                  <tr className="border-b border-gray-100">
+                    <td className="px-4 py-2 font-medium text-gray-600">Goldseal Warranty</td>
+                    {selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      return <td key={id} className="px-4 py-2 text-center">{q?.inputs.goldseal ? 'Yes' : 'No'}</td>;
+                    })}
+                  </tr>
+                  <tr className="bg-gray-50">
+                    <td className="px-4 py-2 font-medium text-gray-600">Quote Date</td>
+                    {selectedForCompare.map(id => {
+                      const q = savedQuotes.find(sq => sq.id === id);
+                      return <td key={id} className="px-4 py-2 text-center">{q?.date || new Date(q?.savedAt).toLocaleDateString()}</td>;
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
+              Quotes without saved estimate data (saved before this update) cannot show totals. Re-save those quotes to enable comparison.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
