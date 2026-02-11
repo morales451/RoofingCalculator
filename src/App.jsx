@@ -39,10 +39,11 @@ export default function App() {
     screwBuckets: 0
   });
 
+  const emptyEstimate = { baseGal: 0, top1Gal: 0, top2Gal: 0, top3Gal: 0, adhesionPrimerGal: 0, rustPrimerGal: 0, goldsealCost: 0, totalGallons: 0, rates: { base: 0, top1: 0, top2: 0, top3: 0 } };
   const [estimates, setEstimates] = useState({
-    '10': {},
-    '15': {},
-    '20': {}
+    '10': { ...emptyEstimate },
+    '15': { ...emptyEstimate },
+    '20': { ...emptyEstimate }
   });
 
   const [emailText, setEmailText] = useState('');
@@ -456,7 +457,8 @@ export default function App() {
         screwBuckets: bucketsForScrews
     });
 
-    const newEstimates = {};
+    const defaultEstimate = { baseGal: 0, top1Gal: 0, top2Gal: 0, top3Gal: 0, adhesionPrimerGal: 0, rustPrimerGal: 0, goldsealCost: 0, totalGallons: 0, rates: { base: 0, top1: 0, top2: 0, top3: 0 } };
+    const newEstimates = { '10': { ...defaultEstimate }, '15': { ...defaultEstimate }, '20': { ...defaultEstimate } };
     let systemSpec = null;
     if (coatingSystem === 'Silicone') {
         systemSpec = SYSTEM_DATA['Silicone'][roofType];
