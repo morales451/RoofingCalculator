@@ -612,17 +612,18 @@ export default function App() {
     const brand = getBrandFromTopcoat(selectedTopcoat);
     const primerSet = PRIMER_LOOKUP[brand];
 
-    let text = `PROJECT ESTIMATE: ${projectName || 'Untitled'}\n`;
+    let text = `PROJECT ESTIMATE: ${projectName || 'Untitled'}\n\n`;
     text += `System: ${coatingSystem} on ${roofType}`;
     if (coatingSystem === 'Acrylic') text += ` (${acrylicSystemType})`;
     text += `\n`;
-    
+
     text += `Roof Size: ${roofSizeSqFt} sqft (${commonResults.squares} Squares)\n`;
     text += `Calculation Factors: ${Math.round(wasteFactor * 100)}% Waste, ${Math.round(stretchFactor * 100)}% Stretch\n`;
     text += `Note: Base, Topcoat, and Rust Primer round to 5-gal. Adhesion Primer rounds to 1-gal.\n`;
 
     if (linearFeet > 0 || commonResults.screwBuckets > 0) {
-        text += `Accessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}`;
+        text += `\nAccessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}`;
+        if (prices.accessory > 0) text += ` @ $${prices.accessory.toFixed(2)} each`;
         if (commonResults.screwBuckets > 0) {
             text += ` (Includes ${commonResults.screwBuckets} buckets for ~${commonResults.screwCount} screws)`;
         }
@@ -630,7 +631,9 @@ export default function App() {
     }
 
     if (coatingSystem === 'Acrylic' && commonResults.membraneRolls > 0) {
-        text += `Reinforcement: ${commonResults.membraneRolls} Rolls of Reinforcement Membrane (40" x 324')\n`;
+        text += `Reinforcement: ${commonResults.membraneRolls} Rolls of Reinforcement Membrane (40" x 324')`;
+        if (prices.membrane > 0) text += ` @ $${prices.membrane.toFixed(2)}/roll`;
+        text += `\n`;
     }
 
     if (linearFeet <= 0) {
@@ -640,55 +643,55 @@ export default function App() {
              text += `(Note: Fastener encapsulation for ~${commonResults.screwCount} screws IS included based on roof area.)\n`;
         }
     }
-    
+
     if (!inputs.passedAdhesion) {
-        text += `** NOTE: Adhesion failure. Added ${primerSet.adhesion} (@ 0.2 gal/sq).\n`;
+        text += `\n** NOTE: Adhesion failure. Added ${primerSet.adhesion} (@ 0.2 gal/sq).\n`;
     }
 
     if (coatingSystem === 'Silicone' && roofType === 'Metal' && inputs.hasRust) {
         text += `** NOTE: Rust present. Added ${primerSet.rust} (@ 0.5 gal/sq).\n`;
     }
-    
+
     ['10', '15', '20'].forEach(year => {
         const est = estimates[year];
         if (!est || (est.top1Gal === undefined && est.baseGal === undefined)) return;
 
-        text += `\n--- ${year}-YEAR OPTION ---\n`;
+        text += `\n\n--- ${year}-YEAR OPTION ---\n\n`;
 
         if (coatingSystem !== 'Aluminum' && est.baseGal > 0) {
             text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat}) @ ${est.rates.base} gal/sq`;
-            if (prices.basecoat > 0) text += ` = $${(est.baseGal * prices.basecoat).toFixed(2)}`;
+            if (prices.basecoat > 0) text += `\n  Unit Price: $${prices.basecoat.toFixed(2)}/gal | Line Total: $${(est.baseGal * prices.basecoat).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.rustPrimerGal > 0) {
             text += `Rust Primer: ${est.rustPrimerGal} gal (${primerSet.rust}) @ 0.5 gal/sq`;
-            if (prices.rustPrimer > 0) text += ` = $${(est.rustPrimerGal * prices.rustPrimer).toFixed(2)}`;
+            if (prices.rustPrimer > 0) text += `\n  Unit Price: $${prices.rustPrimer.toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * prices.rustPrimer).toFixed(2)}`;
             text += `\n`;
         }
         if (est.adhesionPrimerGal > 0) {
             text += `Adhesion Primer: ${est.adhesionPrimerGal} gal (${primerSet.adhesion}) @ 0.2 gal/sq`;
-            if (prices.adhesionPrimer > 0) text += ` = $${(est.adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}`;
+            if (prices.adhesionPrimer > 0) text += `\n  Unit Price: $${prices.adhesionPrimer.toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.top1Gal > 0) {
             text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat}) @ ${est.rates.top1} gal/sq`;
-            if (prices.topcoat > 0) text += ` = $${(est.top1Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top1Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top2Gal > 0) {
             text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat}) @ ${est.rates.top2} gal/sq`;
-            if (prices.topcoat > 0) text += ` = $${(est.top2Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top2Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top3Gal > 0) {
             text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat}) @ ${est.rates.top3} gal/sq`;
-            if (prices.topcoat > 0) text += ` = $${(est.top3Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top3Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
 
-        text += `TOTAL SYSTEM: ${est.totalGallons} Gallons`;
+        text += `\nTOTAL SYSTEM: ${est.totalGallons} Gallons`;
         if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) {
             const materialsTotal = (est.baseGal || 0) * prices.basecoat +
                                    (est.top1Gal || 0) * prices.topcoat +
@@ -714,7 +717,16 @@ export default function App() {
                               (commonResults.membraneRolls || 0) * prices.membrane +
                               (est.goldsealCost || 0);
             const warrantyLabel = inputs.goldseal ? ' + Warranty' : '';
-            text += `GRAND TOTAL (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}\n`;
+
+            if (profitMargin > 0) {
+                text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}\n`;
+                const sellPrice = grandTotal / (1 - profitMargin / 100);
+                const profit = sellPrice - grandTotal;
+                text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}\n`;
+                text += `MARGIN: $${profit.toFixed(2)}\n`;
+            } else {
+                text += `\nGRAND TOTAL (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}\n`;
+            }
         }
     });
 
@@ -750,7 +762,7 @@ export default function App() {
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
     setEmailText(text);
-  }, [inputs, estimates, commonResults, prices, showEnergySavings, energyElectricityRate]);
+  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -982,32 +994,95 @@ export default function App() {
     yPos = doc.lastAutoTable.finalY + 10;
 
     // Pricing Summary (if prices are entered)
-    if (profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0)) {
+    if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) {
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text('PRICING SUMMARY', 15, yPos);
-      yPos += 7;
+      yPos += 8;
 
       yearsToShow.forEach(year => {
-        const costPrice = (estimates[year]?.baseGal || 0) * prices.basecoat +
-                         (estimates[year]?.top1Gal || 0) * prices.topcoat +
-                         (estimates[year]?.top2Gal || 0) * prices.topcoat +
-                         (estimates[year]?.top3Gal || 0) * prices.topcoat +
-                         (estimates[year]?.adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                         (estimates[year]?.rustPrimerGal || 0) * prices.rustPrimer +
-                         (commonResults.accessoryQty || 0) * prices.accessory +
-                         (commonResults.membraneRolls || 0) * prices.membrane +
-                         (estimates[year]?.goldsealCost || 0);
+        const est = estimates[year];
+        if (!est) return;
 
-        const sellPrice = costPrice / (1 - profitMargin / 100);
+        // Calculate line item costs
+        const baseCost = (est.baseGal || 0) * prices.basecoat;
+        const top1Cost = (est.top1Gal || 0) * prices.topcoat;
+        const top2Cost = (est.top2Gal || 0) * prices.topcoat;
+        const top3Cost = (est.top3Gal || 0) * prices.topcoat;
+        const adhesionCost = (est.adhesionPrimerGal || 0) * prices.adhesionPrimer;
+        const rustCost = (est.rustPrimerGal || 0) * prices.rustPrimer;
+        const accessoryCost = (commonResults.accessoryQty || 0) * prices.accessory;
+        const membraneCost = (commonResults.membraneRolls || 0) * prices.membrane;
+        const goldsealCost = est.goldsealCost || 0;
+
+        const materialsTotal = baseCost + top1Cost + top2Cost + top3Cost + adhesionCost + rustCost;
+        const grandTotal = materialsTotal + accessoryCost + membraneCost + goldsealCost;
 
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
-        doc.text(`${year}-Year System:`, 15, yPos);
-        doc.setFont('helvetica', 'normal');
+        doc.text(`${year}-Year System`, 15, yPos);
         yPos += 6;
-        doc.text(`  Contractor Price: ${formatCurrency(sellPrice)}`, 15, yPos);
-        yPos += 8;
+
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+
+        // Line item breakdown
+        if (inputs.coatingSystem !== 'Aluminum' && est.baseGal > 0 && prices.basecoat > 0) {
+          doc.text(`  Basecoat: ${est.baseGal} gal x ${formatCurrency(prices.basecoat)}/gal = ${formatCurrency(baseCost)}`, 15, yPos);
+          yPos += 5;
+        }
+        if (est.top1Gal > 0 && prices.topcoat > 0) {
+          doc.text(`  Topcoat 1: ${est.top1Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top1Cost)}`, 15, yPos);
+          yPos += 5;
+        }
+        if (est.top2Gal > 0 && prices.topcoat > 0) {
+          doc.text(`  Topcoat 2: ${est.top2Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top2Cost)}`, 15, yPos);
+          yPos += 5;
+        }
+        if (est.top3Gal > 0 && prices.topcoat > 0) {
+          doc.text(`  Topcoat 3: ${est.top3Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top3Cost)}`, 15, yPos);
+          yPos += 5;
+        }
+        if (est.rustPrimerGal > 0 && prices.rustPrimer > 0) {
+          doc.text(`  Rust Primer: ${est.rustPrimerGal} gal x ${formatCurrency(prices.rustPrimer)}/gal = ${formatCurrency(rustCost)}`, 15, yPos);
+          yPos += 5;
+        }
+        if (est.adhesionPrimerGal > 0 && prices.adhesionPrimer > 0) {
+          doc.text(`  Adhesion Primer: ${est.adhesionPrimerGal} gal x ${formatCurrency(prices.adhesionPrimer)}/gal = ${formatCurrency(adhesionCost)}`, 15, yPos);
+          yPos += 5;
+        }
+        if (commonResults.accessoryQty > 0 && prices.accessory > 0) {
+          doc.text(`  Accessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} x ${formatCurrency(prices.accessory)} = ${formatCurrency(accessoryCost)}`, 15, yPos);
+          yPos += 5;
+        }
+        if (commonResults.membraneRolls > 0 && prices.membrane > 0) {
+          doc.text(`  Membrane: ${commonResults.membraneRolls} rolls x ${formatCurrency(prices.membrane)} = ${formatCurrency(membraneCost)}`, 15, yPos);
+          yPos += 5;
+        }
+        if (goldsealCost > 0) {
+          doc.text(`  Goldseal Warranty: ${formatCurrency(goldsealCost)}`, 15, yPos);
+          yPos += 5;
+        }
+
+        // Totals
+        yPos += 2;
+        doc.setFont('helvetica', 'bold');
+        if (profitMargin > 0) {
+          doc.text(`  Distributor Cost: ${formatCurrency(grandTotal)}`, 15, yPos);
+          yPos += 5;
+          const sellPrice = grandTotal / (1 - profitMargin / 100);
+          const profit = sellPrice - grandTotal;
+          doc.text(`  Contractor Price (${profitMargin}% margin): ${formatCurrency(sellPrice)}`, 15, yPos);
+          yPos += 5;
+          doc.setFont('helvetica', 'normal');
+          doc.text(`  Margin: ${formatCurrency(profit)}`, 15, yPos);
+          yPos += 5;
+        } else {
+          doc.text(`  Grand Total: ${formatCurrency(grandTotal)}`, 15, yPos);
+          yPos += 5;
+        }
+        doc.setFont('helvetica', 'normal');
+        yPos += 5;
       });
     }
 
