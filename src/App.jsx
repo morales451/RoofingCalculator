@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import EnergySavingsEstimator from './EnergySavingsEstimator.jsx';
@@ -83,6 +83,102 @@ export default function App() {
   const [energySavingsResults, setEnergySavingsResults] = useState(null);
   const [energyElectricityRate, setEnergyElectricityRate] = useState(0.12);
   const [energyRegion, setEnergyRegion] = useState('TX');
+
+  // --- MULTI-SECTION ROOFS ---
+  const [roofSections, setRoofSections] = useState([]);
+  const [useMultiSection, setUseMultiSection] = useState(false);
+
+  const addRoofSection = () => {
+    setRoofSections(prev => [...prev, {
+      id: Date.now(),
+      name: `Section ${prev.length + 1}`,
+      sqFt: 0,
+      linearFeet: 0,
+      roofType: inputs.roofType
+    }]);
+  };
+
+  const updateRoofSection = (id, field, value) => {
+    setRoofSections(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
+  };
+
+  const removeRoofSection = (id) => {
+    setRoofSections(prev => prev.filter(s => s.id !== id));
+  };
+
+  // Aggregate multi-section totals into main inputs
+  useEffect(() => {
+    if (useMultiSection && roofSections.length > 0) {
+      const totalSqFt = roofSections.reduce((sum, s) => sum + (parseFloat(s.sqFt) || 0), 0);
+      const totalLF = roofSections.reduce((sum, s) => sum + (parseFloat(s.linearFeet) || 0), 0);
+      setInputs(prev => ({ ...prev, roofSizeSqFt: totalSqFt, linearFeet: totalLF }));
+    }
+  }, [roofSections, useMultiSection]);
+
+  // --- INPUT VALIDATION ---
+  const [validationErrors, setValidationErrors] = useState({});
+  const [showValidationSummary, setShowValidationSummary] = useState(false);
+
+  const validateInputs = useCallback(() => {
+    const errors = {};
+
+    // Roof size validation
+    if (inputs.roofSizeSqFt < 0) {
+      errors.roofSizeSqFt = 'Roof size cannot be negative';
+    } else if (inputs.roofSizeSqFt > 1000000) {
+      errors.roofSizeSqFt = 'Roof size exceeds 1,000,000 sq ft maximum';
+    }
+
+    // Linear feet validation
+    if (inputs.linearFeet < 0) {
+      errors.linearFeet = 'Linear feet cannot be negative';
+    } else if (inputs.linearFeet > 100000) {
+      errors.linearFeet = 'Linear feet exceeds 100,000 maximum';
+    }
+
+    // Profit margin validation
+    if (profitMargin < 0) {
+      errors.profitMargin = 'Margin cannot be negative';
+    } else if (profitMargin >= 100) {
+      errors.profitMargin = 'Margin must be less than 100%';
+    }
+
+    // Price validation
+    Object.entries(prices).forEach(([key, val]) => {
+      if (val < 0) {
+        errors[`price_${key}`] = `${key} price cannot be negative`;
+      } else if (val > 10000) {
+        errors[`price_${key}`] = `${key} price exceeds $10,000 maximum`;
+      }
+    });
+
+    // Customer email validation
+    if (customerInfo.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerInfo.email)) {
+      errors.email = 'Invalid email format';
+    }
+
+    // Customer phone validation
+    if (customerInfo.phone && !/^[\d\s()+-]{7,20}$/.test(customerInfo.phone)) {
+      errors.phone = 'Invalid phone format';
+    }
+
+    // Multi-section validation
+    if (useMultiSection) {
+      roofSections.forEach((section, i) => {
+        if (section.sqFt < 0) errors[`section_${section.id}_sqFt`] = `Section ${i + 1}: sq ft cannot be negative`;
+        if (section.sqFt > 500000) errors[`section_${section.id}_sqFt`] = `Section ${i + 1}: sq ft exceeds 500,000 max`;
+        if (section.linearFeet < 0) errors[`section_${section.id}_lf`] = `Section ${i + 1}: linear feet cannot be negative`;
+      });
+    }
+
+    return errors;
+  }, [inputs, prices, profitMargin, customerInfo, roofSections, useMultiSection]);
+
+  useEffect(() => {
+    setValidationErrors(validateInputs());
+  }, [validateInputs]);
+
+  const hasErrors = Object.keys(validationErrors).length > 0;
 
   // Saved quotes
   const [savedQuotes, setSavedQuotes] = useState([]);
@@ -301,7 +397,9 @@ export default function App() {
   };
 
   const handlePriceChange = (field, value) => {
-    setPrices(prev => ({ ...prev, [field]: parseFloat(value) || 0 }));
+    const parsed = parseFloat(value) || 0;
+    if (parsed < 0) return;
+    setPrices(prev => ({ ...prev, [field]: parsed }));
   };
 
   const handleCustomerInfoChange = (field, value) => {
@@ -310,6 +408,10 @@ export default function App() {
 
   // Save/Load/Export/Import functions
   const saveQuote = () => {
+    if (hasErrors) {
+      const proceed = window.confirm(`There are ${Object.keys(validationErrors).length} validation issue(s). Save quote anyway?`);
+      if (!proceed) return;
+    }
     const quote = {
       id: Date.now(),
       date: quoteDate,
@@ -320,6 +422,8 @@ export default function App() {
       estimates,
       commonResults,
       energyRegion,
+      roofSections: useMultiSection ? roofSections : [],
+      useMultiSection,
       savedAt: new Date().toISOString()
     };
 
@@ -344,6 +448,8 @@ export default function App() {
     });
     setQuoteDate(quote.date || new Date().toISOString().split('T')[0]);
     setEnergyRegion(quote.energyRegion || 'TX');
+    setRoofSections(quote.roofSections || []);
+    setUseMultiSection(quote.useMultiSection || false);
   };
 
   const deleteQuote = (quoteId) => {
@@ -361,6 +467,8 @@ export default function App() {
       profitMargin,
       customerInfo,
       energyRegion,
+      roofSections: useMultiSection ? roofSections : [],
+      useMultiSection,
       exportedAt: new Date().toISOString()
     };
 
@@ -642,6 +750,12 @@ export default function App() {
     text += `\n`;
 
     text += `Roof Size: ${roofSizeSqFt} sqft (${commonResults.squares} Squares)\n`;
+    if (useMultiSection && roofSections.length > 0) {
+      text += `\nRoof Sections:\n`;
+      roofSections.forEach(s => {
+        text += `  - ${s.name}: ${s.sqFt || 0} sqft, ${s.linearFeet || 0} LF (${s.roofType})\n`;
+      });
+    }
     text += `Calculation Factors: ${Math.round(wasteFactor * 100)}% Waste, ${Math.round(stretchFactor * 100)}% Stretch\n`;
     text += `Note: All quantities are rounded up to the nearest full pail where applicable.\n`;
 
@@ -792,7 +906,7 @@ export default function App() {
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
     setEmailText(text);
-  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate, energyRegion]);
+  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -838,6 +952,10 @@ export default function App() {
   };
 
   const generatePDF = () => {
+    if (hasErrors) {
+      const proceed = window.confirm(`There are ${Object.keys(validationErrors).length} validation issue(s). Generate PDF anyway?`);
+      if (!proceed) return;
+    }
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     let yPos = 20;
@@ -918,6 +1036,22 @@ export default function App() {
       doc.text(`Linear Feet: ${inputs.linearFeet}`, 15, yPos);
       yPos += 6;
     }
+
+    // Multi-section details
+    if (useMultiSection && roofSections.length > 0) {
+      yPos += 3;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Roof Sections:', 15, yPos);
+      yPos += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      roofSections.forEach(s => {
+        doc.text(`  ${s.name}: ${(s.sqFt || 0).toLocaleString()} sqft, ${(s.linearFeet || 0).toLocaleString()} LF (${s.roofType})`, 15, yPos);
+        yPos += 4;
+      });
+      doc.setFontSize(10);
+    }
+
     yPos += 5;
 
     // Warning for missing linear feet
@@ -1252,8 +1386,26 @@ export default function App() {
       (est.goldsealCost || 0);
   });
 
+  // Validation error display helper
+  const ValidationError = ({ field }) => {
+    const err = validationErrors[field];
+    if (!err) return null;
+    return <div className="text-xs text-red-600 mt-1 flex items-center gap-1"><AlertTriangle size={12} />{err}</div>;
+  };
+
+  const inputBorder = (field) => validationErrors[field] ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300';
+
+  // Available roof types for current coating system (used in multi-section)
+  const getAvailableRoofTypes = () => {
+    const types = ['Capsheet'];
+    if (inputs.coatingSystem !== 'Aluminum') types.push('Single-Ply');
+    if (inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard')) types.push('Sprayfoam');
+    if (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') types.push('Metal');
+    return types;
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800 print:bg-white print:p-0">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800 print:bg-white print:p-0 print:text-black">
       
       {/* Header */}
       <div className="max-w-6xl mx-auto mb-8 flex justify-between items-center print:hidden">
@@ -1266,6 +1418,77 @@ export default function App() {
             <p className="text-gray-500">Supports Silicone & Acrylic (Reinforced vs Standard) Systems</p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          {hasErrors && (
+            <button onClick={() => setShowValidationSummary(!showValidationSummary)} className="flex items-center gap-1 bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors">
+              <AlertTriangle size={16} /> {Object.keys(validationErrors).length} issue{Object.keys(validationErrors).length > 1 ? 's' : ''}
+            </button>
+          )}
+          <button onClick={() => window.print()} className="flex items-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
+            <Printer size={16} /> Print View
+          </button>
+        </div>
+      </div>
+
+      {/* Validation Summary */}
+      {showValidationSummary && hasErrors && (
+        <div className="max-w-6xl mx-auto mb-4 bg-red-50 border border-red-200 rounded-xl p-4 print:hidden">
+          <h3 className="text-sm font-bold text-red-800 mb-2 flex items-center gap-2"><AlertTriangle size={16} /> Input Validation Issues</h3>
+          <ul className="space-y-1">
+            {Object.entries(validationErrors).map(([key, msg]) => (
+              <li key={key} className="text-sm text-red-700 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0" />
+                {msg}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Print Header (only visible when printing) */}
+      <div className="hidden print:block max-w-6xl mx-auto mb-6">
+        <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
+          <h1 className="text-2xl font-bold text-gray-900">ROOFING SYSTEM ESTIMATE</h1>
+          {inputs.projectName && <p className="text-lg font-semibold mt-1">{inputs.projectName}</p>}
+          <p className="text-sm text-gray-600 mt-1">Date: {quoteDate}</p>
+        </div>
+        {(customerInfo.name || customerInfo.company) && (
+          <div className="mb-4 text-sm">
+            <h3 className="font-bold text-gray-800 mb-1">Customer Information</h3>
+            {customerInfo.name && <p>Name: {customerInfo.name}</p>}
+            {customerInfo.company && <p>Company: {customerInfo.company}</p>}
+            {customerInfo.email && <p>Email: {customerInfo.email}</p>}
+            {customerInfo.phone && <p>Phone: {customerInfo.phone}</p>}
+            {customerInfo.address && <p>Address: {customerInfo.address}</p>}
+            {customerInfo.projectAddress && <p>Project Address: {customerInfo.projectAddress}</p>}
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-4 text-sm bg-gray-100 p-3 rounded">
+          <div><span className="font-bold">System:</span> {inputs.coatingSystem}{inputs.coatingSystem === 'Acrylic' ? ` (${inputs.acrylicSystemType})` : ''}</div>
+          <div><span className="font-bold">Roof Type:</span> {inputs.roofType}</div>
+          <div><span className="font-bold">Roof Size:</span> {inputs.roofSizeSqFt.toLocaleString()} sqft ({commonResults.squares.toFixed(1)} sq)</div>
+          {inputs.linearFeet > 0 && <div><span className="font-bold">Linear Feet:</span> {inputs.linearFeet.toLocaleString()}</div>}
+          <div><span className="font-bold">Waste:</span> {Math.round(inputs.wasteFactor * 100)}%</div>
+          <div><span className="font-bold">Stretch:</span> {Math.round(inputs.stretchFactor * 100)}%</div>
+        </div>
+        {useMultiSection && roofSections.length > 0 && (
+          <div className="mt-3 text-sm">
+            <h3 className="font-bold text-gray-800 mb-1">Roof Sections</h3>
+            <table className="w-full text-xs border border-gray-300">
+              <thead><tr className="bg-gray-200"><th className="px-2 py-1 text-left">Section</th><th className="px-2 py-1 text-right">Sq Ft</th><th className="px-2 py-1 text-right">Linear Ft</th><th className="px-2 py-1 text-left">Roof Type</th></tr></thead>
+              <tbody>
+                {roofSections.map(s => (
+                  <tr key={s.id} className="border-t border-gray-200">
+                    <td className="px-2 py-1">{s.name}</td>
+                    <td className="px-2 py-1 text-right">{(s.sqFt || 0).toLocaleString()}</td>
+                    <td className="px-2 py-1 text-right">{(s.linearFeet || 0).toLocaleString()}</td>
+                    <td className="px-2 py-1">{s.roofType}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 print:block">
@@ -1416,9 +1639,10 @@ export default function App() {
                     type="tel"
                     value={customerInfo.phone}
                     onChange={(e) => handleCustomerInfoChange('phone', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                    className={`w-full p-2 border rounded-lg text-sm ${inputBorder('phone')}`}
                     placeholder="(555) 123-4567"
                   />
+                  <ValidationError field="phone" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
@@ -1426,9 +1650,10 @@ export default function App() {
                     type="email"
                     value={customerInfo.email}
                     onChange={(e) => handleCustomerInfoChange('email', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                    className={`w-full p-2 border rounded-lg text-sm ${inputBorder('email')}`}
                     placeholder="customer@email.com"
                   />
+                  <ValidationError field="email" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Project Address</label>
@@ -1554,29 +1779,114 @@ export default function App() {
             <h2 className="text-lg font-semibold flex items-center gap-2 mb-4 text-blue-800">
               <Ruler size={20} /> Dimensions
             </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Total Roof Size (sq ft)</label>
-                <input 
-                  type="number" 
-                  value={inputs.roofSizeSqFt || ''}
-                  onChange={(e) => handleChange('roofSizeSqFt', parseFloat(e.target.value) || 0)}
-                  className="w-full p-2 border border-gray-300 rounded-lg"
-                  placeholder="e.g. 5000"
-                />
-                <div className="text-xs text-gray-500 mt-1 text-right">= {commonResults.squares.toFixed(2)} Squares</div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Linear Feet</label>
-                <input
-                  type="number"
-                  value={inputs.linearFeet || ''}
-                  onChange={(e) => handleChange('linearFeet', parseFloat(e.target.value) || 0)}
-                  className="w-full p-2 border border-gray-300 rounded-lg"
-                  placeholder="e.g. 250"
-                />
-              </div>
+
+            {/* Multi-Section Toggle */}
+            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200 mb-4">
+              <span className="text-sm font-medium text-blue-800 flex items-center gap-2"><Layers size={16} /> Multi-Section Roof?</span>
+              <button onClick={() => { setUseMultiSection(!useMultiSection); if (!useMultiSection && roofSections.length === 0) addRoofSection(); }} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${useMultiSection ? 'bg-blue-600' : 'bg-gray-300'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useMultiSection ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
             </div>
+
+            {!useMultiSection ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Roof Size (sq ft)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000000"
+                    value={inputs.roofSizeSqFt || ''}
+                    onChange={(e) => handleChange('roofSizeSqFt', parseFloat(e.target.value) || 0)}
+                    className={`w-full p-2 border rounded-lg ${inputBorder('roofSizeSqFt')}`}
+                    placeholder="e.g. 5000"
+                  />
+                  <ValidationError field="roofSizeSqFt" />
+                  <div className="text-xs text-gray-500 mt-1 text-right">= {commonResults.squares.toFixed(2)} Squares</div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Linear Feet</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100000"
+                    value={inputs.linearFeet || ''}
+                    onChange={(e) => handleChange('linearFeet', parseFloat(e.target.value) || 0)}
+                    className={`w-full p-2 border rounded-lg ${inputBorder('linearFeet')}`}
+                    placeholder="e.g. 250"
+                  />
+                  <ValidationError field="linearFeet" />
+                </div>
+              </div>
+            ) : (
+              /* Multi-Section Roof UI */
+              <div className="space-y-3">
+                {roofSections.map((section, idx) => (
+                  <div key={section.id} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <input
+                        type="text"
+                        value={section.name}
+                        onChange={(e) => updateRoofSection(section.id, 'name', e.target.value)}
+                        className="text-sm font-semibold text-blue-800 bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-600 w-40"
+                      />
+                      <button onClick={() => removeRoofSection(section.id)} className="text-red-500 hover:text-red-700 p-1" title="Remove section">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">Sq Ft</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={section.sqFt || ''}
+                          onChange={(e) => updateRoofSection(section.id, 'sqFt', parseFloat(e.target.value) || 0)}
+                          className={`w-full p-1.5 text-sm border rounded ${inputBorder(`section_${section.id}_sqFt`)}`}
+                          placeholder="0"
+                        />
+                        <ValidationError field={`section_${section.id}_sqFt`} />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">Linear Ft</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={section.linearFeet || ''}
+                          onChange={(e) => updateRoofSection(section.id, 'linearFeet', parseFloat(e.target.value) || 0)}
+                          className={`w-full p-1.5 text-sm border rounded ${inputBorder(`section_${section.id}_lf`)}`}
+                          placeholder="0"
+                        />
+                        <ValidationError field={`section_${section.id}_lf`} />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">Roof Type</label>
+                        <select
+                          value={section.roofType}
+                          onChange={(e) => updateRoofSection(section.id, 'roofType', e.target.value)}
+                          className="w-full p-1.5 text-sm border border-gray-300 rounded"
+                        >
+                          {getAvailableRoofTypes().map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={addRoofSection} className="w-full py-2 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-medium hover:bg-blue-50 flex items-center justify-center gap-1">
+                  <Plus size={14} /> Add Section
+                </button>
+                <div className="bg-blue-100 rounded-lg p-3 text-sm">
+                  <div className="flex justify-between text-blue-800">
+                    <span className="font-bold">Total Roof Size:</span>
+                    <span className="font-mono font-bold">{inputs.roofSizeSqFt.toLocaleString()} sq ft ({commonResults.squares.toFixed(2)} squares)</span>
+                  </div>
+                  <div className="flex justify-between text-blue-700 mt-1">
+                    <span className="font-medium">Total Linear Feet:</span>
+                    <span className="font-mono">{inputs.linearFeet.toLocaleString()} LF</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* System Specs */}
@@ -1810,16 +2120,19 @@ export default function App() {
                 <div className="bg-white p-4 rounded-lg border border-blue-200">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Your Margin Percentage</label>
                   <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      step="1"
-                      min="0"
-                      max="100"
-                      value={profitMargin}
-                      onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
-                      className="w-32 p-3 border-2 border-blue-300 rounded-lg text-center text-2xl font-bold focus:ring-2 focus:ring-blue-500"
-                      placeholder="0"
-                    />
+                    <div>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="99"
+                        value={profitMargin}
+                        onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
+                        className={`w-32 p-3 border-2 rounded-lg text-center text-2xl font-bold focus:ring-2 focus:ring-blue-500 ${validationErrors.profitMargin ? 'border-red-400' : 'border-blue-300'}`}
+                        placeholder="0"
+                      />
+                      <ValidationError field="profitMargin" />
+                    </div>
                     <span className="text-2xl font-bold text-blue-900">%</span>
                     {profitMargin > 0 && (
                       <div className="ml-4 text-sm text-green-700 font-medium">
