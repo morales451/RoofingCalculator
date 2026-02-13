@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Zap, DollarSign, TrendingDown, Thermometer, Info } from 'lucide-react';
+import { Zap, DollarSign, TrendingDown, Thermometer, Info, MapPin } from 'lucide-react';
+import { CLIMATE_DATA, DEFAULT_STATE, getStateOptions } from './climateData.js';
 
 /**
  * EnergySavingsEstimator Component
@@ -7,22 +8,32 @@ import { Zap, DollarSign, TrendingDown, Thermometer, Info } from 'lucide-react';
  * Calculates energy savings from converting dark roofs to reflective white coating systems
  * Based on DOE/LBNL Cool Roof Calculator methodology and ASHRAE standards
  *
- * Key Assumptions for Texas Climate:
- * - Cooling Degree Days (CDD): 2650 (average for Houston/Dallas)
- * - Solar Radiation: 1450 kWh/m²/year (Texas average)
- * - HVAC Efficiency: SEER 13 (typical commercial)
- * - Building R-value: R-20 roof assembly (standard commercial)
+ * Climate data is loaded per-state from climateData.js (50 states + DC).
+ * HVAC Efficiency: SEER 13 (typical commercial)
+ * Building R-value: R-20 roof assembly (standard commercial)
  */
 
-const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsChange }) => {
-  const [electricityRate, setElectricityRate] = useState(0.12);
-  const [currentBill, setCurrentBill] = useState('');
+const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsChange, selectedRegion, onRegionChange }) => {
   const [showInfo, setShowInfo] = useState(false);
+  const [rateManuallySet, setRateManuallySet] = useState(false);
 
-  // Climate data for Texas
-  const COOLING_DEGREE_DAYS = 2650; // Texas average (Houston/Dallas)
-  const SOLAR_RADIATION_KWH_M2 = 1450; // Annual solar radiation kWh/m²/year
-  const HVAC_SEER = 13; // Standard commercial HVAC efficiency
+  // Get climate data for selected region (default to Texas for backward compatibility)
+  const regionCode = selectedRegion || DEFAULT_STATE;
+  const climateInfo = CLIMATE_DATA[regionCode];
+
+  const [electricityRate, setElectricityRate] = useState(climateInfo.electricityRate);
+
+  // Auto-fill electricity rate when region changes (unless user manually edited it)
+  useEffect(() => {
+    if (!rateManuallySet) {
+      setElectricityRate(CLIMATE_DATA[regionCode].electricityRate);
+    }
+  }, [regionCode, rateManuallySet]);
+
+  // Derived climate constants from regional data
+  const COOLING_DEGREE_DAYS = climateInfo.cdd;
+  const SOLAR_RADIATION_KWH_M2 = climateInfo.solarRadiation;
+  const HVAC_SEER = 13; // HVAC efficiency is building-specific, not regional
   const HVAC_EER = HVAC_SEER * 0.875; // Convert SEER to EER (approx 11.4)
 
   /**
@@ -122,17 +133,17 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
      * This calculator targets the LOW END of that range for credibility
      *
      * This factor accounts for:
-     * - Only cooling season matters (April-Oct in Texas = ~60% of year)
+     * - Cooling season length (varies by region: 15% Alaska to 85% Hawaii)
      * - Heat transfer through R-20 roof (~35% efficiency)
      * - Building characteristics (thermal mass, occupancy patterns, internal gains)
      * - Only conditioned space benefits (not warehouses or unconditioned areas)
      * - Time lag effects and thermal inertia
      * - Real-world HVAC cycling and inefficiencies
      *
-     * Combined conservative factor: 0.60 (cooling season) × 0.35 (heat transfer) × 0.40 (building reality) = 0.084
-     * Using 0.08 to target ~$0.30/sq ft/year (low end of industry range)
+     * Combined conservative factor: coolingSeasonFraction × 0.35 (heat transfer) × 0.40 (building reality)
+     * For Texas: 0.60 × 0.35 × 0.40 = 0.084 (~$0.30/sq ft/year, low end of industry range)
      */
-    const ROOF_FACTOR = 0.08;
+    const ROOF_FACTOR = climateInfo.coolingSeasonFraction * 0.35 * 0.40;
 
     /**
      * STEP 1: Calculate Annual Solar Heat Gain Reduction (kWh/year)
@@ -197,18 +208,18 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
   };
 
   // Memoize results to prevent infinite loop - only recalculate when inputs actually change
-  const results = useMemo(() => calculateSavings(), [roofSize, roofType, coatingSystem, electricityRate]);
+  const results = useMemo(() => calculateSavings(), [roofSize, roofType, coatingSystem, electricityRate, regionCode]);
 
   // Send results back to parent component when they change
   useEffect(() => {
     if (onResultsChange) {
-      onResultsChange(results, electricityRate);
+      onResultsChange(results, electricityRate, regionCode);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // Intentionally excluding onResultsChange from dependencies to prevent infinite loop
     // The callback is created inline in parent, so it changes every render
-    // We only want to run this effect when the actual data (results/electricityRate) changes
-  }, [results, electricityRate]);
+    // We only want to run this effect when the actual data (results/electricityRate/regionCode) changes
+  }, [results, electricityRate, regionCode]);
 
   if (!results) {
     return (
@@ -246,16 +257,41 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
           <h4 className="font-bold text-blue-900 mb-2">Calculation Methodology (Highly Conservative)</h4>
           <ul className="text-blue-800 space-y-1 list-disc list-inside">
             <li>Based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards</li>
-            <li>Texas climate: {COOLING_DEGREE_DAYS} Cooling Degree Days, {SOLAR_RADIATION_KWH_M2} kWh/m²/year solar radiation</li>
+            <li>{climateInfo.name} climate (Zone {climateInfo.climateZone}): {COOLING_DEGREE_DAYS} Cooling Degree Days, {SOLAR_RADIATION_KWH_M2} kWh/m²/year solar radiation</li>
             <li>Commercial HVAC: SEER {HVAC_SEER} efficiency assumed</li>
             <li>Roof assembly: R-20 insulation (standard commercial construction)</li>
             <li>Reflectance change: {results.beforeRoof} → {results.afterRoof} (+{results.deltaReflectance}% reflectivity)</li>
-            <li><strong>Highly conservative factors applied:</strong> Cooling season only (60%), building reality (40%), realistic heat transfer (35%)</li>
+            <li><strong>Highly conservative factors applied:</strong> Cooling season ({Math.round(climateInfo.coolingSeasonFraction * 100)}%), building reality (40%), realistic heat transfer (35%)</li>
             <li><strong>Targets LOW END of industry range:</strong> $0.25-$0.75 per sq ft/year (aiming for ~$0.30/sq ft)</li>
             <li>ROI calculations include 3% annual electricity rate increase</li>
           </ul>
         </div>
       )}
+
+      {/* Region Selector */}
+      <div className="mb-4">
+        <label className="block text-sm font-semibold text-gray-700 mb-2">
+          <MapPin size={14} className="inline mr-1" />
+          Region / State
+        </label>
+        <select
+          value={regionCode}
+          onChange={(e) => {
+            setRateManuallySet(false);
+            onRegionChange(e.target.value);
+          }}
+          className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none bg-white"
+        >
+          {getStateOptions().map(({ code, name }) => (
+            <option key={code} value={code}>
+              {name} (Zone {CLIMATE_DATA[code].climateZone})
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-500 mt-1">
+          Climate Zone {climateInfo.climateZone} — {climateInfo.cdd} CDD, {climateInfo.solarRadiation} kWh/m²/year
+        </p>
+      </div>
 
       {/* Electricity Rate Input */}
       <div className="mb-6">
@@ -266,10 +302,13 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
           type="number"
           step="0.01"
           value={electricityRate}
-          onChange={(e) => setElectricityRate(parseFloat(e.target.value) || 0.12)}
+          onChange={(e) => {
+            setRateManuallySet(true);
+            setElectricityRate(parseFloat(e.target.value) || 0.12);
+          }}
           className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
         />
-        <p className="text-xs text-gray-500 mt-1">Texas average: $0.12/kWh. Check your utility bill for your actual rate.</p>
+        <p className="text-xs text-gray-500 mt-1">{climateInfo.name} average: ${climateInfo.electricityRate.toFixed(2)}/kWh. Check your utility bill for your actual rate.</p>
       </div>
 
       {/* Results Grid */}
@@ -344,7 +383,7 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
 
       {/* Disclaimer */}
       <div className="mt-4 text-xs text-gray-500 italic">
-        * Estimates based on Texas climate data and typical commercial building characteristics.
+        * Estimates based on {climateInfo.name} (Zone {climateInfo.climateZone}) climate data and typical commercial building characteristics.
         Actual savings vary by building insulation, HVAC efficiency, occupancy patterns, and weather conditions.
         These are conservative engineering estimates for planning purposes.
       </div>
