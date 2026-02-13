@@ -3,6 +3,7 @@ import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import EnergySavingsEstimator from './EnergySavingsEstimator.jsx';
+import { CLIMATE_DATA, DEFAULT_STATE } from './climateData.js';
 
 export default function App() {
   // --- STATE ---
@@ -81,6 +82,7 @@ export default function App() {
   const [showEnergySavings, setShowEnergySavings] = useState(false);
   const [energySavingsResults, setEnergySavingsResults] = useState(null);
   const [energyElectricityRate, setEnergyElectricityRate] = useState(0.12);
+  const [energyRegion, setEnergyRegion] = useState('TX');
 
   // Saved quotes
   const [savedQuotes, setSavedQuotes] = useState([]);
@@ -317,6 +319,7 @@ export default function App() {
       customerInfo,
       estimates,
       commonResults,
+      energyRegion,
       savedAt: new Date().toISOString()
     };
 
@@ -340,6 +343,7 @@ export default function App() {
       projectAddress: ''
     });
     setQuoteDate(quote.date || new Date().toISOString().split('T')[0]);
+    setEnergyRegion(quote.energyRegion || 'TX');
   };
 
   const deleteQuote = (quoteId) => {
@@ -356,6 +360,7 @@ export default function App() {
       prices,
       profitMargin,
       customerInfo,
+      energyRegion,
       exportedAt: new Date().toISOString()
     };
 
@@ -576,8 +581,9 @@ export default function App() {
     const deltaReflectance = afterRoof.solarReflectance - beforeRoof.solarReflectance;
     if (deltaReflectance <= 0) return null;
 
-    const ROOF_FACTOR = 0.08;
-    const SOLAR_RADIATION_KWH_M2 = 1450;
+    const climateInfo = CLIMATE_DATA[energyRegion] || CLIMATE_DATA[DEFAULT_STATE];
+    const ROOF_FACTOR = climateInfo.coolingSeasonFraction * 0.35 * 0.40;
+    const SOLAR_RADIATION_KWH_M2 = climateInfo.solarRadiation;
     const HVAC_EER = 13 * 0.875;
 
     const roofAreaM2 = roofSize * 0.092903;
@@ -612,6 +618,11 @@ export default function App() {
       roi10Year: Math.round(calculateCompoundSavings(10)),
       roi15Year: Math.round(calculateCompoundSavings(15)),
       roi20Year: Math.round(calculateCompoundSavings(20)),
+      regionName: climateInfo.name,
+      climateZone: climateInfo.climateZone,
+      cdd: climateInfo.cdd,
+      solarRadiation: climateInfo.solarRadiation,
+      coolingSeasonPct: Math.round(climateInfo.coolingSeasonFraction * 100),
     };
   };
 
@@ -765,13 +776,13 @@ export default function App() {
             text += `  20-Year Savings: $${energySavingsForEmail.roi20Year.toLocaleString()}\n\n`;
             text += `CALCULATION ASSUMPTIONS (Highly Conservative):\n`;
             text += `  • Reflectivity Change: ${energySavingsForEmail.beforeRoof} → ${energySavingsForEmail.afterRoof} (+${energySavingsForEmail.deltaReflectance}%)\n`;
-            text += `  • Texas Climate: 2650 Cooling Degree Days, 1450 kWh/m²/year solar radiation\n`;
+            text += `  • ${energySavingsForEmail.regionName} Climate (Zone ${energySavingsForEmail.climateZone}): ${energySavingsForEmail.cdd} Cooling Degree Days, ${energySavingsForEmail.solarRadiation} kWh/m²/year solar radiation\n`;
             text += `  • HVAC Efficiency: SEER 13 (typical commercial)\n`;
             text += `  • Electricity Rate: $${energyElectricityRate}/kWh\n`;
-            text += `  • Conservative Factors: Cooling season only (60%), building reality (40%), heat transfer (35%)\n`;
+            text += `  • Conservative Factors: Cooling season (${energySavingsForEmail.coolingSeasonPct}%), building reality (40%), heat transfer (35%)\n`;
             text += `  • Targets LOW END of industry range: $0.25-$0.75 per sq ft/year\n`;
             text += `  • ROI includes 3% annual electricity rate increase\n\n`;
-            text += `* Energy savings are estimates based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards.\n`;
+            text += `* Energy savings are estimates for ${energySavingsForEmail.regionName} based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards.\n`;
             text += `  Actual savings vary by building characteristics, HVAC efficiency, occupancy, and weather.\n`;
         }
     }
@@ -781,7 +792,7 @@ export default function App() {
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
     setEmailText(text);
-  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate]);
+  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate, energyRegion]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -1181,13 +1192,13 @@ export default function App() {
       doc.setFont('helvetica', 'normal');
       doc.text(`• Reflectivity Change: ${energySavingsForPDF.beforeRoof} → ${energySavingsForPDF.afterRoof} (+${energySavingsForPDF.deltaReflectance}%)`, 15, yPos);
       yPos += 4;
-      doc.text(`• Texas Climate: 2650 Cooling Degree Days, 1450 kWh/m²/year solar radiation`, 15, yPos);
+      doc.text(`• ${energySavingsForPDF.regionName} Climate (Zone ${energySavingsForPDF.climateZone}): ${energySavingsForPDF.cdd} Cooling Degree Days, ${energySavingsForPDF.solarRadiation} kWh/m²/year solar radiation`, 15, yPos);
       yPos += 4;
       doc.text(`• HVAC Efficiency: SEER 13 (typical commercial)`, 15, yPos);
       yPos += 4;
       doc.text(`• Electricity Rate: $${energyElectricityRate}/kWh`, 15, yPos);
       yPos += 4;
-      doc.text(`• Conservative Factors: Cooling season only (60%), building reality (40%), heat transfer (35%)`, 15, yPos);
+      doc.text(`• Conservative Factors: Cooling season (${energySavingsForPDF.coolingSeasonPct}%), building reality (40%), heat transfer (35%)`, 15, yPos);
       yPos += 4;
       doc.text(`• Targets LOW END of industry range: $0.25-$0.75 per sq ft/year`, 15, yPos);
       yPos += 4;
@@ -1196,7 +1207,7 @@ export default function App() {
 
       doc.setFontSize(7);
       doc.setFont('helvetica', 'italic');
-      const energyDisclaimer = '* Energy savings are estimates based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards. Actual savings vary by building characteristics, HVAC efficiency, occupancy patterns, and weather conditions.';
+      const energyDisclaimer = `* Energy savings are estimates for ${energySavingsForPDF.regionName} based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards. Actual savings vary by building characteristics, HVAC efficiency, occupancy patterns, and weather conditions.`;
       const splitEnergyDisclaimer = doc.splitTextToSize(energyDisclaimer, pageWidth - 30);
       doc.text(splitEnergyDisclaimer, 15, yPos);
       yPos += splitEnergyDisclaimer.length * 3 + 10;
@@ -2339,9 +2350,12 @@ export default function App() {
                       roofSize={inputs.roofSizeSqFt}
                       roofType={inputs.roofType}
                       coatingSystem={inputs.coatingSystem}
-                      onResultsChange={(results, rate) => {
+                      selectedRegion={energyRegion}
+                      onRegionChange={setEnergyRegion}
+                      onResultsChange={(results, rate, region) => {
                         setEnergySavingsResults(results);
                         setEnergyElectricityRate(rate);
+                        if (region) setEnergyRegion(region);
                       }}
                     />
                   </div>
