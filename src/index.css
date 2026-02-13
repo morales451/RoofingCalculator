@@ -1,3 +1,171 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@media print {
+  /* Page setup */
+  @page {
+    size: letter;
+    margin: 0.5in;
+  }
+
+  /* Global print resets */
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    font-size: 11px !important;
+  }
+
+  /* Hide interactive elements */
+  .print\:hidden,
+  button:not(.print-visible),
+  input[type="number"],
+  input[type="file"],
+  select,
+  textarea,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Show print-only elements */
+  .print\:block {
+    display: block !important;
+  }
+
+  /* Override show for elements inside print-visible containers */
+  .print-show {
+    display: block !important;
+  }
+
+  /* Table styling for print */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    font-size: 10px !important;
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  th, td {
+    border: 1px solid #d1d5db !important;
+    padding: 4px 8px !important;
+  }
+
+  /* Compact padding for print */
+  .p-6 {
+    padding: 0.5rem !important;
+  }
+
+  .p-4 {
+    padding: 0.375rem !important;
+  }
+
+  .mb-6, .mb-8 {
+    margin-bottom: 0.5rem !important;
+  }
+
+  .mt-6, .mt-8 {
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* Remove shadows and make backgrounds white */
+  .shadow-lg, .shadow-sm {
+    box-shadow: none !important;
+  }
+
+  .rounded-xl, .rounded-lg {
+    border-radius: 4px !important;
+  }
+
+  /* Make the dark header light for print */
+  .bg-gray-900 {
+    background-color: #f3f4f6 !important;
+    color: #111827 !important;
+  }
+
+  .bg-gray-900 .text-white {
+    color: #111827 !important;
+  }
+
+  .bg-gray-900 .text-green-400 {
+    color: #047857 !important;
+  }
+
+  .bg-gray-900 .text-gray-400 {
+    color: #6b7280 !important;
+  }
+
+  .bg-gray-900 .text-gray-300 {
+    color: #6b7280 !important;
+  }
+
+  /* Ensure border visibility */
+  .border-gray-200 {
+    border-color: #d1d5db !important;
+  }
+
+  /* Force color printing on backgrounds */
+  .bg-green-100, .bg-blue-50, .bg-purple-50,
+  .bg-orange-50, .bg-red-50, .bg-yellow-50 {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Show static values instead of inputs for price cells */
+  .print-price-value {
+    display: inline !important;
+    font-weight: 600;
+  }
+
+  /* Ensure the right column takes full width */
+  .lg\:col-span-8 {
+    grid-column: span 12 / span 12 !important;
+    width: 100% !important;
+  }
+
+  /* Remove sticky positioning */
+  .sticky {
+    position: static !important;
+  }
+
+  /* Page break control */
+  .print-page-break {
+    page-break-before: always;
+  }
+
+  /* Disclaimer styling */
+  .bg-gray-100 {
+    background-color: #f9fafb !important;
+  }
+
+  /* Compact the grid for print */
+  .grid {
+    display: block !important;
+  }
+
+  .lg\:col-span-4 {
+    display: none !important;
+  }
+
+  /* Override grid for the results section */
+  .lg\:col-span-8 .grid {
+    display: grid !important;
+  }
+
+  /* Footer */
+  .bg-gray-100.p-4.text-xs {
+    margin-top: 1rem !important;
+    padding: 0.5rem !important;
+    border-top: 2px solid #111827 !important;
+    font-size: 8px !important;
+  }
+}
