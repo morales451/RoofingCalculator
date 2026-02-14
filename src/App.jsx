@@ -87,6 +87,7 @@ export default function App() {
   // --- MULTI-SECTION ROOFS ---
   const [roofSections, setRoofSections] = useState([]);
   const [useMultiSection, setUseMultiSection] = useState(false);
+  const [sectionResults, setSectionResults] = useState([]);
 
   const addRoofSection = () => {
     setRoofSections(prev => [...prev, {
@@ -94,7 +95,9 @@ export default function App() {
       name: `Section ${prev.length + 1}`,
       sqFt: 0,
       linearFeet: 0,
-      roofType: inputs.roofType
+      roofType: inputs.roofType,
+      wasteFactor: 0,
+      stretchFactor: 0
     }]);
   };
 
@@ -448,7 +451,13 @@ export default function App() {
     });
     setQuoteDate(quote.date || new Date().toISOString().split('T')[0]);
     setEnergyRegion(quote.energyRegion || 'TX');
-    setRoofSections(quote.roofSections || []);
+    // Migrate old sections that lack per-section waste/stretch factors
+    const migratedSections = (quote.roofSections || []).map(s => ({
+      ...s,
+      wasteFactor: s.wasteFactor !== undefined ? s.wasteFactor : (quote.inputs?.wasteFactor || 0),
+      stretchFactor: s.stretchFactor !== undefined ? s.stretchFactor : (quote.inputs?.stretchFactor || 0)
+    }));
+    setRoofSections(migratedSections);
     setUseMultiSection(quote.useMultiSection || false);
   };
 
@@ -515,147 +524,305 @@ export default function App() {
       return Math.ceil(val / 5) * 5;
   };
 
+  // --- PER-SECTION CALCULATION HELPER ---
+  const calculateForSection = (section, globalInputs) => {
+    const { sqFt, linearFeet, roofType, wasteFactor, stretchFactor } = section;
+    const { coatingSystem, acrylicSystemType, passedAdhesion, hasRust,
+            goldseal, accessoryType, selectedButterGrade, selectedFabric } = globalInputs;
+
+    const squares = sqFt > 0 ? sqFt / 100 : 0;
+    const totalFactor = 1 + parseFloat(wasteFactor) + parseFloat(stretchFactor);
+
+    // Accessories
+    let accQty = 0, accUnit = '', accDesc = '', accDisplayName = '';
+    let membraneRolls = 0, estimatedScrews = 0, bucketsForScrews = 0;
+
+    if (accessoryType === 'Butter Grade') {
+      const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
+      const bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
+      accQty = bucketsForLinear;
+      accUnit = 'Buckets';
+      const bucketSizeLabel = coatingSystem === 'Acrylic' ? '3.5-gal' : '2-gal';
+      accDesc = `${bucketSizeLabel} containers (~${Math.round(lfPerBucket)} LF/ea)`;
+      accDisplayName = selectedButterGrade;
+
+      if (roofType === 'Metal' && sqFt > 0) {
+        const screwsPerBucket = coatingSystem === 'Acrylic' ? 4375 : 2500;
+        estimatedScrews = Math.ceil(sqFt * 0.8);
+        bucketsForScrews = Math.ceil(estimatedScrews / screwsPerBucket);
+        accQty += bucketsForScrews;
+      }
+    } else {
+      accQty = linearFeet > 0 ? Math.ceil(linearFeet / 300) : 0;
+      accUnit = 'Rolls';
+      accDisplayName = selectedFabric;
+    }
+
+    if (coatingSystem === 'Acrylic' && acrylicSystemType === 'Reinforced') {
+      const rollCoverage = 1080;
+      membraneRolls = sqFt > 0 ? Math.ceil((sqFt * totalFactor) / rollCoverage) : 0;
+    }
+
+    // Per-warranty-year coating gallons
+    const sectionEstimates = {};
+    let systemSpec = null;
+    if (coatingSystem === 'Silicone') {
+      systemSpec = SYSTEM_DATA['Silicone'][roofType];
+    } else if (coatingSystem === 'Aluminum') {
+      systemSpec = SYSTEM_DATA['Aluminum'][roofType];
+    } else {
+      const safeAcrylicSystemType = acrylicSystemType || 'Standard';
+      systemSpec = SYSTEM_DATA['Acrylic'][safeAcrylicSystemType]?.[roofType];
+    }
+
+    const defaultEst = { baseGal: 0, top1Gal: 0, top2Gal: 0, top3Gal: 0, adhesionPrimerGal: 0, rustPrimerGal: 0, goldsealCost: 0, totalGallons: 0, rates: { base: 0, top1: 0, top2: 0, top3: 0 } };
+
+    ['10', '15', '20'].forEach(year => {
+      if (!systemSpec || !systemSpec[year]) {
+        sectionEstimates[year] = { ...defaultEst };
+        return;
+      }
+
+      const rates = systemSpec[year];
+      const baseGal = roundToFive(squares * (rates.base || 0) * totalFactor);
+      const top1Gal = roundToFive(squares * (rates.top1 || 0) * totalFactor);
+      const top2Gal = roundToFive(squares * (rates.top2 || 0) * totalFactor);
+      const top3Gal = roundToFive(squares * (rates.top3 || 0) * totalFactor);
+
+      let adhesionPrimerGal = 0;
+      if (!passedAdhesion) {
+        adhesionPrimerGal = Math.ceil(squares * 0.2 * totalFactor);
+      }
+
+      let rustPrimerGal = 0;
+      if (coatingSystem === 'Silicone' && roofType === 'Metal' && hasRust) {
+        rustPrimerGal = roundToFive(squares * 0.5 * totalFactor);
+      }
+
+      // Per-section goldseal: proportional cost (minimum applied to total later)
+      let goldsealCost = 0;
+      if (goldseal && sqFt > 0) {
+        let rate = 0.06;
+        if (year === '15') rate = 0.08;
+        if (year === '20') rate = 0.10;
+        goldsealCost = sqFt * rate;
+      }
+
+      const totalGallons = baseGal + top1Gal + top2Gal + top3Gal + adhesionPrimerGal + rustPrimerGal;
+
+      sectionEstimates[year] = { baseGal, top1Gal, top2Gal, top3Gal, adhesionPrimerGal, rustPrimerGal, goldsealCost, totalGallons, rates };
+    });
+
+    return {
+      estimates: sectionEstimates,
+      accessories: { accQty, accUnit, accDesc, accDisplayName, membraneRolls, estimatedScrews, bucketsForScrews },
+      squares
+    };
+  };
+
   // --- CALCULATIONS ---
   useEffect(() => {
-    const { 
-        roofSizeSqFt, linearFeet, roofType, wasteFactor, stretchFactor, 
+    const {
+        roofSizeSqFt, linearFeet, roofType, wasteFactor, stretchFactor,
         goldseal, passedAdhesion, hasRust, accessoryType, coatingSystem, acrylicSystemType,
         selectedTopcoat, selectedBasecoat, selectedButterGrade, selectedFabric
     } = inputs;
 
-    const squares = roofSizeSqFt > 0 ? roofSizeSqFt / 100 : 0;
-    const totalFactor = 1 + parseFloat(wasteFactor) + parseFloat(stretchFactor);
+    if (useMultiSection && roofSections.length > 0) {
+      // --- MULTI-SECTION PATH: calculate each section independently, then aggregate ---
+      const perSectionResults = roofSections.map(section => calculateForSection(section, inputs));
 
-    let accQty = 0;
-    let accUnit = '';
-    let accDesc = '';
-    let accDisplayName = '';
-    let membraneRolls = 0;
-    let estimatedScrews = 0;
-    let bucketsForScrews = 0;
-
-    if (accessoryType === 'Butter Grade') {
-        const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
-        const bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
-        accQty = bucketsForLinear;
-        accUnit = 'Buckets';
-        
-        // Dynamic label for bucket size
-        const bucketSizeLabel = coatingSystem === 'Acrylic' ? '3.5-gal' : '2-gal';
-        
-        accDesc = `${bucketSizeLabel} containers (~${Math.round(lfPerBucket)} LF/ea)`;
-        accDisplayName = selectedButterGrade;
-
-        // Allow screw calc for any Metal roof - regardless of linear feet input
-        if (roofType === 'Metal' && roofSizeSqFt > 0) {
-             // Silicone: 2500/2g. Acrylic: 4375/3.5g (derived from silicone ratio 1250 screws/gal).
-             const screwsPerBucket = coatingSystem === 'Acrylic' ? 4375 : 2500;
-            
-            estimatedScrews = Math.ceil(roofSizeSqFt * 0.8);
-            bucketsForScrews = Math.ceil(estimatedScrews / screwsPerBucket);
-            
-            // Add screw buckets to total accessory quantity
-            accQty += bucketsForScrews;
-            accDesc += ` + Screw Encapsulation`;
-        }
-    } else {
-        accQty = linearFeet > 0 ? Math.ceil(linearFeet / 300) : 0;
-        accUnit = 'Rolls';
-        accDesc = 'Reinforcement Fabric (300 LF/ea)';
-        accDisplayName = selectedFabric;
-    }
-
-    if (coatingSystem === 'Acrylic' && acrylicSystemType === 'Reinforced') {
-        const rollCoverage = 1080; 
-        membraneRolls = roofSizeSqFt > 0 ? Math.ceil((roofSizeSqFt * totalFactor) / rollCoverage) : 0;
-    }
-
-    setCommonResults({
-        squares,
-        accessoryName: accDisplayName,
-        accessoryQty: accQty,
-        accessoryUnit: accUnit,
-        accessoryDesc: accDesc,
-        membraneRolls,
-        screwCount: estimatedScrews,
-        screwBuckets: bucketsForScrews
-    });
-
-    const defaultEstimate = { baseGal: 0, top1Gal: 0, top2Gal: 0, top3Gal: 0, adhesionPrimerGal: 0, rustPrimerGal: 0, goldsealCost: 0, totalGallons: 0, rates: { base: 0, top1: 0, top2: 0, top3: 0 } };
-    const newEstimates = { '10': { ...defaultEstimate }, '15': { ...defaultEstimate }, '20': { ...defaultEstimate } };
-    let systemSpec = null;
-    if (coatingSystem === 'Silicone') {
-        systemSpec = SYSTEM_DATA['Silicone'][roofType];
-    } else if (coatingSystem === 'Aluminum') {
-        systemSpec = SYSTEM_DATA['Aluminum'][roofType];
-    } else {
-        // Defensive fallback: ensure acrylicSystemType is never undefined
-        const safeAcrylicSystemType = acrylicSystemType || 'Standard';
-        systemSpec = SYSTEM_DATA['Acrylic'][safeAcrylicSystemType]?.[roofType];
-    }
-
-    ['10', '15', '20'].forEach(year => {
-        if (!systemSpec) return;
-
-        const rates = systemSpec[year];
-        if (!rates) return; // Skip if this warranty year is not available (e.g., Aluminum 15/20-year)
-
-        // Calculate Base - ROUND TO 5
-        const rawBase = squares * (rates.base || 0);
-        const baseGal = roundToFive(rawBase * totalFactor);
-        
-        // Calculate Topcoats - ROUND TO 5
-        const rawTop1 = squares * (rates.top1 || 0);
-        const top1Gal = roundToFive(rawTop1 * totalFactor);
-        
-        const rawTop2 = squares * (rates.top2 || 0);
-        const top2Gal = roundToFive(rawTop2 * totalFactor);
-        
-        const rawTop3 = squares * (rates.top3 || 0);
-        const top3Gal = roundToFive(rawTop3 * totalFactor);
-
-        // Adhesion Primer - STANDARD ROUNDING (1-GAL)
-        let adhesionPrimerGal = 0;
-        if (!passedAdhesion) {
-            const rawAdhesion = squares * 0.2;
-            adhesionPrimerGal = Math.ceil(rawAdhesion * totalFactor);
-        }
-
-        // Rust Primer - ROUND TO 5
-        let rustPrimerGal = 0;
-        if (coatingSystem === 'Silicone' && roofType === 'Metal' && hasRust) {
-             const rawRust = squares * 0.5;
-             rustPrimerGal = roundToFive(rawRust * totalFactor);
-        }
-
-        let goldsealCost = 0;
+      // Aggregate estimates by summing across all sections
+      const aggregatedEstimates = {};
+      ['10', '15', '20'].forEach(year => {
+        const summed = { baseGal: 0, top1Gal: 0, top2Gal: 0, top3Gal: 0, adhesionPrimerGal: 0, rustPrimerGal: 0, goldsealCost: 0, totalGallons: 0, rates: { base: 0, top1: 0, top2: 0, top3: 0 } };
+        perSectionResults.forEach(sr => {
+          const est = sr.estimates[year];
+          summed.baseGal += est.baseGal;
+          summed.top1Gal += est.top1Gal;
+          summed.top2Gal += est.top2Gal;
+          summed.top3Gal += est.top3Gal;
+          summed.adhesionPrimerGal += est.adhesionPrimerGal;
+          summed.rustPrimerGal += est.rustPrimerGal;
+          summed.goldsealCost += est.goldsealCost;
+          summed.totalGallons += est.totalGallons;
+        });
+        // Apply goldseal minimum on the total roof, not per-section
         if (goldseal && roofSizeSqFt > 0) {
-            let rate = 0.06;
-            let min = 900;
-            if (year === '15') { rate = 0.08; min = 1200; }
-            if (year === '20') { rate = 0.10; min = 1500; }
-            const calculated = roofSizeSqFt * rate;
-            goldsealCost = Math.max(calculated, min);
+          let min = 900;
+          if (year === '15') min = 1200;
+          if (year === '20') min = 1500;
+          summed.goldsealCost = Math.max(summed.goldsealCost, min);
         }
-        
-        const totalGallons = baseGal + top1Gal + top2Gal + top3Gal + adhesionPrimerGal + rustPrimerGal;
+        aggregatedEstimates[year] = summed;
+      });
 
-        newEstimates[year] = {
-            baseGal,
-            top1Gal,
-            top2Gal,
-            top3Gal,
-            adhesionPrimerGal,
-            rustPrimerGal,
-            goldsealCost,
-            totalGallons,
-            rates 
-        };
-    });
+      // Aggregate accessories
+      let totalAccQty = 0, totalMembraneRolls = 0, totalScrews = 0, totalScrewBuckets = 0, totalSquares = 0;
+      perSectionResults.forEach(sr => {
+        totalAccQty += sr.accessories.accQty;
+        totalMembraneRolls += sr.accessories.membraneRolls;
+        totalScrews += sr.accessories.estimatedScrews;
+        totalScrewBuckets += sr.accessories.bucketsForScrews;
+        totalSquares += sr.squares;
+      });
 
-    setEstimates(newEstimates);
+      const firstAcc = perSectionResults[0]?.accessories || {};
+      let accDesc = firstAcc.accDesc || '';
+      if (totalScrewBuckets > 0 && !accDesc.includes('Screw Encapsulation')) {
+        accDesc += ' + Screw Encapsulation';
+      }
 
-  }, [inputs]);
+      setCommonResults({
+        squares: totalSquares,
+        accessoryName: firstAcc.accDisplayName || '',
+        accessoryQty: totalAccQty,
+        accessoryUnit: firstAcc.accUnit || '',
+        accessoryDesc: accDesc,
+        membraneRolls: totalMembraneRolls,
+        screwCount: totalScrews,
+        screwBuckets: totalScrewBuckets
+      });
+
+      setEstimates(aggregatedEstimates);
+
+      // Store per-section results for email/clipboard breakdown
+      setSectionResults(roofSections.map((section, i) => ({
+        ...section,
+        calculatedEstimates: perSectionResults[i].estimates,
+        calculatedAccessories: perSectionResults[i].accessories,
+        calculatedSquares: perSectionResults[i].squares
+      })));
+
+    } else {
+      // --- SINGLE-SECTION PATH (original logic, unchanged) ---
+      setSectionResults([]);
+
+      const squares = roofSizeSqFt > 0 ? roofSizeSqFt / 100 : 0;
+      const totalFactor = 1 + parseFloat(wasteFactor) + parseFloat(stretchFactor);
+
+      let accQty = 0;
+      let accUnit = '';
+      let accDesc = '';
+      let accDisplayName = '';
+      let membraneRolls = 0;
+      let estimatedScrews = 0;
+      let bucketsForScrews = 0;
+
+      if (accessoryType === 'Butter Grade') {
+          const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
+          const bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
+          accQty = bucketsForLinear;
+          accUnit = 'Buckets';
+
+          const bucketSizeLabel = coatingSystem === 'Acrylic' ? '3.5-gal' : '2-gal';
+
+          accDesc = `${bucketSizeLabel} containers (~${Math.round(lfPerBucket)} LF/ea)`;
+          accDisplayName = selectedButterGrade;
+
+          if (roofType === 'Metal' && roofSizeSqFt > 0) {
+               const screwsPerBucket = coatingSystem === 'Acrylic' ? 4375 : 2500;
+
+              estimatedScrews = Math.ceil(roofSizeSqFt * 0.8);
+              bucketsForScrews = Math.ceil(estimatedScrews / screwsPerBucket);
+
+              accQty += bucketsForScrews;
+              accDesc += ` + Screw Encapsulation`;
+          }
+      } else {
+          accQty = linearFeet > 0 ? Math.ceil(linearFeet / 300) : 0;
+          accUnit = 'Rolls';
+          accDesc = 'Reinforcement Fabric (300 LF/ea)';
+          accDisplayName = selectedFabric;
+      }
+
+      if (coatingSystem === 'Acrylic' && acrylicSystemType === 'Reinforced') {
+          const rollCoverage = 1080;
+          membraneRolls = roofSizeSqFt > 0 ? Math.ceil((roofSizeSqFt * totalFactor) / rollCoverage) : 0;
+      }
+
+      setCommonResults({
+          squares,
+          accessoryName: accDisplayName,
+          accessoryQty: accQty,
+          accessoryUnit: accUnit,
+          accessoryDesc: accDesc,
+          membraneRolls,
+          screwCount: estimatedScrews,
+          screwBuckets: bucketsForScrews
+      });
+
+      const defaultEstimate = { baseGal: 0, top1Gal: 0, top2Gal: 0, top3Gal: 0, adhesionPrimerGal: 0, rustPrimerGal: 0, goldsealCost: 0, totalGallons: 0, rates: { base: 0, top1: 0, top2: 0, top3: 0 } };
+      const newEstimates = { '10': { ...defaultEstimate }, '15': { ...defaultEstimate }, '20': { ...defaultEstimate } };
+      let systemSpec = null;
+      if (coatingSystem === 'Silicone') {
+          systemSpec = SYSTEM_DATA['Silicone'][roofType];
+      } else if (coatingSystem === 'Aluminum') {
+          systemSpec = SYSTEM_DATA['Aluminum'][roofType];
+      } else {
+          const safeAcrylicSystemType = acrylicSystemType || 'Standard';
+          systemSpec = SYSTEM_DATA['Acrylic'][safeAcrylicSystemType]?.[roofType];
+      }
+
+      ['10', '15', '20'].forEach(year => {
+          if (!systemSpec) return;
+
+          const rates = systemSpec[year];
+          if (!rates) return;
+
+          const rawBase = squares * (rates.base || 0);
+          const baseGal = roundToFive(rawBase * totalFactor);
+
+          const rawTop1 = squares * (rates.top1 || 0);
+          const top1Gal = roundToFive(rawTop1 * totalFactor);
+
+          const rawTop2 = squares * (rates.top2 || 0);
+          const top2Gal = roundToFive(rawTop2 * totalFactor);
+
+          const rawTop3 = squares * (rates.top3 || 0);
+          const top3Gal = roundToFive(rawTop3 * totalFactor);
+
+          let adhesionPrimerGal = 0;
+          if (!passedAdhesion) {
+              const rawAdhesion = squares * 0.2;
+              adhesionPrimerGal = Math.ceil(rawAdhesion * totalFactor);
+          }
+
+          let rustPrimerGal = 0;
+          if (coatingSystem === 'Silicone' && roofType === 'Metal' && hasRust) {
+               const rawRust = squares * 0.5;
+               rustPrimerGal = roundToFive(rawRust * totalFactor);
+          }
+
+          let goldsealCost = 0;
+          if (goldseal && roofSizeSqFt > 0) {
+              let rate = 0.06;
+              let min = 900;
+              if (year === '15') { rate = 0.08; min = 1200; }
+              if (year === '20') { rate = 0.10; min = 1500; }
+              const calculated = roofSizeSqFt * rate;
+              goldsealCost = Math.max(calculated, min);
+          }
+
+          const totalGallons = baseGal + top1Gal + top2Gal + top3Gal + adhesionPrimerGal + rustPrimerGal;
+
+          newEstimates[year] = {
+              baseGal,
+              top1Gal,
+              top2Gal,
+              top3Gal,
+              adhesionPrimerGal,
+              rustPrimerGal,
+              goldsealCost,
+              totalGallons,
+              rates
+          };
+      });
+
+      setEstimates(newEstimates);
+    }
+
+  }, [inputs, useMultiSection, roofSections]);
 
   // Calculate energy savings for PDF/Email (same logic as EnergySavingsEstimator component)
   // MUST be defined BEFORE the TEXT GENERATION EFFECT useEffect below
@@ -745,7 +912,12 @@ export default function App() {
     const primerSet = PRIMER_LOOKUP[brand];
 
     let text = `PROJECT ESTIMATE: ${projectName || 'Untitled'}\n\n`;
-    text += `System: ${coatingSystem} on ${roofType}`;
+    if (useMultiSection && roofSections.length > 0) {
+      const uniqueTypes = [...new Set(roofSections.map(s => s.roofType))];
+      text += `System: ${coatingSystem} on ${uniqueTypes.join(' / ')} (Multi-Section)`;
+    } else {
+      text += `System: ${coatingSystem} on ${roofType}`;
+    }
     if (coatingSystem === 'Acrylic') text += ` (${acrylicSystemType})`;
     text += `\n`;
 
@@ -753,10 +925,39 @@ export default function App() {
     if (useMultiSection && roofSections.length > 0) {
       text += `\nRoof Sections:\n`;
       roofSections.forEach(s => {
-        text += `  - ${s.name}: ${s.sqFt || 0} sqft, ${s.linearFeet || 0} LF (${s.roofType})\n`;
+        text += `  - ${s.name}: ${s.sqFt || 0} sqft, ${s.linearFeet || 0} LF (${s.roofType}) [Waste: ${Math.round((s.wasteFactor || 0) * 100)}%, Stretch: ${Math.round((s.stretchFactor || 0) * 100)}%]\n`;
       });
+
+      // Per-section material breakdown
+      if (sectionResults.length > 0) {
+        text += `\nPer-Section Material Breakdown:\n`;
+        sectionResults.forEach(sr => {
+          text += `\n  ${sr.name} (${sr.roofType}, ${sr.calculatedSquares.toFixed(2)} sq):\n`;
+          ['10', '15', '20'].forEach(year => {
+            const est = sr.calculatedEstimates?.[year];
+            if (!est || est.totalGallons === 0) return;
+            let detail = `    ${year}-Year: ${est.totalGallons} gal total`;
+            const parts = [];
+            if (est.baseGal > 0) parts.push(`Base: ${est.baseGal}`);
+            if (est.top1Gal > 0) parts.push(`Top1: ${est.top1Gal}`);
+            if (est.top2Gal > 0) parts.push(`Top2: ${est.top2Gal}`);
+            if (est.top3Gal > 0) parts.push(`Top3: ${est.top3Gal}`);
+            if (est.adhesionPrimerGal > 0) parts.push(`Adhesion: ${est.adhesionPrimerGal}`);
+            if (est.rustPrimerGal > 0) parts.push(`Rust: ${est.rustPrimerGal}`);
+            if (parts.length > 0) detail += ` (${parts.join(', ')})`;
+            text += detail + `\n`;
+          });
+          if (sr.calculatedAccessories.accQty > 0) {
+            text += `    Accessories: ${sr.calculatedAccessories.accQty} ${sr.calculatedAccessories.accUnit}\n`;
+          }
+        });
+      }
     }
-    text += `Calculation Factors: ${Math.round(wasteFactor * 100)}% Waste, ${Math.round(stretchFactor * 100)}% Stretch\n`;
+    if (useMultiSection && roofSections.length > 0) {
+      text += `\nCalculation Factors: Per-Section (see details above)\n`;
+    } else {
+      text += `Calculation Factors: ${Math.round(wasteFactor * 100)}% Waste, ${Math.round(stretchFactor * 100)}% Stretch\n`;
+    }
     text += `Note: All quantities are rounded up to the nearest full pail where applicable.\n`;
 
     if (linearFeet > 0 || commonResults.screwBuckets > 0) {
@@ -797,7 +998,8 @@ export default function App() {
         text += `\n\n--- ${year}-YEAR OPTION ---\n\n`;
 
         if (coatingSystem !== 'Aluminum' && est.baseGal > 0) {
-            text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat}) @ ${est.rates.base} gal/sq`;
+            text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat})`;
+            if (!useMultiSection && est.rates.base) text += ` @ ${est.rates.base} gal/sq`;
             if (prices.basecoat > 0) text += `\n  Unit Price: $${prices.basecoat.toFixed(2)}/gal | Line Total: $${(est.baseGal * prices.basecoat).toFixed(2)}`;
             text += `\n`;
         }
@@ -814,17 +1016,20 @@ export default function App() {
         }
 
         if (est.top1Gal > 0) {
-            text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat}) @ ${est.rates.top1} gal/sq`;
+            text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat})`;
+            if (!useMultiSection && est.rates.top1) text += ` @ ${est.rates.top1} gal/sq`;
             if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top1Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top2Gal > 0) {
-            text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat}) @ ${est.rates.top2} gal/sq`;
+            text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat})`;
+            if (!useMultiSection && est.rates.top2) text += ` @ ${est.rates.top2} gal/sq`;
             if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top2Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top3Gal > 0) {
-            text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat}) @ ${est.rates.top3} gal/sq`;
+            text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat})`;
+            if (!useMultiSection && est.rates.top3) text += ` @ ${est.rates.top3} gal/sq`;
             if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top3Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
@@ -906,7 +1111,7 @@ export default function App() {
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
     setEmailText(text);
-  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections]);
+  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections, sectionResults]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -1028,7 +1233,12 @@ export default function App() {
     doc.setFont('helvetica', 'normal');
     doc.text(`Coating System: ${inputs.coatingSystem}`, 15, yPos);
     yPos += 6;
-    doc.text(`Roof Type: ${inputs.roofType}`, 15, yPos);
+    if (useMultiSection && roofSections.length > 0) {
+      const uniqueTypes = [...new Set(roofSections.map(s => s.roofType))];
+      doc.text(`Roof Type: ${uniqueTypes.join(' / ')} (Multi-Section)`, 15, yPos);
+    } else {
+      doc.text(`Roof Type: ${inputs.roofType}`, 15, yPos);
+    }
     yPos += 6;
     doc.text(`Roof Size: ${inputs.roofSizeSqFt.toLocaleString()} sq ft (${commonResults.squares} squares)`, 15, yPos);
     yPos += 6;
@@ -1046,7 +1256,7 @@ export default function App() {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       roofSections.forEach(s => {
-        doc.text(`  ${s.name}: ${(s.sqFt || 0).toLocaleString()} sqft, ${(s.linearFeet || 0).toLocaleString()} LF (${s.roofType})`, 15, yPos);
+        doc.text(`  ${s.name}: ${(s.sqFt || 0).toLocaleString()} sqft, ${(s.linearFeet || 0).toLocaleString()} LF (${s.roofType}) - Waste: ${Math.round((s.wasteFactor || 0) * 100)}%, Stretch: ${Math.round((s.stretchFactor || 0) * 100)}%`, 15, yPos);
         yPos += 4;
       });
       doc.setFontSize(10);
@@ -1465,17 +1675,26 @@ export default function App() {
         )}
         <div className="grid grid-cols-3 gap-4 text-sm bg-gray-100 p-3 rounded">
           <div><span className="font-bold">System:</span> {inputs.coatingSystem}{inputs.coatingSystem === 'Acrylic' ? ` (${inputs.acrylicSystemType})` : ''}</div>
-          <div><span className="font-bold">Roof Type:</span> {inputs.roofType}</div>
+          <div><span className="font-bold">Roof Type:</span> {useMultiSection && roofSections.length > 0 ? [...new Set(roofSections.map(s => s.roofType))].join(' / ') : inputs.roofType}</div>
           <div><span className="font-bold">Roof Size:</span> {inputs.roofSizeSqFt.toLocaleString()} sqft ({commonResults.squares.toFixed(1)} sq)</div>
           {inputs.linearFeet > 0 && <div><span className="font-bold">Linear Feet:</span> {inputs.linearFeet.toLocaleString()}</div>}
-          <div><span className="font-bold">Waste:</span> {Math.round(inputs.wasteFactor * 100)}%</div>
-          <div><span className="font-bold">Stretch:</span> {Math.round(inputs.stretchFactor * 100)}%</div>
+          {useMultiSection && roofSections.length > 0 ? (
+            <>
+              <div><span className="font-bold">Waste:</span> Per-Section</div>
+              <div><span className="font-bold">Stretch:</span> Per-Section</div>
+            </>
+          ) : (
+            <>
+              <div><span className="font-bold">Waste:</span> {Math.round(inputs.wasteFactor * 100)}%</div>
+              <div><span className="font-bold">Stretch:</span> {Math.round(inputs.stretchFactor * 100)}%</div>
+            </>
+          )}
         </div>
         {useMultiSection && roofSections.length > 0 && (
           <div className="mt-3 text-sm">
             <h3 className="font-bold text-gray-800 mb-1">Roof Sections</h3>
             <table className="w-full text-xs border border-gray-300">
-              <thead><tr className="bg-gray-200"><th className="px-2 py-1 text-left">Section</th><th className="px-2 py-1 text-right">Sq Ft</th><th className="px-2 py-1 text-right">Linear Ft</th><th className="px-2 py-1 text-left">Roof Type</th></tr></thead>
+              <thead><tr className="bg-gray-200"><th className="px-2 py-1 text-left">Section</th><th className="px-2 py-1 text-right">Sq Ft</th><th className="px-2 py-1 text-right">Linear Ft</th><th className="px-2 py-1 text-left">Roof Type</th><th className="px-2 py-1 text-right">Waste</th><th className="px-2 py-1 text-right">Stretch</th></tr></thead>
               <tbody>
                 {roofSections.map(s => (
                   <tr key={s.id} className="border-t border-gray-200">
@@ -1483,6 +1702,8 @@ export default function App() {
                     <td className="px-2 py-1 text-right">{(s.sqFt || 0).toLocaleString()}</td>
                     <td className="px-2 py-1 text-right">{(s.linearFeet || 0).toLocaleString()}</td>
                     <td className="px-2 py-1">{s.roofType}</td>
+                    <td className="px-2 py-1 text-right">{Math.round((s.wasteFactor || 0) * 100)}%</td>
+                    <td className="px-2 py-1 text-right">{Math.round((s.stretchFactor || 0) * 100)}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -1870,6 +2091,37 @@ export default function App() {
                         </select>
                       </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">Waste Factor</label>
+                        <select
+                          value={section.wasteFactor}
+                          onChange={(e) => updateRoofSection(section.id, 'wasteFactor', e.target.value)}
+                          className="w-full p-1.5 text-sm border border-gray-300 rounded"
+                        >
+                          <option value="0">0%</option>
+                          <option value="0.05">5%</option>
+                          <option value="0.10">10%</option>
+                          <option value="0.15">15%</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">Stretch Factor</label>
+                        <select
+                          value={section.stretchFactor}
+                          onChange={(e) => updateRoofSection(section.id, 'stretchFactor', e.target.value)}
+                          className="w-full p-1.5 text-sm border border-gray-300 rounded"
+                        >
+                          <option value="0">0%</option>
+                          <option value="0.05">5%</option>
+                          <option value="0.10">10%</option>
+                          <option value="0.15">15%</option>
+                          <option value="0.20">20%</option>
+                          <option value="0.25">25%</option>
+                          <option value="0.30">30%</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 ))}
                 <button onClick={addRoofSection} className="w-full py-2 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-medium hover:bg-blue-50 flex items-center justify-center gap-1">
@@ -1890,10 +2142,15 @@ export default function App() {
           </div>
 
           {/* System Specs */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 ${useMultiSection ? 'opacity-50 pointer-events-none' : ''}`}>
             <h2 className="text-lg font-semibold flex items-center gap-2 mb-4 text-blue-800">
               <Layers size={20} /> System Specs
             </h2>
+            {useMultiSection && (
+              <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                These settings are configured per-section when Multi-Section mode is active.
+              </div>
+            )}
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Roof Type</label>
@@ -2700,7 +2957,7 @@ export default function App() {
             
             {/* Footer */}
             <div className="bg-gray-100 p-4 text-xs text-center text-gray-500 border-t border-gray-200">
-              <p className="mb-2">Estimates include {Math.round(inputs.wasteFactor * 100)}% Waste and {Math.round(inputs.stretchFactor * 100)}% Stretch factors.</p>
+              <p className="mb-2">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% Waste and ${Math.round(inputs.stretchFactor * 100)}% Stretch factors.`}</p>
               <div className="font-bold text-gray-700 mt-2 border-t border-gray-200 pt-2">
                 DISCLAIMER: THIS QUOTE IS PROVIDED AS A GUIDELINE AND ESTIMATE ONLY. ACTUAL MATERIAL QUANTITIES MAY VARY DEPENDING ON FACTORS INCLUDING BUT NOT LIMITED TO: APPLICATION RATES, TRUE MEASUREMENTS, AND WASTE FACTORS. THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.
               </div>
