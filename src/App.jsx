@@ -595,7 +595,7 @@ export default function App() {
       }
 
       let rustPrimerGal = 0;
-      if (coatingSystem === 'Silicone' && roofType === 'Metal' && hasRust) {
+      if ((coatingSystem === 'Silicone' || coatingSystem === 'Acrylic') && roofType === 'Metal' && hasRust) {
         rustPrimerGal = roundToFive(squares * 0.5 * totalFactor);
       }
 
@@ -789,7 +789,7 @@ export default function App() {
           }
 
           let rustPrimerGal = 0;
-          if (coatingSystem === 'Silicone' && roofType === 'Metal' && hasRust) {
+          if ((coatingSystem === 'Silicone' || coatingSystem === 'Acrylic') && roofType === 'Metal' && hasRust) {
                const rawRust = squares * 0.5;
                rustPrimerGal = roundToFive(rawRust * totalFactor);
           }
@@ -2221,8 +2221,8 @@ export default function App() {
                 </>
               )}
 
-              {/* RUST TOGGLE - ONLY FOR SILICONE METAL (not Aluminum) */}
-              {inputs.coatingSystem === 'Silicone' && inputs.roofType === 'Metal' && (
+              {/* RUST TOGGLE - FOR SILICONE OR ACRYLIC ON METAL (not Aluminum) */}
+              {(inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic') && inputs.roofType === 'Metal' && (
                 <div className="space-y-2">
                     <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
                         <span className="text-sm font-medium text-orange-900 flex items-center gap-2"><Hammer size={16} /> Rust Present?</span>
