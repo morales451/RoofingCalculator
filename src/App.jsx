@@ -1284,6 +1284,70 @@ export default function App() {
       yPos += 25;
     }
 
+    // Application Rates Section
+    if (!useMultiSection) {
+      // Check if we need a new page
+      if (yPos > 240) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('APPLICATION RATES', 15, yPos);
+      yPos += 7;
+
+      const rateYears = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
+      const rateHeaders = ['Product', ...rateYears.map(y => `${y}-Year (gal/sq)`)];
+      const rateRows = [];
+
+      // Only show rows where at least one year has a non-zero rate
+      const hasBase = rateYears.some(y => estimates[y]?.rates?.base > 0);
+      const hasTop1 = rateYears.some(y => estimates[y]?.rates?.top1 > 0);
+      const hasTop2 = rateYears.some(y => estimates[y]?.rates?.top2 > 0);
+      const hasTop3 = rateYears.some(y => estimates[y]?.rates?.top3 > 0);
+
+      if (hasBase) {
+        rateRows.push(['Basecoat', ...rateYears.map(y => estimates[y]?.rates?.base > 0 ? `${estimates[y].rates.base}` : '-')]);
+      }
+      if (hasTop1) {
+        rateRows.push(['Topcoat 1', ...rateYears.map(y => estimates[y]?.rates?.top1 > 0 ? `${estimates[y].rates.top1}` : '-')]);
+      }
+      if (hasTop2) {
+        rateRows.push(['Topcoat 2', ...rateYears.map(y => estimates[y]?.rates?.top2 > 0 ? `${estimates[y].rates.top2}` : '-')]);
+      }
+      if (hasTop3) {
+        rateRows.push(['Topcoat 3', ...rateYears.map(y => estimates[y]?.rates?.top3 > 0 ? `${estimates[y].rates.top3}` : '-')]);
+      }
+
+      // Adhesion primer rate: 0.2 gal/sq (fixed)
+      if (estimates['10']?.adhesionPrimerGal > 0) {
+        rateRows.push(['Adhesion Primer', ...rateYears.map(() => '0.2')]);
+      }
+
+      // Rust primer rate: 0.5 gal/sq (fixed)
+      if (estimates['10']?.rustPrimerGal > 0) {
+        rateRows.push(['Rust Primer', ...rateYears.map(() => '0.5')]);
+      }
+
+      if (rateRows.length > 0) {
+        autoTable(doc, {
+          startY: yPos,
+          head: [rateHeaders],
+          body: rateRows,
+          theme: 'grid',
+          headStyles: { fillColor: [100, 100, 100], textColor: 255, fontStyle: 'bold' },
+          styles: { fontSize: 9, halign: 'center' },
+          columnStyles: {
+            0: { fontStyle: 'bold', halign: 'left', cellWidth: 40 }
+          }
+        });
+        yPos = doc.lastAutoTable.finalY + 10;
+      } else {
+        yPos += 5;
+      }
+    }
+
     // Materials Table - Only show 10-year for Aluminum
     const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
     const tableData = [];
