@@ -1248,6 +1248,19 @@ export default function App() {
       yPos += 6;
     }
 
+    // Waste & Stretch Factors (single-section only; multi-section shows per-section below)
+    if (!useMultiSection) {
+      const wf = parseFloat(inputs.wasteFactor) || 0;
+      const sf = parseFloat(inputs.stretchFactor) || 0;
+      if (wf > 0 || sf > 0) {
+        const factors = [];
+        if (wf > 0) factors.push(`Waste: ${Math.round(wf * 100)}%`);
+        if (sf > 0) factors.push(`Stretch: ${Math.round(sf * 100)}%`);
+        doc.text(`Adjustment Factors: ${factors.join(', ')}`, 15, yPos);
+        yPos += 6;
+      }
+    }
+
     // Multi-section details
     if (useMultiSection && roofSections.length > 0) {
       yPos += 3;
@@ -1284,147 +1297,92 @@ export default function App() {
       yPos += 25;
     }
 
-    // Application Rates Section
-    if (!useMultiSection) {
-      // Check if we need a new page
-      if (yPos > 240) {
-        doc.addPage();
-        yPos = 20;
-      }
-
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text('APPLICATION RATES', 15, yPos);
-      yPos += 7;
-
-      const rateYears = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
-      const rateHeaders = ['Product', ...rateYears.map(y => `${y}-Year (gal/sq)`)];
-      const rateRows = [];
-
-      // Only show rows where at least one year has a non-zero rate
-      const hasBase = rateYears.some(y => estimates[y]?.rates?.base > 0);
-      const hasTop1 = rateYears.some(y => estimates[y]?.rates?.top1 > 0);
-      const hasTop2 = rateYears.some(y => estimates[y]?.rates?.top2 > 0);
-      const hasTop3 = rateYears.some(y => estimates[y]?.rates?.top3 > 0);
-
-      if (hasBase) {
-        rateRows.push(['Basecoat', ...rateYears.map(y => estimates[y]?.rates?.base > 0 ? `${estimates[y].rates.base}` : '-')]);
-      }
-      if (hasTop1) {
-        rateRows.push(['Topcoat 1', ...rateYears.map(y => estimates[y]?.rates?.top1 > 0 ? `${estimates[y].rates.top1}` : '-')]);
-      }
-      if (hasTop2) {
-        rateRows.push(['Topcoat 2', ...rateYears.map(y => estimates[y]?.rates?.top2 > 0 ? `${estimates[y].rates.top2}` : '-')]);
-      }
-      if (hasTop3) {
-        rateRows.push(['Topcoat 3', ...rateYears.map(y => estimates[y]?.rates?.top3 > 0 ? `${estimates[y].rates.top3}` : '-')]);
-      }
-
-      // Adhesion primer rate: 0.2 gal/sq (fixed)
-      if (estimates['10']?.adhesionPrimerGal > 0) {
-        rateRows.push(['Adhesion Primer', ...rateYears.map(() => '0.2')]);
-      }
-
-      // Rust primer rate: 0.5 gal/sq (fixed)
-      if (estimates['10']?.rustPrimerGal > 0) {
-        rateRows.push(['Rust Primer', ...rateYears.map(() => '0.5')]);
-      }
-
-      if (rateRows.length > 0) {
-        autoTable(doc, {
-          startY: yPos,
-          head: [rateHeaders],
-          body: rateRows,
-          theme: 'grid',
-          headStyles: { fillColor: [100, 100, 100], textColor: 255, fontStyle: 'bold' },
-          styles: { fontSize: 9, halign: 'center' },
-          columnStyles: {
-            0: { fontStyle: 'bold', halign: 'left', cellWidth: 40 }
-          }
-        });
-        yPos = doc.lastAutoTable.finalY + 10;
-      } else {
-        yPos += 5;
-      }
-    }
-
     // Materials Table - Only show 10-year for Aluminum
     const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
+    const showRates = !useMultiSection; // rates only meaningful for single-section
     const tableData = [];
+
+    // Helper to build a row with optional rate column
+    const buildRow = (product, description, priceUnit, rateText, galsByYear) => {
+      const row = [product, description, priceUnit];
+      if (showRates) row.push(rateText);
+      galsByYear.forEach(g => row.push(g));
+      return row;
+    };
 
     // Build table rows based on what's in the estimates
     if (inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0) {
-      const row = ['Basecoat', inputs.selectedBasecoat, prices.basecoat > 0 ? `${formatCurrency(prices.basecoat)}/gal` : ''];
-      yearsToShow.forEach(year => {
-        row.push(`${estimates[year]?.baseGal || 0} gal`);
-      });
-      tableData.push(row);
+      const rate = estimates['10']?.rates?.base ? `${estimates['10'].rates.base} gal/sq` : '';
+      tableData.push(buildRow('Basecoat', inputs.selectedBasecoat, prices.basecoat > 0 ? `${formatCurrency(prices.basecoat)}/gal` : '', rate,
+        yearsToShow.map(year => `${estimates[year]?.baseGal || 0} gal`)));
     }
 
     if (estimates['10']?.top1Gal > 0) {
-      const row = ['Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : ''];
-      yearsToShow.forEach(year => {
-        row.push(`${estimates[year]?.top1Gal || 0} gal`);
-      });
-      tableData.push(row);
+      const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top1 || 0);
+      const allSame = ratesByYear.every(r => r === ratesByYear[0]);
+      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join(', ')) : '';
+      tableData.push(buildRow('Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
+        yearsToShow.map(year => `${estimates[year]?.top1Gal || 0} gal`)));
     }
 
     if (estimates['10']?.top2Gal > 0) {
-      const row = ['Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : ''];
-      yearsToShow.forEach(year => {
-        row.push(`${estimates[year]?.top2Gal || 0} gal`);
-      });
-      tableData.push(row);
+      const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top2 || 0);
+      const allSame = ratesByYear.every(r => r === ratesByYear[0]);
+      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join(', ')) : '';
+      tableData.push(buildRow('Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
+        yearsToShow.map(year => `${estimates[year]?.top2Gal || 0} gal`)));
     }
 
     if (estimates['10']?.top3Gal > 0) {
-      const row = ['Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : ''];
-      yearsToShow.forEach(year => {
-        row.push(`${estimates[year]?.top3Gal || 0} gal`);
-      });
-      tableData.push(row);
+      const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top3 || 0);
+      const allSame = ratesByYear.every(r => r === ratesByYear[0]);
+      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join(', ')) : '';
+      tableData.push(buildRow('Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
+        yearsToShow.map(year => `${estimates[year]?.top3Gal || 0} gal`)));
     }
 
     if (estimates['10']?.rustPrimerGal > 0) {
-      const row = ['Rust Primer', pdfPrimers.rust, prices.rustPrimer > 0 ? `${formatCurrency(prices.rustPrimer)}/gal` : ''];
-      yearsToShow.forEach(year => {
-        row.push(`${estimates[year]?.rustPrimerGal || 0} gal`);
-      });
-      tableData.push(row);
+      tableData.push(buildRow('Rust Primer', pdfPrimers.rust, prices.rustPrimer > 0 ? `${formatCurrency(prices.rustPrimer)}/gal` : '', '0.5 gal/sq',
+        yearsToShow.map(year => `${estimates[year]?.rustPrimerGal || 0} gal`)));
     }
 
     if (estimates['10']?.adhesionPrimerGal > 0) {
-      const row = ['Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(prices.adhesionPrimer)}/gal` : ''];
-      yearsToShow.forEach(year => {
-        row.push(`${estimates[year]?.adhesionPrimerGal || 0} gal`);
-      });
-      tableData.push(row);
+      tableData.push(buildRow('Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(prices.adhesionPrimer)}/gal` : '', '0.2 gal/sq',
+        yearsToShow.map(year => `${estimates[year]?.adhesionPrimerGal || 0} gal`)));
     }
 
     // Accessories
     if (commonResults.accessoryQty > 0) {
       const priceUnit = prices.accessory > 0 ? `${formatCurrency(prices.accessory)}/${commonResults.accessoryUnit}` : '';
-      const row = ['Accessories', commonResults.accessoryName, priceUnit, `${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
-      tableData.push(row);
+      const yearCols = [`${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
+      tableData.push(buildRow('Accessories', commonResults.accessoryName, priceUnit, '', yearCols));
     }
 
     // Membrane (if Reinforced Acrylic)
     if (commonResults.membraneRolls > 0) {
-      const row = ['Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(prices.membrane)}/roll` : '', `${commonResults.membraneRolls} rolls`, '', ''];
-      tableData.push(row);
+      const yearCols = [`${commonResults.membraneRolls} rolls`, '', ''];
+      tableData.push(buildRow('Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(prices.membrane)}/roll` : '', '', yearCols));
     }
 
     // Goldseal Warranty
     if (inputs.goldseal) {
-      const row = ['Goldseal Warranty', '', ''];
-      yearsToShow.forEach(year => {
-        row.push(formatCurrency(estimates[year]?.goldsealCost || 0));
-      });
-      tableData.push(row);
+      const yearCols = yearsToShow.map(year => formatCurrency(estimates[year]?.goldsealCost || 0));
+      tableData.push(buildRow('Goldseal Warranty', '', '', '', yearCols));
     }
 
     // Create table headers dynamically
-    const headers = ['Product', 'Description', 'Price/Unit', ...yearsToShow.map(y => `${y}-Year`)];
+    const headers = ['Product', 'Description', 'Price/Unit'];
+    if (showRates) headers.push('Rate');
+    headers.push(...yearsToShow.map(y => `${y}-Year`));
+
+    const colStyles = {
+      0: { fontStyle: 'bold', cellWidth: 30 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 22 }
+    };
+    if (showRates) {
+      colStyles[3] = { cellWidth: 22, fontSize: 8 };
+    }
 
     autoTable(doc, {
       startY: yPos,
@@ -1433,11 +1391,7 @@ export default function App() {
       theme: 'grid',
       headStyles: { fillColor: [66, 139, 202], textColor: 255, fontStyle: 'bold' },
       styles: { fontSize: 9 },
-      columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 35 },
-        1: { cellWidth: 'auto' },
-        2: { cellWidth: 25 }
-      }
+      columnStyles: colStyles
     });
 
     yPos = doc.lastAutoTable.finalY + 10;
