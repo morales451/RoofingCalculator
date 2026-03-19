@@ -190,6 +190,7 @@ export default function App() {
   const [compareMode, setCompareMode] = useState(false);
   const [selectedForCompare, setSelectedForCompare] = useState([]);
   const [showComparison, setShowComparison] = useState(false);
+  const [compCopied, setCompCopied] = useState(false);
 
   // --- PRODUCT OPTIONS ---
   const PRODUCT_OPTIONS = {
@@ -1614,6 +1615,83 @@ export default function App() {
     return types;
   };
 
+  const getComparisonData = () => {
+    const quotes = selectedForCompare.map(id => savedQuotes.find(sq => sq.id === id)).filter(Boolean);
+    const rows = [];
+    rows.push({ label: 'System', values: quotes.map(q => q.inputs.coatingSystem + (q.inputs.coatingSystem === 'Acrylic' ? ` (${q.inputs.acrylicSystemType})` : '')) });
+    rows.push({ label: 'Roof Type', values: quotes.map(q => q.inputs.roofType) });
+    rows.push({ label: 'Roof Size', values: quotes.map(q => `${(q.inputs.roofSizeSqFt || 0).toLocaleString()} sqft`) });
+    rows.push({ label: 'Customer', values: quotes.map(q => q.customerInfo?.name || q.customerInfo?.company || '-') });
+    ['10', '15', '20'].forEach(year => {
+      const yearData = quotes.map(q => {
+        if (!q.estimates?.[year]) return null;
+        const est = q.estimates[year];
+        const p = q.prices || {};
+        const priceTotal = (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0) + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0) + ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) + ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) + (est.goldsealCost || 0);
+        return { priceTotal, gallons: est.totalGallons || 0, sqft: q.inputs.roofSizeSqFt || 0 };
+      });
+      if (yearData.every(d => d === null)) return;
+      const hasPrices = yearData.some(d => d !== null && d.priceTotal > 0);
+      if (hasPrices) {
+        rows.push({ label: `${year}-Year Total`, values: yearData.map(d => d === null ? 'N/A' : d.priceTotal === 0 ? 'No prices' : formatCurrency(d.priceTotal)) });
+      }
+      rows.push({ label: `${year}-Year Gallons`, values: yearData.map(d => d === null ? 'N/A' : d.gallons === 0 ? '-' : `${d.gallons} gal`) });
+      if (hasPrices) {
+        rows.push({ label: `${year}-Year $/sqft`, values: yearData.map(d => { if (d === null || d.priceTotal === 0 || d.sqft === 0) return '-'; return `${formatCurrency(d.priceTotal / d.sqft)}/sqft`; }) });
+      }
+    });
+    rows.push({ label: 'Goldseal Warranty', values: quotes.map(q => q.inputs.goldseal ? 'Yes' : 'No') });
+    rows.push({ label: 'Quote Date', values: quotes.map(q => q.date || new Date(q.savedAt).toLocaleDateString()) });
+    return { quotes, rows, headers: quotes.map(q => q.inputs.projectName || 'Untitled') };
+  };
+
+  const copyComparisonText = () => {
+    const { rows, headers } = getComparisonData();
+    const colWidth = 22;
+    const labelWidth = 20;
+    let text = 'QUOTE COMPARISON\n';
+    text += '='.repeat(labelWidth + headers.length * colWidth) + '\n';
+    text += ''.padEnd(labelWidth) + headers.map(h => h.padStart(colWidth)).join('') + '\n';
+    text += '-'.repeat(labelWidth + headers.length * colWidth) + '\n';
+    rows.forEach(row => {
+      text += row.label.padEnd(labelWidth) + row.values.map(v => v.padStart(colWidth)).join('') + '\n';
+    });
+    text += '='.repeat(labelWidth + headers.length * colWidth) + '\n';
+    const doCopy = (t) => {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(t).then(() => { setCompCopied(true); setTimeout(() => setCompCopied(false), 2000); });
+      } else {
+        const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); setCompCopied(true); setTimeout(() => setCompCopied(false), 2000); } catch(e) {}
+        document.body.removeChild(ta);
+      }
+    };
+    doCopy(text);
+  };
+
+  const downloadComparisonPDF = () => {
+    const { rows, headers } = getComparisonData();
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Quote Comparison', pageWidth / 2, 20, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, 28, { align: 'center' });
+    autoTable(doc, {
+      startY: 35,
+      head: [['', ...headers]],
+      body: rows.map(row => [row.label, ...row.values]),
+      theme: 'grid',
+      headStyles: { fillColor: [37, 99, 235], fontStyle: 'bold', halign: 'center', fontSize: 9 },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 40 } },
+      styles: { fontSize: 8, cellPadding: 3, halign: 'center' },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+    });
+    doc.save('quote-comparison.pdf');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800 print:bg-white print:p-0 print:text-black">
       
@@ -2974,12 +3052,26 @@ export default function App() {
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 <Layers size={20} /> Quote Comparison
               </h2>
-              <button
-                onClick={() => { setShowComparison(false); setCompareMode(false); setSelectedForCompare([]); }}
-                className="text-white hover:text-blue-200 text-sm font-medium px-3 py-1 border border-white/30 rounded-lg hover:bg-white/10 transition-colors"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={copyComparisonText}
+                  className="text-white hover:text-blue-200 text-sm font-medium px-3 py-1 border border-white/30 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-1"
+                >
+                  {compCopied ? <CheckCircle size={14}/> : <Copy size={14}/>} {compCopied ? 'Copied!' : 'Copy Text'}
+                </button>
+                <button
+                  onClick={downloadComparisonPDF}
+                  className="text-white hover:text-blue-200 text-sm font-medium px-3 py-1 border border-white/30 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-1"
+                >
+                  <FileDown size={14}/> Download PDF
+                </button>
+                <button
+                  onClick={() => { setShowComparison(false); setCompareMode(false); setSelectedForCompare([]); }}
+                  className="text-white hover:text-blue-200 text-sm font-medium px-3 py-1 border border-white/30 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
