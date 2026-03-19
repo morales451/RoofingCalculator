@@ -3036,14 +3036,14 @@ export default function App() {
                       return <td key={id} className="px-4 py-2 text-center">{q?.customerInfo?.name || q?.customerInfo?.company || '-'}</td>;
                     })}
                   </tr>
-                  {/* Totals for each warranty year */}
+                  {/* Totals and gallons for each warranty year */}
                   {['10', '15', '20'].map(year => {
-                    const totals = selectedForCompare.map(id => {
+                    const quoteData = selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
                       if (!q?.estimates?.[year]) return null;
                       const est = q.estimates[year];
                       const p = q.prices || {};
-                      return (est.baseGal || 0) * (p.basecoat || 0) +
+                      const priceTotal = (est.baseGal || 0) * (p.basecoat || 0) +
                         (est.top1Gal || 0) * (p.topcoat || 0) +
                         (est.top2Gal || 0) * (p.topcoat || 0) +
                         (est.top3Gal || 0) * (p.topcoat || 0) +
@@ -3052,34 +3052,65 @@ export default function App() {
                         ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) +
                         ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) +
                         (est.goldsealCost || 0);
+                      const gallons = est.totalGallons || 0;
+                      const sqft = q.inputs.roofSizeSqFt || 0;
+                      return { priceTotal, gallons, sqft };
                     });
                     // Skip row if all quotes lack this year's data
-                    if (totals.every(t => t === null)) return null;
-                    const validTotals = totals.filter(t => t !== null && t > 0);
+                    if (quoteData.every(d => d === null)) return null;
+                    const hasPrices = quoteData.some(d => d !== null && d.priceTotal > 0);
+                    const validTotals = quoteData.filter(d => d !== null && d.priceTotal > 0).map(d => d.priceTotal);
                     const minTotal = validTotals.length > 0 ? Math.min(...validTotals) : null;
+                    const validGallons = quoteData.filter(d => d !== null && d.gallons > 0).map(d => d.gallons);
+                    const minGallons = validGallons.length > 0 ? Math.min(...validGallons) : null;
                     return (
-                      <tr key={year} className="border-b border-gray-200 bg-blue-50">
-                        <td className="px-4 py-3 font-bold text-gray-700">{year}-Year Total</td>
-                        {totals.map((total, i) => (
-                          <td key={selectedForCompare[i]} className="px-4 py-3 text-center">
-                            {total === null ? (
-                              <span className="text-gray-400 text-xs">N/A</span>
-                            ) : total === 0 ? (
-                              <span className="text-gray-400 text-xs">No prices</span>
-                            ) : (
-                              <span className={`text-lg font-bold ${total === minTotal && validTotals.length > 1 ? 'text-green-700' : 'text-blue-700'}`}>
-                                {formatCurrency(total)}
-                                {total === minTotal && validTotals.length > 1 && (
-                                  <span className="block text-xs text-green-600 font-normal">Best Value</span>
+                      <React.Fragment key={year}>
+                        {/* Price total row - show if any quote has prices */}
+                        {hasPrices && (
+                          <tr className="border-b border-gray-200 bg-blue-50">
+                            <td className="px-4 py-3 font-bold text-gray-700">{year}-Year Total</td>
+                            {quoteData.map((d, i) => (
+                              <td key={selectedForCompare[i]} className="px-4 py-3 text-center">
+                                {d === null ? (
+                                  <span className="text-gray-400 text-xs">N/A</span>
+                                ) : d.priceTotal === 0 ? (
+                                  <span className="text-gray-400 text-xs">No prices</span>
+                                ) : (
+                                  <span className={`text-lg font-bold ${d.priceTotal === minTotal && validTotals.length > 1 ? 'text-green-700' : 'text-blue-700'}`}>
+                                    {formatCurrency(d.priceTotal)}
+                                    {d.priceTotal === minTotal && validTotals.length > 1 && (
+                                      <span className="block text-xs text-green-600 font-normal">Best Value</span>
+                                    )}
+                                  </span>
                                 )}
-                              </span>
-                            )}
-                          </td>
-                        ))}
-                      </tr>
+                              </td>
+                            ))}
+                          </tr>
+                        )}
+                        {/* Gallon total row - always show */}
+                        <tr className={`border-b ${hasPrices ? 'border-gray-100' : 'border-gray-200 bg-blue-50'}`}>
+                          <td className={`px-4 ${hasPrices ? 'py-2' : 'py-3'} font-${hasPrices ? 'medium' : 'bold'} text-gray-${hasPrices ? '600' : '700'}`}>{year}-Year Gallons</td>
+                          {quoteData.map((d, i) => (
+                            <td key={selectedForCompare[i]} className={`px-4 ${hasPrices ? 'py-2' : 'py-3'} text-center`}>
+                              {d === null ? (
+                                <span className="text-gray-400 text-xs">N/A</span>
+                              ) : d.gallons === 0 ? (
+                                <span className="text-gray-400 text-xs">-</span>
+                              ) : (
+                                <span className={`${hasPrices ? 'font-semibold' : 'text-lg font-bold'} ${d.gallons === minGallons && validGallons.length > 1 ? 'text-green-700' : hasPrices ? 'text-gray-700' : 'text-blue-700'}`}>
+                                  {d.gallons} gal
+                                  {!hasPrices && d.gallons === minGallons && validGallons.length > 1 && (
+                                    <span className="block text-xs text-green-600 font-normal">Least Material</span>
+                                  )}
+                                </span>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      </React.Fragment>
                     );
                   })}
-                  {/* $/sqft for each warranty year */}
+                  {/* $/sqft for each warranty year - only if prices exist */}
                   {['10', '15', '20'].map(year => {
                     const sqftData = selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
@@ -3118,13 +3149,6 @@ export default function App() {
                       </tr>
                     );
                   })}
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <td className="px-4 py-2 font-medium text-gray-600">Total Gallons (10yr)</td>
-                    {selectedForCompare.map(id => {
-                      const q = savedQuotes.find(sq => sq.id === id);
-                      return <td key={id} className="px-4 py-2 text-center font-semibold">{q?.estimates?.['10']?.totalGallons || '-'}</td>;
-                    })}
-                  </tr>
                   <tr className="border-b border-gray-100">
                     <td className="px-4 py-2 font-medium text-gray-600">Goldseal Warranty</td>
                     {selectedForCompare.map(id => {
