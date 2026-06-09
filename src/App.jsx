@@ -76,7 +76,9 @@ export default function App() {
 
   // Profit margin
   const [profitMargin, setProfitMargin] = useState(0);
-  const [showProfitMargin, setShowProfitMargin] = useState(false);
+  // Controls whether distributor cost / margin details are exposed in PDF + Copy Text.
+  // Default off — quotes go to contractors and that info is sensitive.
+  const [showMarginInExports, setShowMarginInExports] = useState(false);
 
   // Energy savings estimator
   const [showEnergySavings, setShowEnergySavings] = useState(false);
@@ -422,6 +424,7 @@ export default function App() {
       inputs,
       prices,
       profitMargin,
+      showMarginInExports,
       customerInfo,
       estimates,
       commonResults,
@@ -442,6 +445,7 @@ export default function App() {
     setInputs(quote.inputs);
     setPrices(quote.prices);
     setProfitMargin(quote.profitMargin || 0);
+    setShowMarginInExports(quote.showMarginInExports || false);
     setCustomerInfo(quote.customerInfo || {
       name: '',
       company: '',
@@ -475,6 +479,7 @@ export default function App() {
       inputs,
       prices,
       profitMargin,
+      showMarginInExports,
       customerInfo,
       energyRegion,
       roofSections: useMultiSection ? roofSections : [],
@@ -961,9 +966,11 @@ export default function App() {
     }
     text += `Note: All quantities are rounded up to the nearest full pail where applicable.\n`;
 
+    const hideAccessoryCosts = profitMargin > 0 && !showMarginInExports;
+
     if (linearFeet > 0 || commonResults.screwBuckets > 0) {
         text += `\nAccessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}`;
-        if (prices.accessory > 0) text += ` @ $${prices.accessory.toFixed(2)} each`;
+        if (prices.accessory > 0 && !hideAccessoryCosts) text += ` @ $${prices.accessory.toFixed(2)} each`;
         if (commonResults.screwBuckets > 0) {
             text += ` (Includes ${commonResults.screwBuckets} buckets for ~${commonResults.screwCount} screws)`;
         }
@@ -972,7 +979,7 @@ export default function App() {
 
     if (coatingSystem === 'Acrylic' && commonResults.membraneRolls > 0) {
         text += `Reinforcement: ${commonResults.membraneRolls} Rolls of Reinforcement Membrane (40" x 324')`;
-        if (prices.membrane > 0) text += ` @ $${prices.membrane.toFixed(2)}/roll`;
+        if (prices.membrane > 0 && !hideAccessoryCosts) text += ` @ $${prices.membrane.toFixed(2)}/roll`;
         text += `\n`;
     }
 
@@ -998,45 +1005,49 @@ export default function App() {
 
         text += `\n\n--- ${year}-YEAR OPTION ---\n\n`;
 
+        // When margin is on AND user has chosen to hide margin details, suppress
+        // per-line distributor unit prices / subtotals — they expose the cost basis.
+        const hideLineCosts = profitMargin > 0 && !showMarginInExports;
+
         if (coatingSystem !== 'Aluminum' && est.baseGal > 0) {
             text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat})`;
             if (!useMultiSection && est.rates.base) text += ` @ ${est.rates.base} gal/sq`;
-            if (prices.basecoat > 0) text += `\n  Unit Price: $${prices.basecoat.toFixed(2)}/gal | Line Total: $${(est.baseGal * prices.basecoat).toFixed(2)}`;
+            if (prices.basecoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.basecoat.toFixed(2)}/gal | Line Total: $${(est.baseGal * prices.basecoat).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.rustPrimerGal > 0) {
             text += `Rust Primer: ${est.rustPrimerGal} gal (${primerSet.rust}) @ 0.5 gal/sq`;
-            if (prices.rustPrimer > 0) text += `\n  Unit Price: $${prices.rustPrimer.toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * prices.rustPrimer).toFixed(2)}`;
+            if (prices.rustPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.rustPrimer.toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * prices.rustPrimer).toFixed(2)}`;
             text += `\n`;
         }
         if (est.adhesionPrimerGal > 0) {
             text += `Adhesion Primer: ${est.adhesionPrimerGal} gal (${primerSet.adhesion}) @ 0.2 gal/sq`;
-            if (prices.adhesionPrimer > 0) text += `\n  Unit Price: $${prices.adhesionPrimer.toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}`;
+            if (prices.adhesionPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.adhesionPrimer.toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.top1Gal > 0) {
             text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top1) text += ` @ ${est.rates.top1} gal/sq`;
-            if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top1Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top1Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top2Gal > 0) {
             text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top2) text += ` @ ${est.rates.top2} gal/sq`;
-            if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top2Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top2Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top3Gal > 0) {
             text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top3) text += ` @ ${est.rates.top3} gal/sq`;
-            if (prices.topcoat > 0) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top3Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top3Gal * prices.topcoat).toFixed(2)}`;
             text += `\n`;
         }
 
         text += `\nTOTAL SYSTEM: ${est.totalGallons} Gallons`;
-        if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) {
+        if (!hideLineCosts && (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0)) {
             const materialsTotal = (est.baseGal || 0) * prices.basecoat +
                                    (est.top1Gal || 0) * prices.topcoat +
                                    (est.top2Gal || 0) * prices.topcoat +
@@ -1047,7 +1058,7 @@ export default function App() {
         }
         text += `\n`;
 
-        if (est.goldsealCost > 0) text += `Goldseal Warranty: $${est.goldsealCost.toLocaleString()}\n`;
+        if (est.goldsealCost > 0 && !hideLineCosts) text += `Goldseal Warranty: $${est.goldsealCost.toLocaleString()}\n`;
 
         // Add grand total if pricing is entered
         if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0) {
@@ -1063,15 +1074,21 @@ export default function App() {
             const warrantyLabel = inputs.goldseal ? ' + Warranty' : '';
 
             if (profitMargin > 0) {
-                text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
-                if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
-                text += `\n`;
                 const sellPrice = grandTotal / (1 - profitMargin / 100);
-                const profit = sellPrice - grandTotal;
-                text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}`;
-                if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
-                text += `\n`;
-                text += `MARGIN: $${profit.toFixed(2)}\n`;
+                if (showMarginInExports) {
+                    text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
+                    if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
+                    text += `\n`;
+                    const profit = sellPrice - grandTotal;
+                    text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}`;
+                    if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
+                    text += `\n`;
+                    text += `MARGIN: $${profit.toFixed(2)}\n`;
+                } else {
+                    text += `\nTOTAL (Materials + Accessories${warrantyLabel}): $${sellPrice.toFixed(2)}`;
+                    if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
+                    text += `\n`;
+                }
             } else {
                 text += `\nGRAND TOTAL (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
                 if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
@@ -1112,7 +1129,7 @@ export default function App() {
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
     setEmailText(text);
-  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections, sectionResults]);
+  }, [inputs, estimates, commonResults, prices, profitMargin, showMarginInExports, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections, sectionResults]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -1300,11 +1317,14 @@ export default function App() {
     // Materials Table - Only show 10-year for Aluminum
     const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
     const showRates = !useMultiSection; // rates only meaningful for single-section
+    // Hide Price/Unit (distributor cost basis) when margin is on and user opted to hide it.
+    const showPriceUnit = !(profitMargin > 0 && !showMarginInExports);
     const tableData = [];
 
     // Helper to build a row with optional rate column
     const buildRow = (product, description, priceUnit, rateText, galsByYear) => {
-      const row = [product, description, priceUnit];
+      const row = [product, description];
+      if (showPriceUnit) row.push(priceUnit);
       if (showRates) row.push(rateText);
       galsByYear.forEach(g => row.push(g));
       return row;
@@ -1364,24 +1384,29 @@ export default function App() {
       tableData.push(buildRow('Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(prices.membrane)}/roll` : '', '', yearCols));
     }
 
-    // Goldseal Warranty
+    // Goldseal Warranty (don't expose its dollar value when margin is hidden — distributor cost)
     if (inputs.goldseal) {
-      const yearCols = yearsToShow.map(year => formatCurrency(estimates[year]?.goldsealCost || 0));
+      const yearCols = yearsToShow.map(year => showPriceUnit ? formatCurrency(estimates[year]?.goldsealCost || 0) : 'Included');
       tableData.push(buildRow('Goldseal Warranty', '', '', '', yearCols));
     }
 
     // Create table headers dynamically
-    const headers = ['Product', 'Description', 'Price/Unit'];
+    const headers = ['Product', 'Description'];
+    if (showPriceUnit) headers.push('Price/Unit');
     if (showRates) headers.push('Rate');
     headers.push(...yearsToShow.map(y => `${y}-Year`));
 
     const colStyles = {
       0: { fontStyle: 'bold', cellWidth: 30 },
-      1: { cellWidth: 'auto' },
-      2: { cellWidth: 22 }
+      1: { cellWidth: 'auto' }
     };
+    let colIdx = 2;
+    if (showPriceUnit) {
+      colStyles[colIdx] = { cellWidth: 22 };
+      colIdx++;
+    }
     if (showRates) {
-      colStyles[3] = { cellWidth: 22, fontSize: 8 };
+      colStyles[colIdx] = { cellWidth: 22, fontSize: 8 };
     }
 
     autoTable(doc, {
@@ -1429,67 +1454,81 @@ export default function App() {
         doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
 
-        // Line item breakdown
-        if (inputs.coatingSystem !== 'Aluminum' && est.baseGal > 0 && prices.basecoat > 0) {
-          doc.text(`  Basecoat: ${est.baseGal} gal x ${formatCurrency(prices.basecoat)}/gal = ${formatCurrency(baseCost)}`, 15, yPos);
-          yPos += 5;
-        }
-        if (est.top1Gal > 0 && prices.topcoat > 0) {
-          doc.text(`  Topcoat 1: ${est.top1Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top1Cost)}`, 15, yPos);
-          yPos += 5;
-        }
-        if (est.top2Gal > 0 && prices.topcoat > 0) {
-          doc.text(`  Topcoat 2: ${est.top2Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top2Cost)}`, 15, yPos);
-          yPos += 5;
-        }
-        if (est.top3Gal > 0 && prices.topcoat > 0) {
-          doc.text(`  Topcoat 3: ${est.top3Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top3Cost)}`, 15, yPos);
-          yPos += 5;
-        }
-        if (est.rustPrimerGal > 0 && prices.rustPrimer > 0) {
-          doc.text(`  Rust Primer: ${est.rustPrimerGal} gal x ${formatCurrency(prices.rustPrimer)}/gal = ${formatCurrency(rustCost)}`, 15, yPos);
-          yPos += 5;
-        }
-        if (est.adhesionPrimerGal > 0 && prices.adhesionPrimer > 0) {
-          doc.text(`  Adhesion Primer: ${est.adhesionPrimerGal} gal x ${formatCurrency(prices.adhesionPrimer)}/gal = ${formatCurrency(adhesionCost)}`, 15, yPos);
-          yPos += 5;
-        }
-        if (commonResults.accessoryQty > 0 && prices.accessory > 0) {
-          doc.text(`  Accessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} x ${formatCurrency(prices.accessory)} = ${formatCurrency(accessoryCost)}`, 15, yPos);
-          yPos += 5;
-        }
-        if (commonResults.membraneRolls > 0 && prices.membrane > 0) {
-          doc.text(`  Membrane: ${commonResults.membraneRolls} rolls x ${formatCurrency(prices.membrane)} = ${formatCurrency(membraneCost)}`, 15, yPos);
-          yPos += 5;
-        }
-        if (goldsealCost > 0) {
-          doc.text(`  Goldseal Warranty: ${formatCurrency(goldsealCost)}`, 15, yPos);
-          yPos += 5;
+        const hidePdfLineCosts = profitMargin > 0 && !showMarginInExports;
+
+        // Line item breakdown — skip when margin details are hidden (it leaks unit costs)
+        if (!hidePdfLineCosts) {
+          if (inputs.coatingSystem !== 'Aluminum' && est.baseGal > 0 && prices.basecoat > 0) {
+            doc.text(`  Basecoat: ${est.baseGal} gal x ${formatCurrency(prices.basecoat)}/gal = ${formatCurrency(baseCost)}`, 15, yPos);
+            yPos += 5;
+          }
+          if (est.top1Gal > 0 && prices.topcoat > 0) {
+            doc.text(`  Topcoat 1: ${est.top1Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top1Cost)}`, 15, yPos);
+            yPos += 5;
+          }
+          if (est.top2Gal > 0 && prices.topcoat > 0) {
+            doc.text(`  Topcoat 2: ${est.top2Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top2Cost)}`, 15, yPos);
+            yPos += 5;
+          }
+          if (est.top3Gal > 0 && prices.topcoat > 0) {
+            doc.text(`  Topcoat 3: ${est.top3Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top3Cost)}`, 15, yPos);
+            yPos += 5;
+          }
+          if (est.rustPrimerGal > 0 && prices.rustPrimer > 0) {
+            doc.text(`  Rust Primer: ${est.rustPrimerGal} gal x ${formatCurrency(prices.rustPrimer)}/gal = ${formatCurrency(rustCost)}`, 15, yPos);
+            yPos += 5;
+          }
+          if (est.adhesionPrimerGal > 0 && prices.adhesionPrimer > 0) {
+            doc.text(`  Adhesion Primer: ${est.adhesionPrimerGal} gal x ${formatCurrency(prices.adhesionPrimer)}/gal = ${formatCurrency(adhesionCost)}`, 15, yPos);
+            yPos += 5;
+          }
+          if (commonResults.accessoryQty > 0 && prices.accessory > 0) {
+            doc.text(`  Accessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} x ${formatCurrency(prices.accessory)} = ${formatCurrency(accessoryCost)}`, 15, yPos);
+            yPos += 5;
+          }
+          if (commonResults.membraneRolls > 0 && prices.membrane > 0) {
+            doc.text(`  Membrane: ${commonResults.membraneRolls} rolls x ${formatCurrency(prices.membrane)} = ${formatCurrency(membraneCost)}`, 15, yPos);
+            yPos += 5;
+          }
+          if (goldsealCost > 0) {
+            doc.text(`  Goldseal Warranty: ${formatCurrency(goldsealCost)}`, 15, yPos);
+            yPos += 5;
+          }
         }
 
         // Totals
         yPos += 2;
         doc.setFont('helvetica', 'bold');
         if (profitMargin > 0) {
-          doc.text(`  Distributor Cost: ${formatCurrency(grandTotal)}`, 15, yPos);
-          yPos += 5;
-          if (inputs.roofSizeSqFt > 0) {
-            doc.setFont('helvetica', 'normal');
-            doc.text(`  Distributor Cost per Sq Ft: ${formatCurrency(grandTotal / inputs.roofSizeSqFt)}`, 15, yPos);
-            yPos += 5;
-            doc.setFont('helvetica', 'bold');
-          }
           const sellPrice = grandTotal / (1 - profitMargin / 100);
-          const profit = sellPrice - grandTotal;
-          doc.text(`  Contractor Price (${profitMargin}% margin): ${formatCurrency(sellPrice)}`, 15, yPos);
-          yPos += 5;
-          if (inputs.roofSizeSqFt > 0) {
-            doc.text(`  Contractor Price per Sq Ft: ${formatCurrency(sellPrice / inputs.roofSizeSqFt)}`, 15, yPos);
+          if (showMarginInExports) {
+            doc.text(`  Distributor Cost: ${formatCurrency(grandTotal)}`, 15, yPos);
             yPos += 5;
+            if (inputs.roofSizeSqFt > 0) {
+              doc.setFont('helvetica', 'normal');
+              doc.text(`  Distributor Cost per Sq Ft: ${formatCurrency(grandTotal / inputs.roofSizeSqFt)}`, 15, yPos);
+              yPos += 5;
+              doc.setFont('helvetica', 'bold');
+            }
+            const profit = sellPrice - grandTotal;
+            doc.text(`  Contractor Price (${profitMargin}% margin): ${formatCurrency(sellPrice)}`, 15, yPos);
+            yPos += 5;
+            if (inputs.roofSizeSqFt > 0) {
+              doc.text(`  Contractor Price per Sq Ft: ${formatCurrency(sellPrice / inputs.roofSizeSqFt)}`, 15, yPos);
+              yPos += 5;
+            }
+            doc.setFont('helvetica', 'normal');
+            doc.text(`  Margin: ${formatCurrency(profit)}`, 15, yPos);
+            yPos += 5;
+          } else {
+            doc.text(`  Total: ${formatCurrency(sellPrice)}`, 15, yPos);
+            yPos += 5;
+            if (inputs.roofSizeSqFt > 0) {
+              doc.setFont('helvetica', 'normal');
+              doc.text(`  Total per Sq Ft: ${formatCurrency(sellPrice / inputs.roofSizeSqFt)}`, 15, yPos);
+              yPos += 5;
+            }
           }
-          doc.setFont('helvetica', 'normal');
-          doc.text(`  Margin: ${formatCurrency(profit)}`, 15, yPos);
-          yPos += 5;
         } else {
           doc.text(`  Grand Total: ${formatCurrency(grandTotal)}`, 15, yPos);
           yPos += 5;
@@ -2493,6 +2532,30 @@ export default function App() {
                       </div>
                     )}
                   </div>
+
+                  {/* Margin visibility toggle for PDF / Copy Text exports */}
+                  {profitMargin > 0 && (
+                    <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded">
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showMarginInExports}
+                          onChange={(e) => setShowMarginInExports(e.target.checked)}
+                          className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold text-amber-900">
+                            Show margin & distributor cost in PDF / Copy Text
+                          </div>
+                          <div className="text-xs text-amber-800 mt-0.5">
+                            {showMarginInExports
+                              ? 'Exports include distributor cost, margin %, and per-line unit prices. Use only for internal review.'
+                              : 'Exports show only the final contractor price — distributor cost, margin, and unit prices are hidden. Safe to send to contractors.'}
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  )}
 
                   {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
                     <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
