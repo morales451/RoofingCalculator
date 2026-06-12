@@ -53,6 +53,9 @@ export default function App() {
   });
 
   const [emailText, setEmailText] = useState('');
+  const [contractorEmailText, setContractorEmailText] = useState('');
+  // Which version is shown in the preview & copied — mirrors the PDF buttons.
+  const [emailViewMode, setEmailViewMode] = useState('distributor'); // 'distributor' | 'contractor'
   const [copySuccess, setCopySuccess] = useState(false);
 
   // Pricing state
@@ -933,15 +936,21 @@ export default function App() {
 
   // --- TEXT GENERATION EFFECT ---
   useEffect(() => {
-    const { 
+    const {
         projectName, roofSizeSqFt, linearFeet, roofType, coatingSystem, acrylicSystemType, wasteFactor, stretchFactor,
         selectedTopcoat, selectedBasecoat, selectedButterGrade, selectedFabric
     } = inputs;
-    
+
     const brand = getBrandFromTopcoat(selectedTopcoat);
     const primerSet = PRIMER_LOOKUP[brand];
 
-    let text = `PROJECT ESTIMATE: ${projectName || 'Untitled'}\n\n`;
+  const buildEmailText = (mode) => {
+    const isContractor = mode === 'contractor';
+    // In contractor mode, every displayed price is marked up to the contractor's price.
+    const markup = (isContractor && profitMargin > 0) ? 1 / (1 - profitMargin / 100) : 1;
+    const adjP = (p) => p * markup;
+
+    let text = `${isContractor ? 'CONTRACTOR MATERIAL QUOTE' : 'PROJECT ESTIMATE'}: ${projectName || 'Untitled'}\n\n`;
     if (useMultiSection && roofSections.length > 0) {
       const uniqueTypes = [...new Set(roofSections.map(s => s.roofType))];
       text += `System: ${coatingSystem} on ${uniqueTypes.join(' / ')} (Multi-Section)`;
@@ -990,11 +999,13 @@ export default function App() {
     }
     text += `Note: All quantities are rounded up to the nearest full pail where applicable.\n`;
 
-    const hideAccessoryCosts = profitMargin > 0 && !showMarginInExports;
+    // Distributor mode hides unit prices when showMarginInExports is off.
+    // Contractor mode always shows unit prices, but uses the marked-up value.
+    const hideAccessoryCosts = !isContractor && profitMargin > 0 && !showMarginInExports;
 
     if (linearFeet > 0 || commonResults.screwBuckets > 0) {
         text += `\nAccessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}`;
-        if (prices.accessory > 0 && !hideAccessoryCosts) text += ` @ $${prices.accessory.toFixed(2)} each`;
+        if (prices.accessory > 0 && !hideAccessoryCosts) text += ` @ $${adjP(prices.accessory).toFixed(2)} each`;
         if (commonResults.screwBuckets > 0) {
             text += ` (Includes ${commonResults.screwBuckets} buckets for ~${commonResults.screwCount} screws)`;
         }
@@ -1003,13 +1014,13 @@ export default function App() {
 
     if (commonResults.fastenerCaulkTubes > 0) {
         text += `Fastener Encapsulation: ${commonResults.fastenerCaulkTubes} Tubes of ${FASTENER_CAULK_NAME}`;
-        if (prices.fastenerCaulk > 0 && !hideAccessoryCosts) text += ` @ $${prices.fastenerCaulk.toFixed(2)}/tube`;
+        if (prices.fastenerCaulk > 0 && !hideAccessoryCosts) text += ` @ $${adjP(prices.fastenerCaulk).toFixed(2)}/tube`;
         text += ` (covers ~${commonResults.screwCount} fasteners @ ${FASTENERS_PER_CAULK_TUBE}/tube)\n`;
     }
 
     if (coatingSystem === 'Acrylic' && commonResults.membraneRolls > 0) {
         text += `Reinforcement: ${commonResults.membraneRolls} Rolls of Reinforcement Membrane (40" x 324')`;
-        if (prices.membrane > 0 && !hideAccessoryCosts) text += ` @ $${prices.membrane.toFixed(2)}/roll`;
+        if (prices.membrane > 0 && !hideAccessoryCosts) text += ` @ $${adjP(prices.membrane).toFixed(2)}/roll`;
         text += `\n`;
     }
 
@@ -1035,63 +1046,64 @@ export default function App() {
 
         text += `\n\n--- ${year}-YEAR OPTION ---\n\n`;
 
-        // When margin is on AND user has chosen to hide margin details, suppress
-        // per-line distributor unit prices / subtotals — they expose the cost basis.
-        const hideLineCosts = profitMargin > 0 && !showMarginInExports;
+        // Distributor mode hides per-line prices when showMarginInExports is off.
+        // Contractor mode always shows per-line prices, using marked-up values.
+        const hideLineCosts = !isContractor && profitMargin > 0 && !showMarginInExports;
 
         if (coatingSystem !== 'Aluminum' && est.baseGal > 0) {
             text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat})`;
             if (!useMultiSection && est.rates.base) text += ` @ ${est.rates.base} gal/sq`;
-            if (prices.basecoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.basecoat.toFixed(2)}/gal | Line Total: $${(est.baseGal * prices.basecoat).toFixed(2)}`;
+            if (prices.basecoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.basecoat).toFixed(2)}/gal | Line Total: $${(est.baseGal * adjP(prices.basecoat)).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.rustPrimerGal > 0) {
             text += `Rust Primer: ${est.rustPrimerGal} gal (${primerSet.rust}) @ 0.5 gal/sq`;
-            if (prices.rustPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.rustPrimer.toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * prices.rustPrimer).toFixed(2)}`;
+            if (prices.rustPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.rustPrimer).toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * adjP(prices.rustPrimer)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.adhesionPrimerGal > 0) {
             text += `Adhesion Primer: ${est.adhesionPrimerGal} gal (${primerSet.adhesion}) @ 0.2 gal/sq`;
-            if (prices.adhesionPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.adhesionPrimer.toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}`;
+            if (prices.adhesionPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.adhesionPrimer).toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * adjP(prices.adhesionPrimer)).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.top1Gal > 0) {
             text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top1) text += ` @ ${est.rates.top1} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top1Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top1Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top2Gal > 0) {
             text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top2) text += ` @ ${est.rates.top2} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top2Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top2Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top3Gal > 0) {
             text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top3) text += ` @ ${est.rates.top3} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${prices.topcoat.toFixed(2)}/gal | Line Total: $${(est.top3Gal * prices.topcoat).toFixed(2)}`;
+            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top3Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
 
         text += `\nTOTAL SYSTEM: ${est.totalGallons} Gallons`;
         if (!hideLineCosts && (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0)) {
-            const materialsTotal = (est.baseGal || 0) * prices.basecoat +
-                                   (est.top1Gal || 0) * prices.topcoat +
-                                   (est.top2Gal || 0) * prices.topcoat +
-                                   (est.top3Gal || 0) * prices.topcoat +
-                                   (est.adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                   (est.rustPrimerGal || 0) * prices.rustPrimer;
+            const materialsTotal = (est.baseGal || 0) * adjP(prices.basecoat) +
+                                   (est.top1Gal || 0) * adjP(prices.topcoat) +
+                                   (est.top2Gal || 0) * adjP(prices.topcoat) +
+                                   (est.top3Gal || 0) * adjP(prices.topcoat) +
+                                   (est.adhesionPrimerGal || 0) * adjP(prices.adhesionPrimer) +
+                                   (est.rustPrimerGal || 0) * adjP(prices.rustPrimer);
             text += ` = $${materialsTotal.toFixed(2)}`;
         }
         text += `\n`;
 
-        if (est.goldsealCost > 0 && !hideLineCosts) text += `Goldseal Warranty: $${est.goldsealCost.toLocaleString()}\n`;
+        if (est.goldsealCost > 0 && !hideLineCosts) text += `Goldseal Warranty: $${adjP(est.goldsealCost).toLocaleString()}\n`;
 
         // Add grand total if pricing is entered
         if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0 || prices.fastenerCaulk > 0) {
+            // grandTotal is computed at distributor cost basis; we apply markup at display time.
             const grandTotal = (est.baseGal || 0) * prices.basecoat +
                               (est.top1Gal || 0) * prices.topcoat +
                               (est.top2Gal || 0) * prices.topcoat +
@@ -1104,7 +1116,12 @@ export default function App() {
                               (est.goldsealCost || 0);
             const warrantyLabel = inputs.goldseal ? ' + Warranty' : '';
 
-            if (profitMargin > 0) {
+            if (isContractor) {
+                const contractorPrice = grandTotal * markup;
+                text += `\nTOTAL (Materials + Accessories${warrantyLabel}): $${contractorPrice.toFixed(2)}`;
+                if (roofSizeSqFt > 0) text += ` ($${(contractorPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
+                text += `\n`;
+            } else if (profitMargin > 0) {
                 const sellPrice = grandTotal / (1 - profitMargin / 100);
                 if (showMarginInExports) {
                     text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
@@ -1159,7 +1176,11 @@ export default function App() {
     text += `THIS QUOTE IS PROVIDED AS A GUIDELINE AND ESTIMATE ONLY. ACTUAL MATERIAL QUANTITIES MAY VARY DEPENDING ON FACTORS INCLUDING BUT NOT LIMITED TO: APPLICATION RATES, TRUE MEASUREMENTS, AND WASTE FACTORS.\n\n`;
     text += `THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.`;
 
-    setEmailText(text);
+    return text;
+  };
+
+  setEmailText(buildEmailText('distributor'));
+  setContractorEmailText(buildEmailText('contractor'));
   }, [inputs, estimates, commonResults, prices, profitMargin, showMarginInExports, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections, sectionResults]);
 
   const copyToClipboard = () => {
@@ -1197,7 +1218,7 @@ export default function App() {
       }
       document.body.removeChild(textArea);
     };
-    copyText(emailText);
+    copyText(emailViewMode === 'contractor' ? contractorEmailText : emailText);
   };
 
   // Helper function for formatting currency - must be defined before generatePDF
@@ -3473,13 +3494,36 @@ export default function App() {
 
               {/* COPY TO EMAIL SECTION */}
               <div className="mt-4 bg-slate-800 rounded-lg p-4 print:hidden">
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                     <h3 className="text-white font-semibold flex items-center gap-2"><Mail size={16}/> Copy for Email</h3>
-                    <button onClick={copyToClipboard} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded flex items-center gap-1 transition-colors">
-                        {copySuccess ? <CheckCircle size={12}/> : <Copy size={12}/>} {copySuccess ? 'Copied!' : 'Copy to Clipboard'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <div className="flex rounded-md overflow-hidden border border-slate-600">
+                            <button
+                                onClick={() => setEmailViewMode('distributor')}
+                                className={`text-xs px-3 py-1 transition-colors ${emailViewMode === 'distributor' ? 'bg-red-600 text-white font-semibold' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                            >
+                                Distributor
+                            </button>
+                            <button
+                                onClick={() => setEmailViewMode('contractor')}
+                                className={`text-xs px-3 py-1 transition-colors ${emailViewMode === 'contractor' ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                            >
+                                Contractor
+                            </button>
+                        </div>
+                        <button onClick={copyToClipboard} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded flex items-center gap-1 transition-colors">
+                            {copySuccess ? <CheckCircle size={12}/> : <Copy size={12}/>} {copySuccess ? 'Copied!' : 'Copy to Clipboard'}
+                        </button>
+                    </div>
                 </div>
-                <textarea readOnly value={emailText} className="w-full h-32 bg-slate-900 text-slate-300 text-xs font-mono p-3 rounded border border-slate-700 focus:outline-none"/>
+                <div className="text-[10px] text-slate-400 mb-2">
+                    {emailViewMode === 'contractor'
+                        ? profitMargin > 0
+                            ? `Prices marked up to contractor price (post ${profitMargin}% margin). No distributor cost or margin info included.`
+                            : 'No margin set — prices shown match the values entered above.'
+                        : 'Distributor view — includes cost basis and margin breakdown per the toggle above.'}
+                </div>
+                <textarea readOnly value={emailViewMode === 'contractor' ? contractorEmailText : emailText} className="w-full h-32 bg-slate-900 text-slate-300 text-xs font-mono p-3 rounded border border-slate-700 focus:outline-none"/>
               </div>
             </div>
             
