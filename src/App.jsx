@@ -2828,6 +2828,49 @@ export default function App() {
                   {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
                     <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
                       <div className="text-xs font-semibold text-blue-900 mb-2">PRICING PREVIEW:</div>
+
+                      {/* Per-unit contractor price (cost → sell). Universal across warranty years. */}
+                      {(() => {
+                        const sellOf = (cost) => cost / (1 - profitMargin / 100);
+                        const accUnitLabel = commonResults.accessoryUnit
+                          ? (commonResults.accessoryUnit === 'Buckets' ? 'bucket' : 'roll')
+                          : 'unit';
+                        const perUnitRows = [
+                          { label: 'Basecoat', unit: 'gal', cost: prices.basecoat },
+                          { label: 'Topcoat', unit: 'gal', cost: prices.topcoat },
+                          { label: 'Rust Primer', unit: 'gal', cost: prices.rustPrimer },
+                          { label: 'Adhesion Primer', unit: 'gal', cost: prices.adhesionPrimer },
+                          { label: commonResults.accessoryName || 'Accessories', unit: accUnitLabel, cost: prices.accessory },
+                          { label: 'Reinforcement Membrane', unit: 'roll', cost: prices.membrane },
+                          { label: 'Fastener Caulk', unit: 'tube', cost: prices.fastenerCaulk },
+                        ].filter(r => r.cost > 0);
+
+                        if (perUnitRows.length === 0) return null;
+
+                        return (
+                          <div className="mb-3 bg-white p-2 rounded border border-blue-200">
+                            <div className="text-[10px] font-bold text-blue-900 uppercase tracking-wide mb-1.5">
+                              Per-Unit Price (after {profitMargin}% margin)
+                            </div>
+                            <div className="space-y-1">
+                              {perUnitRows.map((r, i) => {
+                                const sell = sellOf(r.cost);
+                                return (
+                                  <div key={i} className="flex items-center justify-between text-xs gap-2">
+                                    <span className="font-semibold text-gray-800 truncate">{r.label}</span>
+                                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                      <span className="text-gray-500 line-through">${r.cost.toFixed(2)}/{r.unit}</span>
+                                      <span className="text-gray-400">→</span>
+                                      <span className="font-bold text-green-700">${sell.toFixed(2)}/{r.unit}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       <div className={`grid ${inputs.coatingSystem === 'Aluminum' ? 'grid-cols-1' : 'grid-cols-3'} gap-3 text-xs`}>
                         {(inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20']).map(year => {
                           const costPrice = (estimates[year]?.baseGal || 0) * prices.basecoat +
