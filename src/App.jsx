@@ -1371,7 +1371,7 @@ export default function App() {
     if (estimates['10']?.top1Gal > 0) {
       const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top1 || 0);
       const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join(', ')) : '';
+      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
       tableData.push(buildRow('Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
         yearsToShow.map(year => `${estimates[year]?.top1Gal || 0} gal`)));
     }
@@ -1379,7 +1379,7 @@ export default function App() {
     if (estimates['10']?.top2Gal > 0) {
       const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top2 || 0);
       const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join(', ')) : '';
+      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
       tableData.push(buildRow('Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
         yearsToShow.map(year => `${estimates[year]?.top2Gal || 0} gal`)));
     }
@@ -1387,7 +1387,7 @@ export default function App() {
     if (estimates['10']?.top3Gal > 0) {
       const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top3 || 0);
       const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join(', ')) : '';
+      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
       tableData.push(buildRow('Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
         yearsToShow.map(year => `${estimates[year]?.top3Gal || 0} gal`)));
     }
