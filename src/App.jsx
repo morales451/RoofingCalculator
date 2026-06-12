@@ -1557,6 +1557,48 @@ export default function App() {
       });
       yPos = doc.lastAutoTable.finalY + 8;
 
+      // Per-Unit Pricing Reference (contractor mode only) — surfaces the
+      // contractor's per-gallon/tube/roll price clearly so they can spot-check.
+      if (isContractor && hasPrices) {
+        const accUnitLabel = commonResults.accessoryUnit
+          ? (commonResults.accessoryUnit === 'Buckets' ? 'bucket' : 'roll')
+          : 'unit';
+        const perUnitRows = [
+          { label: 'Basecoat', subtitle: inputs.selectedBasecoat, unit: 'gal', cost: prices.basecoat, show: inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0 },
+          { label: 'Topcoat', subtitle: inputs.selectedTopcoat, unit: 'gal', cost: prices.topcoat, show: estimates['10']?.top1Gal > 0 },
+          { label: 'Rust Primer', subtitle: pdfPrimers.rust, unit: 'gal', cost: prices.rustPrimer, show: estimates['10']?.rustPrimerGal > 0 },
+          { label: 'Adhesion Primer', subtitle: pdfPrimers.adhesion, unit: 'gal', cost: prices.adhesionPrimer, show: estimates['10']?.adhesionPrimerGal > 0 },
+          { label: commonResults.accessoryName || 'Accessories', subtitle: '', unit: accUnitLabel, cost: prices.accessory, show: commonResults.accessoryQty > 0 },
+          { label: 'Fastener Caulk', subtitle: FASTENER_CAULK_NAME, unit: 'tube', cost: prices.fastenerCaulk, show: commonResults.fastenerCaulkTubes > 0 },
+          { label: 'Reinforcement Membrane', subtitle: '40" x 324\' rolls', unit: 'roll', cost: prices.membrane, show: commonResults.membraneRolls > 0 },
+        ].filter(r => r.show && r.cost > 0);
+
+        if (perUnitRows.length > 0) {
+          yPos = ensureSpace(yPos, perUnitRows.length * 7 + 18);
+          yPos = drawSectionHeader('Per-Unit Pricing', yPos);
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Material', 'Product', 'Your Price']],
+            body: perUnitRows.map(r => [
+              r.label,
+              r.subtitle,
+              `${formatCurrency(adj(r.cost))} / ${r.unit}`,
+            ]),
+            theme: 'striped',
+            headStyles: { fillColor: colors.primary, textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
+            styles: { fontSize: 9, cellPadding: 3 },
+            alternateRowStyles: { fillColor: colors.bgSoft },
+            columnStyles: {
+              0: { fontStyle: 'bold', cellWidth: 45, textColor: colors.primary },
+              1: { cellWidth: 'auto', textColor: colors.muted },
+              2: { cellWidth: 38, halign: 'right', fontStyle: 'bold' },
+            },
+            margin: { left: margin, right: margin },
+          });
+          yPos = doc.lastAutoTable.finalY + 8;
+        }
+      }
+
       // Pricing Summary
       if (hasPrices) {
         yPos = ensureSpace(yPos, 40);
