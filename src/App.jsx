@@ -2268,31 +2268,6 @@ export default function App() {
                     </select>
                 </div>
 
-                {/* Fastener encapsulation method — only relevant on metal roofs when using butter grade for seams */}
-                {inputs.roofType === 'Metal' && inputs.accessoryType === 'Butter Grade' && (
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fastener Encapsulation</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button
-                                onClick={() => handleChange('useFastenerCaulk', false)}
-                                className={`p-2 text-sm rounded-lg border ${!inputs.useFastenerCaulk ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-gray-300 text-gray-600'}`}
-                            >
-                                Butter Grade
-                            </button>
-                            <button
-                                onClick={() => handleChange('useFastenerCaulk', true)}
-                                className={`p-2 text-sm rounded-lg border ${inputs.useFastenerCaulk ? 'bg-amber-50 border-amber-500 text-amber-700 font-bold' : 'border-gray-300 text-gray-600'}`}
-                            >
-                                Self-Leveling Caulk
-                            </button>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                            {inputs.useFastenerCaulk
-                                ? `Fasteners covered by self-leveling caulk (~${FASTENERS_PER_CAULK_TUBE}/tube). Butter grade stays for seams & penetrations.`
-                                : 'Butter grade buckets cover both seams and fasteners.'}
-                        </p>
-                    </div>
-                )}
                 <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fabric / Mesh</label>
                     <select
@@ -2528,6 +2503,44 @@ export default function App() {
                     <div className="text-xs text-gray-600 mt-1">Aluminum system supports Metal & Capsheet only.</div>
                 )}
               </div>
+
+              {/* Fastener encapsulation method — sits right under Roof Type so it's
+                  immediately visible when Metal is picked (otherwise it's easy to miss). */}
+              {inputs.roofType === 'Metal' && inputs.accessoryType === 'Butter Grade' && (
+                <div className={`rounded-lg border-2 p-3 transition-all ${inputs.useFastenerCaulk ? 'border-amber-400 bg-amber-50' : 'border-blue-300 bg-blue-50'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Hammer size={16} className={inputs.useFastenerCaulk ? 'text-amber-700' : 'text-blue-700'} />
+                      <label className="text-sm font-bold text-gray-800">Fastener Encapsulation</label>
+                    </div>
+                    {inputs.useFastenerCaulk && (
+                      <span className="text-xs font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle size={10} /> Caulk Active
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleChange('useFastenerCaulk', false)}
+                      className={`p-2 text-sm rounded-lg border-2 transition-all ${!inputs.useFastenerCaulk ? 'bg-white border-blue-500 text-blue-700 font-bold shadow-sm' : 'bg-white/60 border-gray-300 text-gray-600 hover:bg-white'}`}
+                    >
+                      Butter Grade
+                    </button>
+                    <button
+                      onClick={() => handleChange('useFastenerCaulk', true)}
+                      className={`p-2 text-sm rounded-lg border-2 transition-all ${inputs.useFastenerCaulk ? 'bg-white border-amber-500 text-amber-700 font-bold shadow-sm' : 'bg-white/60 border-gray-300 text-gray-600 hover:bg-white'}`}
+                    >
+                      Self-Leveling Caulk
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-700 mt-2">
+                    {inputs.useFastenerCaulk
+                      ? `Fasteners covered by self-leveling caulk (~${FASTENERS_PER_CAULK_TUBE}/tube). Butter grade stays for seams & penetrations only.`
+                      : 'Butter grade buckets cover both seams and fasteners. Switch to caulk if your contractor prefers it.'}
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Waste Factor</label>
