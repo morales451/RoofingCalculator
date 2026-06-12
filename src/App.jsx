@@ -1205,474 +1205,798 @@ export default function App() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
 
-  const generatePDF = () => {
+  // Build a plain-English Scope of Work paragraph for the client proposal.
+  const buildScopeOfWork = () => {
+    const sys = inputs.coatingSystem;
+    const isAcrylic = sys === 'Acrylic';
+    const isReinforced = isAcrylic && inputs.acrylicSystemType === 'Reinforced';
+    const roofTypes = useMultiSection && roofSections.length > 0
+      ? [...new Set(roofSections.map(s => s.roofType))].join(' / ')
+      : inputs.roofType;
+    const size = inputs.roofSizeSqFt.toLocaleString();
+
+    const lines = [];
+    lines.push(
+      `This proposal covers the installation of a premium ${sys} reflective roofing system over your existing ${roofTypes} roof, totaling ${size} square feet.`
+    );
+
+    // Available warranty options
+    const yearsAvailable = ['10', '15', '20'].filter(y => estimates[y] && (estimates[y].top1Gal > 0 || estimates[y].baseGal > 0));
+    if (yearsAvailable.length > 0) {
+      lines.push('');
+      lines.push(`The system is offered in ${yearsAvailable.join(', ')}-year warranty configurations. Each option uses higher-build coverage to extend service life.`);
+    }
+
+    lines.push('');
+    lines.push('Included scope:');
+
+    // Build inclusion bullets (plain dashes — no special chars)
+    if (sys !== 'Aluminum' && estimates['10']?.baseGal > 0) {
+      lines.push(`- ${inputs.selectedBasecoat} basecoat applied to seal and bond with the existing substrate`);
+    }
+    if (estimates['10']?.rustPrimerGal > 0) {
+      lines.push(`- Rust-inhibiting primer applied to all corroded fastener and seam areas`);
+    }
+    if (estimates['10']?.adhesionPrimerGal > 0) {
+      lines.push(`- Adhesion-promoting primer to ensure long-term bond to the existing surface`);
+    }
+    // Topcoat count
+    const topCount = ['top1Gal', 'top2Gal', 'top3Gal'].filter(k => estimates['20']?.[k] > 0).length;
+    if (topCount > 0) {
+      lines.push(`- Up to ${topCount} application(s) of ${inputs.selectedTopcoat} for weatherproofing and reflectivity`);
+    }
+    if (inputs.linearFeet > 0) {
+      if (inputs.accessoryType === 'Butter Grade') {
+        lines.push(`- Seam, flashing, and penetration detail work using ${inputs.selectedButterGrade}`);
+      } else {
+        lines.push(`- Reinforcement fabric and detail work at all seams, flashings, and penetrations`);
+      }
+    }
+    if (commonResults.fastenerCaulkTubes > 0) {
+      lines.push(`- All exposed fasteners individually encapsulated with self-leveling caulk`);
+    } else if (commonResults.screwBuckets > 0) {
+      lines.push(`- Encapsulation of all exposed metal-roof fasteners`);
+    }
+    if (isReinforced && commonResults.membraneRolls > 0) {
+      lines.push(`- Full reinforcement membrane embedded between coating layers for added durability`);
+    }
+    if (inputs.goldseal) {
+      lines.push(`- Manufacturer-issued Goldseal warranty coverage`);
+    }
+
+    return lines.join('\n');
+  };
+
+  const generatePDF = (mode = 'detailed') => {
     if (hasErrors) {
       const proceed = window.confirm(`There are ${Object.keys(validationErrors).length} validation issue(s). Generate PDF anyway?`);
       if (!proceed) return;
     }
+
+    const isClient = mode === 'client';
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
-    let yPos = 20;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 15;
+    const contentWidth = pageWidth - 2 * margin;
 
     // Calculate primers locally to avoid hoisting issues
     const pdfBrand = getBrandFromTopcoat(inputs.selectedTopcoat);
     const pdfPrimers = PRIMER_LOOKUP[pdfBrand];
 
-    // Title
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text('ROOFING SYSTEM ESTIMATE', pageWidth / 2, yPos, { align: 'center' });
-    yPos += 10;
+    // === BRAND PALETTE ===
+    const colors = {
+      primary: [30, 64, 175],       // blue-800
+      primaryLight: [59, 130, 246], // blue-500
+      accent: [220, 38, 38],        // red-600
+      success: [16, 185, 129],      // emerald-500
+      warning: [234, 88, 12],       // orange-600
+      text: [31, 41, 55],           // gray-800
+      muted: [107, 114, 128],       // gray-500
+      light: [243, 244, 246],       // gray-100
+      border: [209, 213, 219],      // gray-300
+      bgSoft: [248, 250, 252],      // slate-50
+      bgHero: [239, 246, 255],      // blue-50
+    };
 
-    // Project Info
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    if (inputs.projectName) {
-      doc.text(`Project: ${inputs.projectName}`, 15, yPos);
-      yPos += 7;
-    }
-    if (inputs.quoteDate) {
-      doc.text(`Date: ${inputs.quoteDate}`, 15, yPos);
-      yPos += 7;
-    }
-    yPos += 5;
+    // === HELPERS ===
 
-    // Customer Info (if provided)
-    if (customerInfo.name || customerInfo.company || customerInfo.email || customerInfo.phone) {
-      doc.setFontSize(12);
+    const drawHeader = () => {
+      // Top color band
+      doc.setFillColor(...colors.primary);
+      doc.rect(0, 0, pageWidth, 26, 'F');
+      doc.setFillColor(...colors.primaryLight);
+      doc.rect(0, 26, pageWidth, 2, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(17);
       doc.setFont('helvetica', 'bold');
-      doc.text('CUSTOMER INFORMATION', 15, yPos);
-      yPos += 7;
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
+      doc.text(isClient ? 'ROOFING SYSTEM PROPOSAL' : 'ROOFING SYSTEM ESTIMATE', margin, 14);
 
-      if (customerInfo.name) {
-        doc.text(`Name: ${customerInfo.name}`, 15, yPos);
-        yPos += 6;
-      }
-      if (customerInfo.company) {
-        doc.text(`Company: ${customerInfo.company}`, 15, yPos);
-        yPos += 6;
-      }
-      if (customerInfo.email) {
-        doc.text(`Email: ${customerInfo.email}`, 15, yPos);
-        yPos += 6;
-      }
-      if (customerInfo.phone) {
-        doc.text(`Phone: ${customerInfo.phone}`, 15, yPos);
-        yPos += 6;
-      }
-      if (customerInfo.address) {
-        doc.text(`Address: ${customerInfo.address}`, 15, yPos);
-        yPos += 6;
-      }
-      if (customerInfo.projectAddress) {
-        doc.text(`Project Address: ${customerInfo.projectAddress}`, 15, yPos);
-        yPos += 6;
-      }
-      yPos += 5;
-    }
-
-    // System Specifications
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('SYSTEM SPECIFICATIONS', 15, yPos);
-    yPos += 7;
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Coating System: ${inputs.coatingSystem}`, 15, yPos);
-    yPos += 6;
-    if (useMultiSection && roofSections.length > 0) {
-      const uniqueTypes = [...new Set(roofSections.map(s => s.roofType))];
-      doc.text(`Roof Type: ${uniqueTypes.join(' / ')} (Multi-Section)`, 15, yPos);
-    } else {
-      doc.text(`Roof Type: ${inputs.roofType}`, 15, yPos);
-    }
-    yPos += 6;
-    doc.text(`Roof Size: ${inputs.roofSizeSqFt.toLocaleString()} sq ft (${commonResults.squares} squares)`, 15, yPos);
-    yPos += 6;
-    if (inputs.linearFeet > 0) {
-      doc.text(`Linear Feet: ${inputs.linearFeet}`, 15, yPos);
-      yPos += 6;
-    }
-
-    // Waste & Stretch Factors (single-section only; multi-section shows per-section below)
-    if (!useMultiSection) {
-      const wf = parseFloat(inputs.wasteFactor) || 0;
-      const sf = parseFloat(inputs.stretchFactor) || 0;
-      if (wf > 0 || sf > 0) {
-        const factors = [];
-        if (wf > 0) factors.push(`Waste: ${Math.round(wf * 100)}%`);
-        if (sf > 0) factors.push(`Stretch: ${Math.round(sf * 100)}%`);
-        doc.text(`Adjustment Factors: ${factors.join(', ')}`, 15, yPos);
-        yPos += 6;
-      }
-    }
-
-    // Multi-section details
-    if (useMultiSection && roofSections.length > 0) {
-      yPos += 3;
-      doc.setFont('helvetica', 'bold');
-      doc.text('Roof Sections:', 15, yPos);
-      yPos += 5;
-      doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      roofSections.forEach(s => {
-        doc.text(`  ${s.name}: ${(s.sqFt || 0).toLocaleString()} sqft, ${(s.linearFeet || 0).toLocaleString()} LF (${s.roofType}) - Waste: ${Math.round((s.wasteFactor || 0) * 100)}%, Stretch: ${Math.round((s.stretchFactor || 0) * 100)}%`, 15, yPos);
-        yPos += 4;
-      });
-      doc.setFontSize(10);
-    }
-
-    yPos += 5;
-
-    // Warning for missing linear feet
-    if (inputs.linearFeet <= 0) {
-      doc.setFontSize(10);
-      doc.setFillColor(255, 237, 213); // Orange background
-      doc.rect(10, yPos, pageWidth - 20, 20, 'F');
-      doc.setTextColor(156, 63, 12); // Orange text
-      doc.setFont('helvetica', 'bold');
-      doc.text('⚠ WARNING: INCOMPLETE QUOTE', 15, yPos + 7);
       doc.setFont('helvetica', 'normal');
-      doc.text('Missing Linear Feet - required to calculate butter grade (seam sealant) quantity.', 15, yPos + 14);
-      if (inputs.roofType === 'Metal' && commonResults.screwBuckets > 0) {
-        doc.setFontSize(8);
-        doc.text(`(Note: Fastener encapsulation for ~${commonResults.screwCount} screws IS included based on roof area.)`, 15, yPos + 19);
+      doc.text(isClient ? 'Prepared for your review' : 'Detailed Material Estimate', margin, 20);
+
+      // Right-aligned project info
+      doc.setFontSize(9);
+      doc.text(`Date: ${quoteDate}`, pageWidth - margin, 14, { align: 'right' });
+      if (inputs.projectName) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(inputs.projectName, pageWidth - margin, 20, { align: 'right' });
       }
-      doc.setTextColor(0, 0, 0); // Reset to black
-      doc.setFontSize(10); // Reset font size
-      yPos += 25;
-    }
 
-    // Materials Table - Only show 10-year for Aluminum
-    const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
-    const showRates = !useMultiSection; // rates only meaningful for single-section
-    // Hide Price/Unit (distributor cost basis) when margin is on and user opted to hide it.
-    const showPriceUnit = !(profitMargin > 0 && !showMarginInExports);
-    const tableData = [];
-
-    // Helper to build a row with optional rate column
-    const buildRow = (product, description, priceUnit, rateText, galsByYear) => {
-      const row = [product, description];
-      if (showPriceUnit) row.push(priceUnit);
-      if (showRates) row.push(rateText);
-      galsByYear.forEach(g => row.push(g));
-      return row;
+      doc.setTextColor(...colors.text);
     };
 
-    // Build table rows based on what's in the estimates
-    if (inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0) {
-      const rate = estimates['10']?.rates?.base ? `${estimates['10'].rates.base} gal/sq` : '';
-      tableData.push(buildRow('Basecoat', inputs.selectedBasecoat, prices.basecoat > 0 ? `${formatCurrency(prices.basecoat)}/gal` : '', rate,
-        yearsToShow.map(year => `${estimates[year]?.baseGal || 0} gal`)));
-    }
-
-    if (estimates['10']?.top1Gal > 0) {
-      const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top1 || 0);
-      const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
-      tableData.push(buildRow('Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
-        yearsToShow.map(year => `${estimates[year]?.top1Gal || 0} gal`)));
-    }
-
-    if (estimates['10']?.top2Gal > 0) {
-      const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top2 || 0);
-      const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
-      tableData.push(buildRow('Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
-        yearsToShow.map(year => `${estimates[year]?.top2Gal || 0} gal`)));
-    }
-
-    if (estimates['10']?.top3Gal > 0) {
-      const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top3 || 0);
-      const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-      const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
-      tableData.push(buildRow('Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
-        yearsToShow.map(year => `${estimates[year]?.top3Gal || 0} gal`)));
-    }
-
-    if (estimates['10']?.rustPrimerGal > 0) {
-      tableData.push(buildRow('Rust Primer', pdfPrimers.rust, prices.rustPrimer > 0 ? `${formatCurrency(prices.rustPrimer)}/gal` : '', '0.5 gal/sq',
-        yearsToShow.map(year => `${estimates[year]?.rustPrimerGal || 0} gal`)));
-    }
-
-    if (estimates['10']?.adhesionPrimerGal > 0) {
-      tableData.push(buildRow('Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(prices.adhesionPrimer)}/gal` : '', '0.2 gal/sq',
-        yearsToShow.map(year => `${estimates[year]?.adhesionPrimerGal || 0} gal`)));
-    }
-
-    // Accessories
-    if (commonResults.accessoryQty > 0) {
-      const priceUnit = prices.accessory > 0 ? `${formatCurrency(prices.accessory)}/${commonResults.accessoryUnit}` : '';
-      const yearCols = [`${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
-      tableData.push(buildRow('Accessories', commonResults.accessoryName, priceUnit, '', yearCols));
-    }
-
-    // Fastener Caulk (alternate to butter grade buckets for metal-roof fasteners)
-    if (commonResults.fastenerCaulkTubes > 0) {
-      const priceUnit = prices.fastenerCaulk > 0 ? `${formatCurrency(prices.fastenerCaulk)}/tube` : '';
-      const yearCols = [`${commonResults.fastenerCaulkTubes} Tubes`, '', ''];
-      tableData.push(buildRow('Fastener Caulk', `${FASTENER_CAULK_NAME} (~${FASTENERS_PER_CAULK_TUBE} fasteners/tube)`, priceUnit, '', yearCols));
-    }
-
-    // Membrane (if Reinforced Acrylic)
-    if (commonResults.membraneRolls > 0) {
-      const yearCols = [`${commonResults.membraneRolls} rolls`, '', ''];
-      tableData.push(buildRow('Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(prices.membrane)}/roll` : '', '', yearCols));
-    }
-
-    // Goldseal Warranty (don't expose its dollar value when margin is hidden — distributor cost)
-    if (inputs.goldseal) {
-      const yearCols = yearsToShow.map(year => showPriceUnit ? formatCurrency(estimates[year]?.goldsealCost || 0) : 'Included');
-      tableData.push(buildRow('Goldseal Warranty', '', '', '', yearCols));
-    }
-
-    // Create table headers dynamically
-    const headers = ['Product', 'Description'];
-    if (showPriceUnit) headers.push('Price/Unit');
-    if (showRates) headers.push('Rate');
-    headers.push(...yearsToShow.map(y => `${y}-Year`));
-
-    const colStyles = {
-      0: { fontStyle: 'bold', cellWidth: 30 },
-      1: { cellWidth: 'auto' }
-    };
-    let colIdx = 2;
-    if (showPriceUnit) {
-      colStyles[colIdx] = { cellWidth: 22 };
-      colIdx++;
-    }
-    if (showRates) {
-      colStyles[colIdx] = { cellWidth: 22, fontSize: 8 };
-    }
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [headers],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [66, 139, 202], textColor: 255, fontStyle: 'bold' },
-      styles: { fontSize: 9 },
-      columnStyles: colStyles
-    });
-
-    yPos = doc.lastAutoTable.finalY + 10;
-
-    // Pricing Summary (if prices are entered)
-    if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0 || prices.fastenerCaulk > 0) {
-      doc.setFontSize(12);
+    const drawSectionHeader = (title, y) => {
+      // Colored accent bar + title
+      doc.setFillColor(...colors.primary);
+      doc.rect(margin, y, 3, 7, 'F');
+      doc.setTextColor(...colors.primary);
+      doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
-      doc.text('PRICING SUMMARY', 15, yPos);
-      yPos += 8;
+      doc.text(title.toUpperCase(), margin + 6, y + 5);
+      // Thin underline across the rest of the row
+      doc.setDrawColor(...colors.border);
+      doc.setLineWidth(0.3);
+      const titleEnd = margin + 6 + doc.getTextWidth(title.toUpperCase()) + 4;
+      doc.line(titleEnd, y + 5.5, pageWidth - margin, y + 5.5);
+      doc.setTextColor(...colors.text);
+      doc.setDrawColor(0, 0, 0);
+      return y + 11;
+    };
 
-      yearsToShow.forEach(year => {
-        const est = estimates[year];
-        if (!est) return;
+    // Draws side-by-side info cards. boxes = [{ title, lines: [[label, value], ...] }]
+    const drawInfoBoxes = (boxes, y) => {
+      const cols = boxes.length;
+      if (cols === 0) return y;
+      const gap = 5;
+      const boxWidth = (contentWidth - gap * (cols - 1)) / cols;
+      const heights = boxes.map(b => 12 + b.lines.length * 5 + 3);
+      const maxHeight = Math.max(...heights);
 
-        // Calculate line item costs
-        const baseCost = (est.baseGal || 0) * prices.basecoat;
-        const top1Cost = (est.top1Gal || 0) * prices.topcoat;
-        const top2Cost = (est.top2Gal || 0) * prices.topcoat;
-        const top3Cost = (est.top3Gal || 0) * prices.topcoat;
-        const adhesionCost = (est.adhesionPrimerGal || 0) * prices.adhesionPrimer;
-        const rustCost = (est.rustPrimerGal || 0) * prices.rustPrimer;
-        const accessoryCost = (commonResults.accessoryQty || 0) * prices.accessory;
-        const membraneCost = (commonResults.membraneRolls || 0) * prices.membrane;
-        const fastenerCaulkCost = (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk;
-        const goldsealCost = est.goldsealCost || 0;
+      boxes.forEach((box, i) => {
+        const x = margin + i * (boxWidth + gap);
+        // Card background
+        doc.setFillColor(...colors.bgSoft);
+        doc.roundedRect(x, y, boxWidth, maxHeight, 2, 2, 'F');
+        // Left accent stripe
+        doc.setFillColor(...colors.primaryLight);
+        doc.rect(x, y, 2, maxHeight, 'F');
 
-        const materialsTotal = baseCost + top1Cost + top2Cost + top3Cost + adhesionCost + rustCost;
-        const grandTotal = materialsTotal + accessoryCost + membraneCost + fastenerCaulkCost + goldsealCost;
+        // Title
+        doc.setTextColor(...colors.primary);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text(box.title.toUpperCase(), x + 6, y + 7);
 
+        // Lines
+        let lineY = y + 13;
+        doc.setFontSize(9);
+        box.lines.forEach(([label, value]) => {
+          if (value === undefined || value === null || value === '') return;
+          doc.setTextColor(...colors.muted);
+          doc.setFont('helvetica', 'normal');
+          doc.text(label, x + 6, lineY);
+          const labelWidth = doc.getTextWidth(label) + 2;
+          doc.setTextColor(...colors.text);
+          doc.setFont('helvetica', 'bold');
+          const valStr = String(value);
+          const maxValWidth = boxWidth - 8 - labelWidth;
+          const splitVal = doc.splitTextToSize(valStr, maxValWidth);
+          doc.text(splitVal[0] || '', x + 6 + labelWidth, lineY);
+          lineY += 5;
+        });
+      });
+
+      doc.setTextColor(...colors.text);
+      return y + maxHeight + 6;
+    };
+
+    // Page-break helper: if the next block doesn't fit, start a new page.
+    const ensureSpace = (y, needed) => {
+      if (y + needed > pageHeight - 22) {
+        doc.addPage();
+        drawHeader();
+        return 36;
+      }
+      return y;
+    };
+
+    // === START RENDERING ===
+    drawHeader();
+    let yPos = 36;
+
+    // --- Customer + Project info cards ---
+    const customerLines = [];
+    if (customerInfo.name) customerLines.push(['Name:', customerInfo.name]);
+    if (customerInfo.company) customerLines.push(['Company:', customerInfo.company]);
+    if (customerInfo.email) customerLines.push(['Email:', customerInfo.email]);
+    if (customerInfo.phone) customerLines.push(['Phone:', customerInfo.phone]);
+    if (customerInfo.address) customerLines.push(['Address:', customerInfo.address]);
+    if (customerInfo.projectAddress) customerLines.push(['Project:', customerInfo.projectAddress]);
+
+    const projectLines = [
+      ['System:', `${inputs.coatingSystem}${inputs.coatingSystem === 'Acrylic' ? ` (${inputs.acrylicSystemType})` : ''}`],
+      ['Roof Type:', useMultiSection && roofSections.length > 0
+        ? [...new Set(roofSections.map(s => s.roofType))].join(' / ') + ' (Multi-Section)'
+        : inputs.roofType],
+      ['Roof Size:', `${inputs.roofSizeSqFt.toLocaleString()} sq ft (${commonResults.squares} sq)`],
+    ];
+    if (inputs.linearFeet > 0) projectLines.push(['Linear Ft:', inputs.linearFeet.toLocaleString()]);
+    if (inputs.goldseal) projectLines.push(['Warranty:', 'Goldseal Manufacturer Warranty']);
+
+    const infoBoxes = [];
+    if (customerLines.length > 0) infoBoxes.push({ title: 'Prepared For', lines: customerLines });
+    infoBoxes.push({ title: 'Project Details', lines: projectLines });
+    yPos = drawInfoBoxes(infoBoxes, yPos);
+
+    // --- Multi-section table (both modes) ---
+    if (useMultiSection && roofSections.length > 0) {
+      yPos = ensureSpace(yPos, 30);
+      yPos = drawSectionHeader('Roof Sections', yPos);
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Section', 'Sq Ft', 'Linear Ft', 'Roof Type', 'Waste %', 'Stretch %']],
+        body: roofSections.map(s => [
+          s.name,
+          (s.sqFt || 0).toLocaleString(),
+          (s.linearFeet || 0).toLocaleString(),
+          s.roofType,
+          `${Math.round((s.wasteFactor || 0) * 100)}%`,
+          `${Math.round((s.stretchFactor || 0) * 100)}%`,
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: colors.primary, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+        styles: { fontSize: 9, cellPadding: 3 },
+        alternateRowStyles: { fillColor: colors.bgSoft },
+        margin: { left: margin, right: margin },
+      });
+      yPos = doc.lastAutoTable.finalY + 6;
+    }
+
+    // Years available (10/15/20 — fewer for Aluminum)
+    const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
+    const showRates = !useMultiSection;
+    const showPriceUnit = !(profitMargin > 0 && !showMarginInExports);
+
+    if (isClient) {
+      // ============================================================
+      // CLIENT PROPOSAL FLOW
+      // ============================================================
+
+      // Scope of Work
+      yPos = ensureSpace(yPos, 60);
+      yPos = drawSectionHeader('Scope of Work', yPos);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...colors.text);
+      const scope = buildScopeOfWork();
+      const splitScope = doc.splitTextToSize(scope, contentWidth);
+      // Render each line with consistent spacing
+      splitScope.forEach(line => {
+        yPos = ensureSpace(yPos, 5);
+        doc.text(line, margin, yPos);
+        yPos += 4.5;
+      });
+      yPos += 5;
+
+      // Investment Options
+      if (hasPrices && inputs.roofSizeSqFt > 0) {
+        yPos = ensureSpace(yPos, 60);
+        yPos = drawSectionHeader('Investment Options', yPos);
+
+        const optionYears = yearsToShow.filter(y => {
+          const cost = grandTotals[y] || 0;
+          return cost > 0;
+        });
+
+        const cols = optionYears.length || 1;
+        const gap = 5;
+        const cardWidth = (contentWidth - gap * (cols - 1)) / cols;
+        const cardHeight = 42;
+
+        optionYears.forEach((year, i) => {
+          const x = margin + i * (cardWidth + gap);
+          const cost = grandTotals[year] || 0;
+          const finalPrice = profitMargin > 0 ? cost / (1 - profitMargin / 100) : cost;
+          const perSqFt = finalPrice / inputs.roofSizeSqFt;
+
+          // Card background
+          doc.setFillColor(...colors.bgHero);
+          doc.roundedRect(x, yPos, cardWidth, cardHeight, 3, 3, 'F');
+          doc.setDrawColor(...colors.primaryLight);
+          doc.setLineWidth(0.5);
+          doc.roundedRect(x, yPos, cardWidth, cardHeight, 3, 3, 'S');
+
+          // Year label band
+          doc.setFillColor(...colors.primary);
+          doc.roundedRect(x, yPos, cardWidth, 9, 3, 3, 'F');
+          doc.rect(x, yPos + 5, cardWidth, 4, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`${year}-YEAR SYSTEM`, x + cardWidth / 2, yPos + 6, { align: 'center' });
+
+          // Price
+          doc.setTextColor(...colors.text);
+          doc.setFontSize(18);
+          doc.setFont('helvetica', 'bold');
+          doc.text(formatCurrency(finalPrice), x + cardWidth / 2, yPos + 22, { align: 'center' });
+
+          // Per sq ft
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...colors.muted);
+          doc.text(`${formatCurrency(perSqFt)} / sq ft`, x + cardWidth / 2, yPos + 29, { align: 'center' });
+
+          // Includes
+          doc.setFontSize(8);
+          doc.setTextColor(...colors.success);
+          doc.text(`Materials, accessories${inputs.goldseal ? ', warranty' : ''}`, x + cardWidth / 2, yPos + 36, { align: 'center' });
+        });
+
+        yPos += cardHeight + 6;
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.2);
+
+        // Note about pricing validity
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(...colors.muted);
+        doc.text(
+          'Pricing includes all materials and accessories. Valid for 30 days from quote date unless otherwise noted.',
+          margin, yPos
+        );
+        doc.setTextColor(...colors.text);
+        yPos += 8;
+      } else if (!hasPrices) {
+        // No prices yet — placeholder
+        yPos = ensureSpace(yPos, 30);
+        yPos = drawSectionHeader('Investment', yPos);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(...colors.muted);
+        doc.text('Final pricing will be provided in a separate communication.', margin, yPos);
+        doc.setTextColor(...colors.text);
+        yPos += 8;
+      }
+    } else {
+      // ============================================================
+      // DETAILED ESTIMATE FLOW
+      // ============================================================
+
+      // Adjustment factors (single-section)
+      if (!useMultiSection) {
+        const wf = parseFloat(inputs.wasteFactor) || 0;
+        const sf = parseFloat(inputs.stretchFactor) || 0;
+        if (wf > 0 || sf > 0) {
+          const factors = [];
+          if (wf > 0) factors.push(`Waste: ${Math.round(wf * 100)}%`);
+          if (sf > 0) factors.push(`Stretch: ${Math.round(sf * 100)}%`);
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'italic');
+          doc.setTextColor(...colors.muted);
+          doc.text(`Adjustment factors applied: ${factors.join(', ')}`, margin, yPos);
+          doc.setTextColor(...colors.text);
+          yPos += 6;
+        }
+      }
+
+      // Warning for missing linear feet
+      if (inputs.linearFeet <= 0) {
+        const warnHeight = (inputs.roofType === 'Metal' && commonResults.screwBuckets > 0) ? 24 : 18;
+        yPos = ensureSpace(yPos, warnHeight + 4);
+        doc.setFillColor(255, 247, 237);
+        doc.setDrawColor(...colors.warning);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(margin, yPos, contentWidth, warnHeight, 2, 2, 'FD');
+        doc.setTextColor(...colors.warning);
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
-        doc.text(`${year}-Year System`, 15, yPos);
-        yPos += 6;
-
+        doc.text('WARNING: INCOMPLETE QUOTE', margin + 4, yPos + 7);
         doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...colors.text);
+        doc.text('Missing Linear Feet — required to calculate butter grade (seam sealant) quantity.', margin + 4, yPos + 13);
+        if (inputs.roofType === 'Metal' && commonResults.screwBuckets > 0) {
+          doc.setFontSize(8);
+          doc.text(`(Fastener encapsulation for ~${commonResults.screwCount} screws IS included based on roof area.)`, margin + 4, yPos + 19);
+        }
+        doc.setLineWidth(0.2);
+        yPos += warnHeight + 4;
+      }
+
+      // Materials Breakdown
+      yPos = ensureSpace(yPos, 40);
+      yPos = drawSectionHeader('Materials Breakdown', yPos);
+
+      const tableData = [];
+      const buildRow = (product, description, priceUnit, rateText, galsByYear) => {
+        const row = [product, description];
+        if (showPriceUnit) row.push(priceUnit);
+        if (showRates) row.push(rateText);
+        galsByYear.forEach(g => row.push(g));
+        return row;
+      };
+
+      if (inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0) {
+        const rate = estimates['10']?.rates?.base ? `${estimates['10'].rates.base} gal/sq` : '';
+        tableData.push(buildRow('Basecoat', inputs.selectedBasecoat, prices.basecoat > 0 ? `${formatCurrency(prices.basecoat)}/gal` : '', rate,
+          yearsToShow.map(year => `${estimates[year]?.baseGal || 0} gal`)));
+      }
+
+      if (estimates['10']?.top1Gal > 0) {
+        const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top1 || 0);
+        const allSame = ratesByYear.every(r => r === ratesByYear[0]);
+        const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
+        tableData.push(buildRow('Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
+          yearsToShow.map(year => `${estimates[year]?.top1Gal || 0} gal`)));
+      }
+      if (estimates['10']?.top2Gal > 0) {
+        const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top2 || 0);
+        const allSame = ratesByYear.every(r => r === ratesByYear[0]);
+        const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
+        tableData.push(buildRow('Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
+          yearsToShow.map(year => `${estimates[year]?.top2Gal || 0} gal`)));
+      }
+      if (estimates['10']?.top3Gal > 0) {
+        const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top3 || 0);
+        const allSame = ratesByYear.every(r => r === ratesByYear[0]);
+        const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
+        tableData.push(buildRow('Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(prices.topcoat)}/gal` : '', rate,
+          yearsToShow.map(year => `${estimates[year]?.top3Gal || 0} gal`)));
+      }
+      if (estimates['10']?.rustPrimerGal > 0) {
+        tableData.push(buildRow('Rust Primer', pdfPrimers.rust, prices.rustPrimer > 0 ? `${formatCurrency(prices.rustPrimer)}/gal` : '', '0.5 gal/sq',
+          yearsToShow.map(year => `${estimates[year]?.rustPrimerGal || 0} gal`)));
+      }
+      if (estimates['10']?.adhesionPrimerGal > 0) {
+        tableData.push(buildRow('Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(prices.adhesionPrimer)}/gal` : '', '0.2 gal/sq',
+          yearsToShow.map(year => `${estimates[year]?.adhesionPrimerGal || 0} gal`)));
+      }
+      if (commonResults.accessoryQty > 0) {
+        const priceUnit = prices.accessory > 0 ? `${formatCurrency(prices.accessory)}/${commonResults.accessoryUnit}` : '';
+        const yearCols = [`${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
+        tableData.push(buildRow('Accessories', commonResults.accessoryName, priceUnit, '', yearCols));
+      }
+      if (commonResults.fastenerCaulkTubes > 0) {
+        const priceUnit = prices.fastenerCaulk > 0 ? `${formatCurrency(prices.fastenerCaulk)}/tube` : '';
+        const yearCols = [`${commonResults.fastenerCaulkTubes} Tubes`, '', ''];
+        tableData.push(buildRow('Fastener Caulk', `${FASTENER_CAULK_NAME} (~${FASTENERS_PER_CAULK_TUBE} fasteners/tube)`, priceUnit, '', yearCols));
+      }
+      if (commonResults.membraneRolls > 0) {
+        const yearCols = [`${commonResults.membraneRolls} rolls`, '', ''];
+        tableData.push(buildRow('Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(prices.membrane)}/roll` : '', '', yearCols));
+      }
+      if (inputs.goldseal) {
+        const yearCols = yearsToShow.map(year => showPriceUnit ? formatCurrency(estimates[year]?.goldsealCost || 0) : 'Included');
+        tableData.push(buildRow('Goldseal Warranty', '', '', '', yearCols));
+      }
+
+      const headers = ['Product', 'Description'];
+      if (showPriceUnit) headers.push('Price/Unit');
+      if (showRates) headers.push('Rate');
+      headers.push(...yearsToShow.map(y => `${y}-Year`));
+
+      const colStyles = {
+        0: { fontStyle: 'bold', cellWidth: 30, textColor: colors.primary },
+        1: { cellWidth: 'auto' }
+      };
+      let colIdx = 2;
+      if (showPriceUnit) {
+        colStyles[colIdx] = { cellWidth: 22, halign: 'right' };
+        colIdx++;
+      }
+      if (showRates) {
+        colStyles[colIdx] = { cellWidth: 22, fontSize: 8, halign: 'center' };
+        colIdx++;
+      }
+      // Year columns right-aligned
+      yearsToShow.forEach(() => { colStyles[colIdx] = { halign: 'right' }; colIdx++; });
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [headers],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: colors.primary, textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
+        styles: { fontSize: 9, cellPadding: 3 },
+        alternateRowStyles: { fillColor: colors.bgSoft },
+        columnStyles: colStyles,
+        margin: { left: margin, right: margin },
+      });
+      yPos = doc.lastAutoTable.finalY + 8;
+
+      // Pricing Summary
+      if (hasPrices) {
+        yPos = ensureSpace(yPos, 40);
+        yPos = drawSectionHeader('Pricing Summary', yPos);
 
         const hidePdfLineCosts = profitMargin > 0 && !showMarginInExports;
 
-        // Line item breakdown — skip when margin details are hidden (it leaks unit costs)
-        if (!hidePdfLineCosts) {
-          if (inputs.coatingSystem !== 'Aluminum' && est.baseGal > 0 && prices.basecoat > 0) {
-            doc.text(`  Basecoat: ${est.baseGal} gal x ${formatCurrency(prices.basecoat)}/gal = ${formatCurrency(baseCost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (est.top1Gal > 0 && prices.topcoat > 0) {
-            doc.text(`  Topcoat 1: ${est.top1Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top1Cost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (est.top2Gal > 0 && prices.topcoat > 0) {
-            doc.text(`  Topcoat 2: ${est.top2Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top2Cost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (est.top3Gal > 0 && prices.topcoat > 0) {
-            doc.text(`  Topcoat 3: ${est.top3Gal} gal x ${formatCurrency(prices.topcoat)}/gal = ${formatCurrency(top3Cost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (est.rustPrimerGal > 0 && prices.rustPrimer > 0) {
-            doc.text(`  Rust Primer: ${est.rustPrimerGal} gal x ${formatCurrency(prices.rustPrimer)}/gal = ${formatCurrency(rustCost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (est.adhesionPrimerGal > 0 && prices.adhesionPrimer > 0) {
-            doc.text(`  Adhesion Primer: ${est.adhesionPrimerGal} gal x ${formatCurrency(prices.adhesionPrimer)}/gal = ${formatCurrency(adhesionCost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (commonResults.accessoryQty > 0 && prices.accessory > 0) {
-            doc.text(`  Accessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} x ${formatCurrency(prices.accessory)} = ${formatCurrency(accessoryCost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (commonResults.fastenerCaulkTubes > 0 && prices.fastenerCaulk > 0) {
-            doc.text(`  Fastener Caulk: ${commonResults.fastenerCaulkTubes} tubes x ${formatCurrency(prices.fastenerCaulk)}/tube = ${formatCurrency(fastenerCaulkCost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (commonResults.membraneRolls > 0 && prices.membrane > 0) {
-            doc.text(`  Membrane: ${commonResults.membraneRolls} rolls x ${formatCurrency(prices.membrane)} = ${formatCurrency(membraneCost)}`, 15, yPos);
-            yPos += 5;
-          }
-          if (goldsealCost > 0) {
-            doc.text(`  Goldseal Warranty: ${formatCurrency(goldsealCost)}`, 15, yPos);
-            yPos += 5;
-          }
-        }
+        yearsToShow.forEach((year, idx) => {
+          const est = estimates[year];
+          if (!est) return;
 
-        // Totals
-        yPos += 2;
-        doc.setFont('helvetica', 'bold');
-        if (profitMargin > 0) {
-          const sellPrice = grandTotal / (1 - profitMargin / 100);
-          if (showMarginInExports) {
-            doc.text(`  Distributor Cost: ${formatCurrency(grandTotal)}`, 15, yPos);
-            yPos += 5;
-            if (inputs.roofSizeSqFt > 0) {
-              doc.setFont('helvetica', 'normal');
-              doc.text(`  Distributor Cost per Sq Ft: ${formatCurrency(grandTotal / inputs.roofSizeSqFt)}`, 15, yPos);
-              yPos += 5;
-              doc.setFont('helvetica', 'bold');
+          const baseCost = (est.baseGal || 0) * prices.basecoat;
+          const top1Cost = (est.top1Gal || 0) * prices.topcoat;
+          const top2Cost = (est.top2Gal || 0) * prices.topcoat;
+          const top3Cost = (est.top3Gal || 0) * prices.topcoat;
+          const adhesionCost = (est.adhesionPrimerGal || 0) * prices.adhesionPrimer;
+          const rustCost = (est.rustPrimerGal || 0) * prices.rustPrimer;
+          const accessoryCost = (commonResults.accessoryQty || 0) * prices.accessory;
+          const membraneCost = (commonResults.membraneRolls || 0) * prices.membrane;
+          const fastenerCaulkCost = (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk;
+          const goldsealCost = est.goldsealCost || 0;
+          const grandTotal = baseCost + top1Cost + top2Cost + top3Cost + adhesionCost + rustCost + accessoryCost + membraneCost + fastenerCaulkCost + goldsealCost;
+
+          // Build per-line rows (only if showing line costs)
+          const lineRows = [];
+          if (!hidePdfLineCosts) {
+            if (inputs.coatingSystem !== 'Aluminum' && est.baseGal > 0 && prices.basecoat > 0)
+              lineRows.push(['Basecoat', `${est.baseGal} gal × ${formatCurrency(prices.basecoat)}/gal`, formatCurrency(baseCost)]);
+            if (est.top1Gal > 0 && prices.topcoat > 0)
+              lineRows.push(['Topcoat 1', `${est.top1Gal} gal × ${formatCurrency(prices.topcoat)}/gal`, formatCurrency(top1Cost)]);
+            if (est.top2Gal > 0 && prices.topcoat > 0)
+              lineRows.push(['Topcoat 2', `${est.top2Gal} gal × ${formatCurrency(prices.topcoat)}/gal`, formatCurrency(top2Cost)]);
+            if (est.top3Gal > 0 && prices.topcoat > 0)
+              lineRows.push(['Topcoat 3', `${est.top3Gal} gal × ${formatCurrency(prices.topcoat)}/gal`, formatCurrency(top3Cost)]);
+            if (est.rustPrimerGal > 0 && prices.rustPrimer > 0)
+              lineRows.push(['Rust Primer', `${est.rustPrimerGal} gal × ${formatCurrency(prices.rustPrimer)}/gal`, formatCurrency(rustCost)]);
+            if (est.adhesionPrimerGal > 0 && prices.adhesionPrimer > 0)
+              lineRows.push(['Adhesion Primer', `${est.adhesionPrimerGal} gal × ${formatCurrency(prices.adhesionPrimer)}/gal`, formatCurrency(adhesionCost)]);
+            if (commonResults.accessoryQty > 0 && prices.accessory > 0)
+              lineRows.push(['Accessories', `${commonResults.accessoryQty} ${commonResults.accessoryUnit} × ${formatCurrency(prices.accessory)}`, formatCurrency(accessoryCost)]);
+            if (commonResults.fastenerCaulkTubes > 0 && prices.fastenerCaulk > 0)
+              lineRows.push(['Fastener Caulk', `${commonResults.fastenerCaulkTubes} tubes × ${formatCurrency(prices.fastenerCaulk)}/tube`, formatCurrency(fastenerCaulkCost)]);
+            if (commonResults.membraneRolls > 0 && prices.membrane > 0)
+              lineRows.push(['Membrane', `${commonResults.membraneRolls} rolls × ${formatCurrency(prices.membrane)}`, formatCurrency(membraneCost)]);
+            if (goldsealCost > 0)
+              lineRows.push(['Goldseal Warranty', '', formatCurrency(goldsealCost)]);
+          }
+
+          // Totals rows
+          const totalRows = [];
+          if (profitMargin > 0) {
+            const sellPrice = grandTotal / (1 - profitMargin / 100);
+            if (showMarginInExports) {
+              totalRows.push(['Distributor Cost', '', formatCurrency(grandTotal)]);
+              if (inputs.roofSizeSqFt > 0) totalRows.push(['Distributor $/sq ft', '', formatCurrency(grandTotal / inputs.roofSizeSqFt)]);
+              totalRows.push([`Contractor Price (${profitMargin}% margin)`, '', formatCurrency(sellPrice)]);
+              if (inputs.roofSizeSqFt > 0) totalRows.push(['Contractor $/sq ft', '', formatCurrency(sellPrice / inputs.roofSizeSqFt)]);
+              totalRows.push(['Margin', '', formatCurrency(sellPrice - grandTotal)]);
+            } else {
+              totalRows.push(['Total', '', formatCurrency(sellPrice)]);
+              if (inputs.roofSizeSqFt > 0) totalRows.push(['Total $/sq ft', '', formatCurrency(sellPrice / inputs.roofSizeSqFt)]);
             }
-            const profit = sellPrice - grandTotal;
-            doc.text(`  Contractor Price (${profitMargin}% margin): ${formatCurrency(sellPrice)}`, 15, yPos);
-            yPos += 5;
-            if (inputs.roofSizeSqFt > 0) {
-              doc.text(`  Contractor Price per Sq Ft: ${formatCurrency(sellPrice / inputs.roofSizeSqFt)}`, 15, yPos);
-              yPos += 5;
-            }
-            doc.setFont('helvetica', 'normal');
-            doc.text(`  Margin: ${formatCurrency(profit)}`, 15, yPos);
-            yPos += 5;
           } else {
-            doc.text(`  Total: ${formatCurrency(sellPrice)}`, 15, yPos);
-            yPos += 5;
-            if (inputs.roofSizeSqFt > 0) {
-              doc.setFont('helvetica', 'normal');
-              doc.text(`  Total per Sq Ft: ${formatCurrency(sellPrice / inputs.roofSizeSqFt)}`, 15, yPos);
-              yPos += 5;
-            }
+            totalRows.push(['Grand Total', '', formatCurrency(grandTotal)]);
+            if (inputs.roofSizeSqFt > 0) totalRows.push(['$/sq ft', '', formatCurrency(grandTotal / inputs.roofSizeSqFt)]);
           }
-        } else {
-          doc.text(`  Grand Total: ${formatCurrency(grandTotal)}`, 15, yPos);
-          yPos += 5;
-          if (inputs.roofSizeSqFt > 0) {
-            doc.setFont('helvetica', 'normal');
-            doc.text(`  Cost per Sq Ft: ${formatCurrency(grandTotal / inputs.roofSizeSqFt)}`, 15, yPos);
-            yPos += 5;
-          }
-        }
-        doc.setFont('helvetica', 'normal');
-        yPos += 5;
-      });
+
+          const allRows = [...lineRows, ...totalRows];
+          const totalsStartIdx = lineRows.length;
+
+          yPos = ensureSpace(yPos, allRows.length * 6 + 14);
+          autoTable(doc, {
+            startY: yPos,
+            head: [[{ content: `${year}-Year System`, colSpan: 3, styles: { halign: 'left', fillColor: colors.primaryLight, textColor: 255, fontStyle: 'bold' } }]],
+            body: allRows,
+            theme: 'plain',
+            styles: { fontSize: 9, cellPadding: 2 },
+            columnStyles: {
+              0: { cellWidth: 50, fontStyle: 'bold' },
+              1: { cellWidth: 'auto', textColor: colors.muted },
+              2: { cellWidth: 32, halign: 'right' },
+            },
+            margin: { left: margin, right: margin },
+            didParseCell: (data) => {
+              if (data.section === 'body' && data.row.index >= totalsStartIdx) {
+                data.cell.styles.fillColor = colors.bgHero;
+                data.cell.styles.fontStyle = 'bold';
+                if (data.column.index === 2) data.cell.styles.textColor = colors.primary;
+              }
+            },
+          });
+          yPos = doc.lastAutoTable.finalY + 6;
+        });
+      }
     }
 
-    // Energy Savings Section (if toggled on)
+    // ============================================================
+    // ENERGY SAVINGS (both modes if enabled)
+    // ============================================================
     const energySavingsForPDF = showEnergySavings ? calculateEnergySavingsForExport(energyElectricityRate) : null;
     if (energySavingsForPDF) {
-      // Check if we need a new page
-      if (yPos > 240) {
-        doc.addPage();
-        yPos = 20;
-      }
-
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text('ENERGY SAVINGS ESTIMATE (OPTIONAL)', 15, yPos);
-      yPos += 7;
+      yPos = ensureSpace(yPos, 80);
+      yPos = drawSectionHeader('Energy Savings Estimate', yPos);
 
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
-      doc.text('Converting to reflective white coating can reduce cooling costs:', 15, yPos);
-      yPos += 8;
-
-      // Annual Savings
-      doc.setFont('helvetica', 'bold');
-      doc.text('Estimated Annual Savings:', 15, yPos);
-      yPos += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.text(`  Conservative Range: $${energySavingsForPDF.annualSavingsLow.toLocaleString()} - $${energySavingsForPDF.annualSavingsHigh.toLocaleString()}/year`, 15, yPos);
-      yPos += 4;
-      doc.text(`  Energy Reduction: ${energySavingsForPDF.annualKwhSavings.toLocaleString()} kWh/year`, 15, yPos);
-      yPos += 4;
-      doc.text(`  Peak Cooling Reduction: ${energySavingsForPDF.tonsOfCooling} Tons of AC`, 15, yPos);
-      yPos += 7;
-
-      // Long-Term ROI
-      doc.setFont('helvetica', 'bold');
-      doc.text('Long-Term ROI (Warranty Periods):', 15, yPos);
-      yPos += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.text(`  10-Year Savings: $${energySavingsForPDF.roi10Year.toLocaleString()}`, 15, yPos);
-      yPos += 4;
-      doc.text(`  15-Year Savings: $${energySavingsForPDF.roi15Year.toLocaleString()}`, 15, yPos);
-      yPos += 4;
-      doc.text(`  20-Year Savings: $${energySavingsForPDF.roi20Year.toLocaleString()}`, 15, yPos);
-      yPos += 7;
-
-      // Assumptions
-      doc.setFont('helvetica', 'bold');
-      doc.text('Calculation Assumptions (Highly Conservative):', 15, yPos);
-      yPos += 5;
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`• Reflectivity Change: ${energySavingsForPDF.beforeRoof} → ${energySavingsForPDF.afterRoof} (+${energySavingsForPDF.deltaReflectance}%)`, 15, yPos);
-      yPos += 4;
-      doc.text(`• ${energySavingsForPDF.regionName} Climate (Zone ${energySavingsForPDF.climateZone}): ${energySavingsForPDF.cdd} Cooling Degree Days, ${energySavingsForPDF.solarRadiation} kWh/m²/year solar radiation`, 15, yPos);
-      yPos += 4;
-      doc.text(`• HVAC Efficiency: SEER 13 (typical commercial)`, 15, yPos);
-      yPos += 4;
-      doc.text(`• Electricity Rate: $${energyElectricityRate}/kWh`, 15, yPos);
-      yPos += 4;
-      doc.text(`• Conservative Factors: Cooling season (${energySavingsForPDF.coolingSeasonPct}%), building reality (40%), heat transfer (35%)`, 15, yPos);
-      yPos += 4;
-      doc.text(`• Targets LOW END of industry range: $0.25-$0.75 per sq ft/year`, 15, yPos);
-      yPos += 4;
-      doc.text(`• ROI includes 3% annual electricity rate increase`, 15, yPos);
+      doc.setTextColor(...colors.text);
+      doc.text('Converting to a reflective white coating can meaningfully reduce cooling costs.', margin, yPos);
       yPos += 6;
 
+      // --- Three highlight cards: Annual Savings, Energy Reduction, Peak Cooling ---
+      const cardGap = 4;
+      const cardW = (contentWidth - cardGap * 2) / 3;
+      const cardH = 22;
+      const highlightCards = [
+        { label: 'Annual Savings', value: `$${energySavingsForPDF.annualSavingsLow.toLocaleString()} - $${energySavingsForPDF.annualSavingsHigh.toLocaleString()}`, sub: 'per year' },
+        { label: 'Energy Reduction', value: `${energySavingsForPDF.annualKwhSavings.toLocaleString()} kWh`, sub: 'per year' },
+        { label: 'Peak Cooling', value: `${energySavingsForPDF.tonsOfCooling} Tons`, sub: 'of AC offset' },
+      ];
+      highlightCards.forEach((card, i) => {
+        const x = margin + i * (cardW + cardGap);
+        doc.setFillColor(...colors.bgHero);
+        doc.roundedRect(x, yPos, cardW, cardH, 2, 2, 'F');
+        doc.setFillColor(...colors.success);
+        doc.rect(x, yPos, cardW, 1.5, 'F');
+        doc.setTextColor(...colors.muted);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.text(card.label.toUpperCase(), x + cardW / 2, yPos + 6, { align: 'center' });
+        doc.setTextColor(...colors.primary);
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(card.value, x + cardW / 2, yPos + 13, { align: 'center' });
+        doc.setTextColor(...colors.muted);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(card.sub, x + cardW / 2, yPos + 18, { align: 'center' });
+      });
+      yPos += cardH + 8;
+
+      // --- Long-term ROI table ---
+      yPos = ensureSpace(yPos, 40);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...colors.text);
+      doc.text('Long-Term ROI (Warranty Periods)', margin, yPos);
+      yPos += 3;
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Period', 'Estimated Cumulative Savings']],
+        body: [
+          ['10-Year Window', `$${energySavingsForPDF.roi10Year.toLocaleString()}`],
+          ['15-Year Window', `$${energySavingsForPDF.roi15Year.toLocaleString()}`],
+          ['20-Year Window', `$${energySavingsForPDF.roi20Year.toLocaleString()}`],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: colors.success, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+        styles: { fontSize: 9, cellPadding: 3 },
+        alternateRowStyles: { fillColor: colors.bgSoft },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60 }, 1: { halign: 'right' } },
+        margin: { left: margin, right: margin },
+      });
+      yPos = doc.lastAutoTable.finalY + 8;
+
+      // --- Assumptions table (this is the section the user said looked off) ---
+      yPos = ensureSpace(yPos, 60);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...colors.text);
+      doc.text('Calculation Assumptions', margin, yPos);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(...colors.muted);
+      doc.text('(highly conservative)', margin + doc.getTextWidth('Calculation Assumptions') + 3, yPos);
+      yPos += 3;
+
+      const assumptionRows = [
+        ['Reflectivity Change', `${energySavingsForPDF.beforeRoof} to ${energySavingsForPDF.afterRoof} (+${energySavingsForPDF.deltaReflectance}%)`],
+        ['Climate Region', `${energySavingsForPDF.regionName} (Zone ${energySavingsForPDF.climateZone})`],
+        ['Cooling Degree Days', `${energySavingsForPDF.cdd.toLocaleString()}`],
+        ['Solar Radiation', `${energySavingsForPDF.solarRadiation} kWh/m²/year`],
+        ['HVAC Efficiency', 'SEER 13 (typical commercial)'],
+        ['Electricity Rate', `$${energyElectricityRate}/kWh`],
+        ['Conservative Factors', `Cooling season ${energySavingsForPDF.coolingSeasonPct}%, building reality 40%, heat transfer 35%`],
+        ['Industry Range Target', 'Low end of $0.25 - $0.75 per sq ft / year'],
+        ['ROI Escalation', '3% annual electricity rate increase'],
+      ];
+
+      autoTable(doc, {
+        startY: yPos,
+        body: assumptionRows,
+        theme: 'plain',
+        styles: { fontSize: 8, cellPadding: 2, textColor: colors.text },
+        columnStyles: {
+          0: { fontStyle: 'bold', cellWidth: 50, textColor: colors.muted },
+          1: { cellWidth: 'auto' },
+        },
+        margin: { left: margin, right: margin },
+      });
+      yPos = doc.lastAutoTable.finalY + 5;
+
+      // Source line
       doc.setFontSize(7);
       doc.setFont('helvetica', 'italic');
-      const energyDisclaimer = `* Energy savings are estimates for ${energySavingsForPDF.regionName} based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards. Actual savings vary by building characteristics, HVAC efficiency, occupancy patterns, and weather conditions.`;
-      const splitEnergyDisclaimer = doc.splitTextToSize(energyDisclaimer, pageWidth - 30);
-      doc.text(splitEnergyDisclaimer, 15, yPos);
-      yPos += splitEnergyDisclaimer.length * 3 + 10;
+      doc.setTextColor(...colors.muted);
+      const sourceText = `Source: DOE / LBNL Cool Roof Calculator and ASHRAE 90.1. Actual savings vary by building characteristics, HVAC efficiency, occupancy patterns, and weather conditions.`;
+      const sourceSplit = doc.splitTextToSize(sourceText, contentWidth);
+      doc.text(sourceSplit, margin, yPos);
+      yPos += sourceSplit.length * 3 + 5;
+      doc.setTextColor(...colors.text);
     }
 
-    // Disclaimer
-    yPos += 5;
+    // ============================================================
+    // CLIENT-MODE ACCEPTANCE / SIGNATURE BLOCK
+    // ============================================================
+    if (isClient) {
+      yPos = ensureSpace(yPos, 50);
+      yPos = drawSectionHeader('Acceptance', yPos);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...colors.text);
+      doc.text('Signature below indicates acceptance of the scope, pricing, and terms outlined in this proposal.', margin, yPos);
+      yPos += 10;
+
+      const sigGap = 8;
+      const sigWidth = (contentWidth - sigGap) / 2;
+      const sigY = yPos + 12;
+
+      doc.setDrawColor(...colors.muted);
+      doc.setLineWidth(0.4);
+      doc.line(margin, sigY, margin + sigWidth, sigY);
+      doc.line(margin + sigWidth + sigGap, sigY, margin + contentWidth, sigY);
+
+      doc.setFontSize(8);
+      doc.setTextColor(...colors.muted);
+      doc.text('Authorized Signature', margin, sigY + 4);
+      doc.text('Printed Name', margin, sigY + 8);
+      doc.text('Date', margin + sigWidth + sigGap, sigY + 4);
+      doc.text('Title', margin + sigWidth + sigGap, sigY + 8);
+      yPos = sigY + 12;
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.2);
+      doc.setTextColor(...colors.text);
+    }
+
+    // ============================================================
+    // DISCLAIMER
+    // ============================================================
+    yPos = ensureSpace(yPos, 28);
+    doc.setFillColor(...colors.light);
+    doc.roundedRect(margin, yPos, contentWidth, 22, 2, 2, 'F');
+    doc.setTextColor(...colors.text);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
-    doc.text('IMPORTANT DISCLAIMER:', 15, yPos);
-    yPos += 5;
+    doc.text('IMPORTANT DISCLAIMER', margin + 4, yPos + 5);
     doc.setFont('helvetica', 'normal');
-    const disclaimerText = 'THIS QUOTE IS PROVIDED AS A GUIDELINE AND ESTIMATE ONLY. ACTUAL MATERIAL QUANTITIES MAY VARY DEPENDING ON FACTORS INCLUDING BUT NOT LIMITED TO: APPLICATION RATES, TRUE MEASUREMENTS, AND WASTE FACTORS. THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.';
-    const splitDisclaimer = doc.splitTextToSize(disclaimerText, pageWidth - 30);
-    doc.text(splitDisclaimer, 15, yPos);
+    doc.setFontSize(7);
+    const disclaimerText = isClient
+      ? 'This proposal is provided as a guideline and estimate. Final material quantities and pricing are subject to verification of site measurements and conditions at the time of installation. Acceptance of this proposal does not constitute a binding contract until countersigned and dated by both parties.'
+      : 'This quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements, and waste factors. The end-user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.';
+    const splitDisclaimer = doc.splitTextToSize(disclaimerText, contentWidth - 8);
+    doc.text(splitDisclaimer, margin + 4, yPos + 10);
 
-    // Save PDF
+    // ============================================================
+    // FOOTERS — render after all content so we know total page count
+    // ============================================================
+    const totalPages = doc.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFillColor(...colors.light);
+      doc.rect(0, pageHeight - 10, pageWidth, 10, 'F');
+      doc.setTextColor(...colors.muted);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'italic');
+      doc.text(
+        isClient ? 'Generated by Roofing Materials Calculator' : 'Internal Distributor Estimate',
+        margin, pageHeight - 4
+      );
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 4, { align: 'right' });
+      doc.setTextColor(...colors.text);
+    }
+
+    // Save
+    const suffix = isClient ? '_Proposal.pdf' : '_Estimate.pdf';
     const fileName = inputs.projectName
-      ? `${inputs.projectName.replace(/[^a-z0-9]/gi, '_')}_Estimate.pdf`
-      : 'Roofing_Estimate.pdf';
+      ? `${inputs.projectName.replace(/[^a-z0-9]/gi, '_')}${suffix}`
+      : `Roofing${suffix}`;
     doc.save(fileName);
   };
 
@@ -3198,15 +3522,30 @@ export default function App() {
                 )}
               </div>
 
-              {/* PDF DOWNLOAD BUTTON */}
+              {/* PDF DOWNLOAD BUTTONS */}
               <div className="mt-8 print:hidden">
-                <button
-                  onClick={generatePDF}
-                  className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-4 px-6 rounded-lg shadow-lg flex items-center justify-center gap-3 transition-all transform hover:scale-105"
-                >
-                  <FileDown size={24} />
-                  <span className="text-lg">Download PDF Quote</span>
-                </button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <button
+                    onClick={() => generatePDF('detailed')}
+                    className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-4 px-5 rounded-lg shadow-lg flex flex-col items-center justify-center gap-1 transition-all transform hover:scale-[1.02]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileDown size={20} />
+                      <span className="text-base">Detailed Estimate</span>
+                    </div>
+                    <span className="text-xs font-normal opacity-90">Full material breakdown — for internal use</span>
+                  </button>
+                  <button
+                    onClick={() => generatePDF('client')}
+                    className="bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-800 hover:to-blue-900 text-white font-bold py-4 px-5 rounded-lg shadow-lg flex flex-col items-center justify-center gap-1 transition-all transform hover:scale-[1.02]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileText size={20} />
+                      <span className="text-base">Client Proposal</span>
+                    </div>
+                    <span className="text-xs font-normal opacity-90">Scope, pricing, signature — safe to share</span>
+                  </button>
+                </div>
               </div>
 
               {/* COPY TO EMAIL SECTION */}
