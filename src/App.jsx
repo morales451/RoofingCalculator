@@ -26,6 +26,9 @@ export default function App() {
     goldseal: false,
     passedAdhesion: true,
     hasRust: false,
+    // 'field' = calculate rust primer for the whole field (0.5 gal/sq).
+    // 'spot' = no calculation; quote just notes "spot prime rusted areas 2 layers before topcoats".
+    rustPrimeMethod: 'field',
     accessoryType: 'Butter Grade',
     // When true, fasteners are encapsulated with self-leveling caulk (~125 fasteners
     // per tube) instead of being rolled into the butter grade bucket count.
@@ -72,6 +75,9 @@ export default function App() {
   // Self-leveling caulk used to encapsulate metal-roof fasteners (per-tube coverage).
   const FASTENER_CAULK_NAME = 'Self-Leveling Caulk';
   const FASTENERS_PER_CAULK_TUBE = 125;
+  // Standard instruction we drop into all outputs when the user picks spot prime
+  // instead of priming the whole field. Kept here so the text never drifts between forms.
+  const SPOT_PRIME_NOTE = 'Spot prime rusted areas — 2 layers before applying topcoats';
 
   // Customer info state
   const [customerInfo, setCustomerInfo] = useState({
@@ -546,7 +552,7 @@ export default function App() {
   // --- PER-SECTION CALCULATION HELPER ---
   const calculateForSection = (section, globalInputs) => {
     const { sqFt, linearFeet, roofType, wasteFactor, stretchFactor } = section;
-    const { coatingSystem, acrylicSystemType, passedAdhesion, hasRust,
+    const { coatingSystem, acrylicSystemType, passedAdhesion, hasRust, rustPrimeMethod,
             goldseal, accessoryType, selectedButterGrade, selectedFabric,
             useFastenerCaulk } = globalInputs;
 
@@ -619,8 +625,9 @@ export default function App() {
         adhesionPrimerGal = Math.ceil(squares * 0.2 * totalFactor);
       }
 
+      // Spot-prime skips the field calculation — the quote just carries a note.
       let rustPrimerGal = 0;
-      if ((coatingSystem === 'Silicone' || coatingSystem === 'Acrylic') && roofType === 'Metal' && hasRust) {
+      if ((coatingSystem === 'Silicone' || coatingSystem === 'Acrylic') && roofType === 'Metal' && hasRust && rustPrimeMethod !== 'spot') {
         rustPrimerGal = roundToFive(squares * 0.5 * totalFactor);
       }
 
@@ -649,7 +656,7 @@ export default function App() {
   useEffect(() => {
     const {
         roofSizeSqFt, linearFeet, roofType, wasteFactor, stretchFactor,
-        goldseal, passedAdhesion, hasRust, accessoryType, coatingSystem, acrylicSystemType,
+        goldseal, passedAdhesion, hasRust, rustPrimeMethod, accessoryType, coatingSystem, acrylicSystemType,
         selectedTopcoat, selectedBasecoat, selectedButterGrade, selectedFabric,
         useFastenerCaulk
     } = inputs;
@@ -822,7 +829,7 @@ export default function App() {
           }
 
           let rustPrimerGal = 0;
-          if ((coatingSystem === 'Silicone' || coatingSystem === 'Acrylic') && roofType === 'Metal' && hasRust) {
+          if ((coatingSystem === 'Silicone' || coatingSystem === 'Acrylic') && roofType === 'Metal' && hasRust && rustPrimeMethod !== 'spot') {
                const rawRust = squares * 0.5;
                rustPrimerGal = roundToFive(rawRust * totalFactor);
           }
@@ -1036,8 +1043,12 @@ export default function App() {
         text += `\n** NOTE: Adhesion failure. Added ${primerSet.adhesion} (@ 0.2 gal/sq).\n`;
     }
 
-    if (coatingSystem === 'Silicone' && roofType === 'Metal' && inputs.hasRust) {
-        text += `** NOTE: Rust present. Added ${primerSet.rust} (@ 0.5 gal/sq).\n`;
+    if ((coatingSystem === 'Silicone' || coatingSystem === 'Acrylic') && roofType === 'Metal' && inputs.hasRust) {
+        if (inputs.rustPrimeMethod === 'spot') {
+            text += `** NOTE: ${SPOT_PRIME_NOTE} (use ${primerSet.rust}).\n`;
+        } else {
+            text += `** NOTE: Rust present. Added ${primerSet.rust} (@ 0.5 gal/sq).\n`;
+        }
     }
 
     ['10', '15', '20'].forEach(year => {
@@ -1520,6 +1531,12 @@ export default function App() {
       if (estimates['10']?.rustPrimerGal > 0) {
         tableData.push(buildRow('Rust Primer', pdfPrimers.rust, prices.rustPrimer > 0 ? `${formatCurrency(adj(prices.rustPrimer))}/gal` : '', '0.5 gal/sq',
           yearsToShow.map(year => `${estimates[year]?.rustPrimerGal || 0} gal`)));
+      } else if (inputs.hasRust && inputs.rustPrimeMethod === 'spot'
+                 && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
+                 && inputs.roofType === 'Metal') {
+        // Spot-prime: no field calculation, but the contractor still needs the instruction.
+        tableData.push(buildRow('Rust Primer', `${pdfPrimers.rust} — ${SPOT_PRIME_NOTE}`, '', 'Spot prime',
+          yearsToShow.map(() => 'As needed')));
       }
       if (estimates['10']?.adhesionPrimerGal > 0) {
         tableData.push(buildRow('Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(adj(prices.adhesionPrimer))}/gal` : '', '0.2 gal/sq',
@@ -2660,7 +2677,31 @@ export default function App() {
                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${inputs.hasRust ? 'translate-x-6' : 'translate-x-1'}`} />
                         </button>
                     </div>
-                    {inputs.hasRust && <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded flex gap-2"><Info size={14} className="mt-0.5" /><span>Adds Rust Inhibiting Primer.</span></div>}
+
+                    {inputs.hasRust && (
+                      <div className="rounded-lg border-2 border-orange-300 bg-orange-50 p-3 space-y-2">
+                        <label className="text-xs font-bold text-orange-900 uppercase tracking-wide">Rust Primer Coverage</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => handleChange('rustPrimeMethod', 'field')}
+                            className={`p-2 text-sm rounded-lg border-2 transition-all ${inputs.rustPrimeMethod !== 'spot' ? 'bg-white border-orange-500 text-orange-700 font-bold shadow-sm' : 'bg-white/60 border-gray-300 text-gray-600 hover:bg-white'}`}
+                          >
+                            Field Prime
+                          </button>
+                          <button
+                            onClick={() => handleChange('rustPrimeMethod', 'spot')}
+                            className={`p-2 text-sm rounded-lg border-2 transition-all ${inputs.rustPrimeMethod === 'spot' ? 'bg-white border-amber-500 text-amber-700 font-bold shadow-sm' : 'bg-white/60 border-gray-300 text-gray-600 hover:bg-white'}`}
+                          >
+                            Spot Prime
+                          </button>
+                        </div>
+                        <p className="text-xs text-orange-800">
+                          {inputs.rustPrimeMethod === 'spot'
+                            ? `No primer quantity calculated. All quotes will read: "${SPOT_PRIME_NOTE}".`
+                            : 'Calculates rust primer at 0.5 gal/sq for the entire field.'}
+                        </p>
+                      </div>
+                    )}
                 </div>
               )}
 
@@ -3036,6 +3077,23 @@ export default function App() {
                         </tr>
                     )}
                     
+                    {/* Spot Prime note row — rust present but user chose spot prime, so no quantities */}
+                    {inputs.hasRust && inputs.rustPrimeMethod === 'spot'
+                      && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
+                      && inputs.roofType === 'Metal' && (
+                        <tr className="bg-amber-50">
+                            <td className="px-4 py-3" colSpan={inputs.coatingSystem === 'Aluminum' ? 3 : 5}>
+                                <div className="flex items-start gap-2">
+                                    <Info size={14} className="mt-0.5 text-amber-700 flex-shrink-0" />
+                                    <div>
+                                        <div className="text-sm font-bold text-amber-900">Rust Primer — Spot Prime</div>
+                                        <div className="text-xs text-amber-800 mt-0.5">{currentPrimers.rust} — {SPOT_PRIME_NOTE}. No field quantity calculated.</div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    )}
+
                     {/* Rust Primer (Silicone Metal Only) */}
                     {(estimates['10']?.rustPrimerGal > 0) && (
                         <tr className="bg-orange-50">
