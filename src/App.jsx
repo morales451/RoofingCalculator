@@ -330,6 +330,11 @@ export default function App() {
             '15': { base: 0, top1: 2.0, top2: 0, top3: 0 },
             '20': { base: 0, top1: 2.5, top2: 0, top3: 0 },
         },
+        'Previously Coated': {
+            '10': { base: 0, top1: 1.5, top2: 0, top3: 0 },
+            '15': { base: 0, top1: 2.0, top2: 0, top3: 0 },
+            '20': { base: 0, top1: 2.5, top2: 0, top3: 0 },
+        },
         'Metal': {
             '10': { base: 0, top1: 1.5, top2: 0, top3: 0 },
             '15': { base: 0, top1: 2.0, top2: 0, top3: 0 },
@@ -344,11 +349,16 @@ export default function App() {
                 '20': { base: 2.0, top1: 2.0, top2: 2.0, top3: 2.0 },
             },
             'Single-Ply': {
-                '10': { base: 2.0, top1: 1.0, top2: 1.5, top3: 0 }, 
+                '10': { base: 2.0, top1: 1.0, top2: 1.5, top3: 0 },
                 '15': { base: 2.0, top1: 1.0, top2: 1.5, top3: 1.5 },
                 '20': { base: 2.0, top1: 1.0, top2: 2.0, top3: 2.0 },
             },
-            'Sprayfoam': null, 
+            'Previously Coated': {
+                '10': { base: 2.0, top1: 1.0, top2: 1.5, top3: 0 },
+                '15': { base: 2.0, top1: 1.0, top2: 1.5, top3: 1.5 },
+                '20': { base: 2.0, top1: 1.0, top2: 2.0, top3: 2.0 },
+            },
+            'Sprayfoam': null,
             'Metal': null
         },
         Standard: {
@@ -363,6 +373,11 @@ export default function App() {
                 '20': { base: 1.5, top1: 1.5, top2: 2.0, top3: 0 },
             },
             'Single-Ply': {
+                '10': { base: 1.5, top1: 1.5, top2: 0, top3: 0 },
+                '15': { base: 1.5, top1: 2.0, top2: 0, top3: 0 },
+                '20': { base: 1.5, top1: 1.5, top2: 2.0, top3: 0 },
+            },
+            'Previously Coated': {
                 '10': { base: 1.5, top1: 1.5, top2: 0, top3: 0 },
                 '15': { base: 1.5, top1: 2.0, top2: 0, top3: 0 },
                 '20': { base: 1.5, top1: 1.5, top2: 2.0, top3: 0 },
@@ -386,7 +401,8 @@ export default function App() {
             '20': null  // Not available
         },
         'Sprayfoam': null, // Not supported
-        'Single-Ply': null // Not supported
+        'Single-Ply': null, // Not supported
+        'Previously Coated': null // Not supported
     }
   };
 
@@ -397,7 +413,7 @@ export default function App() {
 
         // Aluminum only supports Metal and Capsheet
         if (value === 'Aluminum') {
-            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply') {
+            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply' || inputs.roofType === 'Previously Coated') {
                 newRoofType = 'Metal';
             }
         }
@@ -1940,6 +1956,7 @@ export default function App() {
   const getAvailableRoofTypes = () => {
     const types = ['Capsheet'];
     if (inputs.coatingSystem !== 'Aluminum') types.push('Single-Ply');
+    if (inputs.coatingSystem !== 'Aluminum') types.push('Previously Coated');
     if (inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard')) types.push('Sprayfoam');
     if (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') types.push('Metal');
     return types;
@@ -2571,6 +2588,8 @@ export default function App() {
                   <option value="Capsheet">Capsheet</option>
                   {/* Single-Ply not available for Aluminum */}
                   {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
+                  {/* Previously Coated not available for Aluminum; uses same rates as Single-Ply */}
+                  {inputs.coatingSystem !== 'Aluminum' && <option value="Previously Coated">Previously Coated</option>}
                   {/* Sprayfoam for Silicone or Acrylic Standard only, NOT Aluminum */}
                   {inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
                   {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
