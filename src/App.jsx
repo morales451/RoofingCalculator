@@ -1493,6 +1493,7 @@ export default function App() {
       yPos = drawSectionHeader('Materials Breakdown', yPos);
 
       const tableData = [];
+      const TOTAL_GALLONS_LABEL = 'Total System Gallons';
       const buildRow = (product, description, priceUnit, rateText, galsByYear) => {
         const row = [product, description];
         if (showPriceUnit) row.push(priceUnit);
@@ -1548,6 +1549,13 @@ export default function App() {
         tableData.push(buildRow('Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(adj(prices.adhesionPrimer))}/gal` : '', '0.2 gal/sq',
           yearsToShow.map(year => `${estimates[year]?.adhesionPrimerGal || 0} gal`)));
       }
+      // Total coating + primer gallons per warranty year — mirrors the
+      // "TOTAL SYSTEM: X Gallons" line in the clipboard/on-screen exports so the
+      // PDF reports the full per-year gallon count for the system.
+      if (yearsToShow.some(year => (estimates[year]?.totalGallons || 0) > 0)) {
+        tableData.push(buildRow(TOTAL_GALLONS_LABEL, '', '', '',
+          yearsToShow.map(year => `${estimates[year]?.totalGallons || 0} gal`)));
+      }
       if (commonResults.accessoryQty > 0) {
         const priceUnit = prices.accessory > 0 ? `${formatCurrency(adj(prices.accessory))}/${commonResults.accessoryUnit}` : '';
         const yearCols = [`${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
@@ -1563,7 +1571,18 @@ export default function App() {
         tableData.push(buildRow('Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(adj(prices.membrane))}/roll` : '', '', yearCols));
       }
       if (inputs.goldseal) {
-        const yearCols = yearsToShow.map(year => showPriceUnit ? formatCurrency(adj(estimates[year]?.goldsealCost || 0)) : 'Included');
+        // The Goldseal warranty charge is derived from roof area, not from the
+        // per-gallon material prices, so it is a known dollar amount even when no
+        // material prices have been entered. Show that amount whenever we have it;
+        // only a distributor deliberately hiding their cost basis (margin hidden
+        // from exports) collapses it to "Included". Previously this was gated on
+        // showPriceUnit (material-price visibility), which wrongly printed
+        // "Included" for goldseal jobs that simply had no material prices entered.
+        const hideGoldsealCost = isDistributor && profitMargin > 0 && !showMarginInExports;
+        const yearCols = yearsToShow.map(year => {
+          const gc = estimates[year]?.goldsealCost || 0;
+          return (!hideGoldsealCost && gc > 0) ? formatCurrency(adj(gc)) : 'Included';
+        });
         tableData.push(buildRow('Goldseal Warranty', '', '', '', yearCols));
       }
 
@@ -1598,6 +1617,14 @@ export default function App() {
         alternateRowStyles: { fillColor: colors.bgSoft },
         columnStyles: colStyles,
         margin: { left: margin, right: margin },
+        // Emphasize the per-year total-gallons summary row.
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.row.raw && data.row.raw[0] === TOTAL_GALLONS_LABEL) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = colors.light;
+            data.cell.styles.textColor = colors.primary;
+          }
+        },
       });
       yPos = doc.lastAutoTable.finalY + 8;
 
