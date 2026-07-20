@@ -43,6 +43,7 @@ export default function App() {
     accessoryUnit: '',
     accessoryDesc: '',
     membraneRolls: 0,
+    linearBuckets: 0,
     screwCount: 0,
     screwBuckets: 0,
     fastenerCaulkTubes: 0
@@ -561,11 +562,11 @@ export default function App() {
 
     // Accessories
     let accQty = 0, accUnit = '', accDesc = '', accDisplayName = '';
-    let membraneRolls = 0, estimatedScrews = 0, bucketsForScrews = 0, fastenerCaulkTubes = 0;
+    let membraneRolls = 0, estimatedScrews = 0, bucketsForLinear = 0, bucketsForScrews = 0, fastenerCaulkTubes = 0;
 
     if (accessoryType === 'Butter Grade') {
       const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
-      const bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
+      bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
       accQty = bucketsForLinear;
       accUnit = 'Buckets';
       const bucketSizeLabel = coatingSystem === 'Acrylic' ? '3.5-gal' : '2-gal';
@@ -647,7 +648,7 @@ export default function App() {
 
     return {
       estimates: sectionEstimates,
-      accessories: { accQty, accUnit, accDesc, accDisplayName, membraneRolls, estimatedScrews, bucketsForScrews, fastenerCaulkTubes },
+      accessories: { accQty, accUnit, accDesc, accDisplayName, membraneRolls, estimatedScrews, bucketsForLinear, bucketsForScrews, fastenerCaulkTubes },
       squares
     };
   };
@@ -691,11 +692,12 @@ export default function App() {
       });
 
       // Aggregate accessories
-      let totalAccQty = 0, totalMembraneRolls = 0, totalScrews = 0, totalScrewBuckets = 0, totalCaulkTubes = 0, totalSquares = 0;
+      let totalAccQty = 0, totalMembraneRolls = 0, totalScrews = 0, totalLinearBuckets = 0, totalScrewBuckets = 0, totalCaulkTubes = 0, totalSquares = 0;
       perSectionResults.forEach(sr => {
         totalAccQty += sr.accessories.accQty;
         totalMembraneRolls += sr.accessories.membraneRolls;
         totalScrews += sr.accessories.estimatedScrews;
+        totalLinearBuckets += sr.accessories.bucketsForLinear || 0;
         totalScrewBuckets += sr.accessories.bucketsForScrews;
         totalCaulkTubes += sr.accessories.fastenerCaulkTubes || 0;
         totalSquares += sr.squares;
@@ -714,6 +716,7 @@ export default function App() {
         accessoryUnit: firstAcc.accUnit || '',
         accessoryDesc: accDesc,
         membraneRolls: totalMembraneRolls,
+        linearBuckets: totalLinearBuckets,
         screwCount: totalScrews,
         screwBuckets: totalScrewBuckets,
         fastenerCaulkTubes: totalCaulkTubes
@@ -742,12 +745,13 @@ export default function App() {
       let accDisplayName = '';
       let membraneRolls = 0;
       let estimatedScrews = 0;
+      let bucketsForLinear = 0;
       let bucketsForScrews = 0;
       let fastenerCaulkTubes = 0;
 
       if (accessoryType === 'Butter Grade') {
           const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
-          const bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
+          bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
           accQty = bucketsForLinear;
           accUnit = 'Buckets';
 
@@ -787,6 +791,7 @@ export default function App() {
           accessoryUnit: accUnit,
           accessoryDesc: accDesc,
           membraneRolls,
+          linearBuckets: bucketsForLinear,
           screwCount: estimatedScrews,
           screwBuckets: bucketsForScrews,
           fastenerCaulkTubes
@@ -1011,12 +1016,19 @@ export default function App() {
     const hideAccessoryCosts = !isContractor && profitMargin > 0 && !showMarginInExports;
 
     if (linearFeet > 0 || commonResults.screwBuckets > 0) {
-        text += `\nAccessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}`;
-        if (prices.accessory > 0 && !hideAccessoryCosts) text += ` @ $${adjP(prices.accessory).toFixed(2)} each`;
+        const perEach = (prices.accessory > 0 && !hideAccessoryCosts) ? ` @ $${adjP(prices.accessory).toFixed(2)} each` : '';
+        // On metal roofs the seam sealer covers both seams (by linear feet) and
+        // fastener encapsulation (by roof area) — list them as separate line items.
         if (commonResults.screwBuckets > 0) {
-            text += ` (Includes ${commonResults.screwBuckets} buckets for ~${commonResults.screwCount} screws)`;
+            if (commonResults.linearBuckets > 0) {
+                text += `\nSeam Sealer (Seams): ${commonResults.linearBuckets} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}${perEach}\n`;
+            } else {
+                text += `\n`;
+            }
+            text += `Seam Sealer (Fastener Encapsulation): ${commonResults.screwBuckets} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}${perEach} (~${commonResults.screwCount} fasteners)\n`;
+        } else {
+            text += `\nAccessories: ${commonResults.accessoryQty} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}${perEach}\n`;
         }
-        text += `\n`;
     }
 
     if (commonResults.fastenerCaulkTubes > 0) {
@@ -1493,6 +1505,7 @@ export default function App() {
       yPos = drawSectionHeader('Materials Breakdown', yPos);
 
       const tableData = [];
+      const TOTAL_GALLONS_LABEL = 'Total System Gallons';
       const buildRow = (product, description, priceUnit, rateText, galsByYear) => {
         const row = [product, description];
         if (showPriceUnit) row.push(priceUnit);
@@ -1548,10 +1561,29 @@ export default function App() {
         tableData.push(buildRow('Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(adj(prices.adhesionPrimer))}/gal` : '', '0.2 gal/sq',
           yearsToShow.map(year => `${estimates[year]?.adhesionPrimerGal || 0} gal`)));
       }
+      // Total coating + primer gallons per warranty year — mirrors the
+      // "TOTAL SYSTEM: X Gallons" line in the clipboard/on-screen exports so the
+      // PDF reports the full per-year gallon count for the system.
+      if (yearsToShow.some(year => (estimates[year]?.totalGallons || 0) > 0)) {
+        tableData.push(buildRow(TOTAL_GALLONS_LABEL, '', '', '',
+          yearsToShow.map(year => `${estimates[year]?.totalGallons || 0} gal`)));
+      }
       if (commonResults.accessoryQty > 0) {
         const priceUnit = prices.accessory > 0 ? `${formatCurrency(adj(prices.accessory))}/${commonResults.accessoryUnit}` : '';
-        const yearCols = [`${commonResults.accessoryQty} ${commonResults.accessoryUnit}`, '', ''];
-        tableData.push(buildRow('Accessories', commonResults.accessoryName, priceUnit, '', yearCols));
+        // Quantity lives in the first year column; pad the rest to keep alignment.
+        const accCol = (qty) => yearsToShow.map((_, i) => i === 0 ? `${qty} ${commonResults.accessoryUnit}` : '');
+        // On metal roofs the seam sealer (butter grade) does double duty: sealing
+        // seams (billed by linear feet) and encapsulating fasteners (billed by roof
+        // area). Show those as separate line items so the split is explicit;
+        // otherwise it's a single accessory row.
+        if (commonResults.screwBuckets > 0) {
+          if (commonResults.linearBuckets > 0) {
+            tableData.push(buildRow('Seam Sealer (Seams)', `${commonResults.accessoryName} — by linear feet`, priceUnit, '', accCol(commonResults.linearBuckets)));
+          }
+          tableData.push(buildRow('Seam Sealer (Fastener Encapsulation)', `${commonResults.accessoryName} — encapsulates ~${commonResults.screwCount} fasteners`, priceUnit, '', accCol(commonResults.screwBuckets)));
+        } else {
+          tableData.push(buildRow('Accessories', commonResults.accessoryName, priceUnit, '', accCol(commonResults.accessoryQty)));
+        }
       }
       if (commonResults.fastenerCaulkTubes > 0) {
         const priceUnit = prices.fastenerCaulk > 0 ? `${formatCurrency(adj(prices.fastenerCaulk))}/tube` : '';
@@ -1563,7 +1595,18 @@ export default function App() {
         tableData.push(buildRow('Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(adj(prices.membrane))}/roll` : '', '', yearCols));
       }
       if (inputs.goldseal) {
-        const yearCols = yearsToShow.map(year => showPriceUnit ? formatCurrency(adj(estimates[year]?.goldsealCost || 0)) : 'Included');
+        // The Goldseal warranty charge is derived from roof area, not from the
+        // per-gallon material prices, so it is a known dollar amount even when no
+        // material prices have been entered. Show that amount whenever we have it;
+        // only a distributor deliberately hiding their cost basis (margin hidden
+        // from exports) collapses it to "Included". Previously this was gated on
+        // showPriceUnit (material-price visibility), which wrongly printed
+        // "Included" for goldseal jobs that simply had no material prices entered.
+        const hideGoldsealCost = isDistributor && profitMargin > 0 && !showMarginInExports;
+        const yearCols = yearsToShow.map(year => {
+          const gc = estimates[year]?.goldsealCost || 0;
+          return (!hideGoldsealCost && gc > 0) ? formatCurrency(adj(gc)) : 'Included';
+        });
         tableData.push(buildRow('Goldseal Warranty', '', '', '', yearCols));
       }
 
@@ -1598,6 +1641,14 @@ export default function App() {
         alternateRowStyles: { fillColor: colors.bgSoft },
         columnStyles: colStyles,
         margin: { left: margin, right: margin },
+        // Emphasize the per-year total-gallons summary row.
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.row.raw && data.row.raw[0] === TOTAL_GALLONS_LABEL) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = colors.light;
+            data.cell.styles.textColor = colors.primary;
+          }
+        },
       });
       yPos = doc.lastAutoTable.finalY + 8;
 
@@ -1686,8 +1737,17 @@ export default function App() {
               lineRows.push(['Rust Primer', `${est.rustPrimerGal} gal × ${formatCurrency(adj(prices.rustPrimer))}/gal`, formatCurrency(adj(rustCost))]);
             if (est.adhesionPrimerGal > 0 && prices.adhesionPrimer > 0)
               lineRows.push(['Adhesion Primer', `${est.adhesionPrimerGal} gal × ${formatCurrency(adj(prices.adhesionPrimer))}/gal`, formatCurrency(adj(adhesionCost))]);
-            if (commonResults.accessoryQty > 0 && prices.accessory > 0)
-              lineRows.push(['Accessories', `${commonResults.accessoryQty} ${commonResults.accessoryUnit} × ${formatCurrency(adj(prices.accessory))}`, formatCurrency(adj(accessoryCost))]);
+            if (commonResults.accessoryQty > 0 && prices.accessory > 0) {
+              const unitPrice = formatCurrency(adj(prices.accessory));
+              // Mirror the Materials Breakdown split: seams vs. fastener encapsulation.
+              if (commonResults.screwBuckets > 0) {
+                if (commonResults.linearBuckets > 0)
+                  lineRows.push(['Seam Sealer (Seams)', `${commonResults.linearBuckets} ${commonResults.accessoryUnit} × ${unitPrice}`, formatCurrency(adj(commonResults.linearBuckets * prices.accessory))]);
+                lineRows.push(['Seam Sealer (Fasteners)', `${commonResults.screwBuckets} ${commonResults.accessoryUnit} × ${unitPrice}`, formatCurrency(adj(commonResults.screwBuckets * prices.accessory))]);
+              } else {
+                lineRows.push(['Accessories', `${commonResults.accessoryQty} ${commonResults.accessoryUnit} × ${unitPrice}`, formatCurrency(adj(accessoryCost))]);
+              }
+            }
             if (commonResults.fastenerCaulkTubes > 0 && prices.fastenerCaulk > 0)
               lineRows.push(['Fastener Caulk', `${commonResults.fastenerCaulkTubes} tubes × ${formatCurrency(adj(prices.fastenerCaulk))}/tube`, formatCurrency(adj(fastenerCaulkCost))]);
             if (commonResults.membraneRolls > 0 && prices.membrane > 0)
@@ -2763,6 +2823,60 @@ export default function App() {
 
                  {/* Accessory pricing section - shows when there ARE linear feet OR when there are metal screws to encapsulate */}
                  {(inputs.linearFeet > 0 || (inputs.roofType === 'Metal' && (commonResults.screwBuckets > 0 || commonResults.fastenerCaulkTubes > 0))) && (
+                    commonResults.screwBuckets > 0 ? (
+                    /* Metal roof: the seam sealer does double duty — sealing seams (by
+                       linear feet) and encapsulating fasteners (by roof area). Show them
+                       as separate line items sharing one per-bucket price. */
+                    <div className="mb-4">
+                        <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                                <div className="font-bold text-lg text-gray-900">{commonResults.accessoryName || 'Seam Sealer'}</div>
+                                <div className="text-sm text-gray-500">{commonResults.accessoryDesc}</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-xs text-gray-500 mb-1">Price/Bucket</div>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="$0.00"
+                                    value={prices.accessory || ''}
+                                    onChange={(e) => handlePriceChange('accessory', e.target.value)}
+                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
+                                />
+                            </div>
+                        </div>
+                        {commonResults.linearBuckets > 0 && (
+                            <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                                <div className="flex-1">
+                                    <div className="font-medium text-gray-800">Seam Sealer — Seams</div>
+                                    <div className="text-xs text-gray-500">By linear feet</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xl font-bold text-blue-700">
+                                        {commonResults.linearBuckets} <span className="text-sm text-gray-600 font-normal">Buckets</span>
+                                    </div>
+                                    {prices.accessory > 0 && (
+                                        <div className="text-sm font-bold text-green-700">= ${(commonResults.linearBuckets * prices.accessory).toFixed(2)}</div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                            <div className="flex-1">
+                                <div className="font-medium text-gray-800">Seam Sealer — Fastener Encapsulation</div>
+                                <div className="text-xs text-gray-500">Encapsulates ~{commonResults.screwCount} fasteners (roof area)</div>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-xl font-bold text-blue-700">
+                                    {commonResults.screwBuckets} <span className="text-sm text-gray-600 font-normal">Buckets</span>
+                                </div>
+                                {prices.accessory > 0 && (
+                                    <div className="text-sm font-bold text-green-700">= ${(commonResults.screwBuckets * prices.accessory).toFixed(2)}</div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    ) : (
                     <div className="mb-4">
                         <div className="flex justify-between items-center">
                             <div className="flex-1">
@@ -2772,11 +2886,6 @@ export default function App() {
                                 <div className="text-sm text-gray-500">
                                     {inputs.linearFeet > 0 ? commonResults.accessoryDesc : 'Metal roof screw encapsulation'}
                                 </div>
-                                {commonResults.screwBuckets > 0 && (
-                                    <div className="flex items-center gap-1 text-xs text-blue-600 mt-1 font-medium bg-blue-50 px-2 py-1 rounded w-fit">
-                                        <Info size={12} /> {inputs.linearFeet > 0 ? 'Includes' : ''} {commonResults.screwBuckets} buckets for ~{commonResults.screwCount} screws
-                                    </div>
-                                )}
                             </div>
                             <div className="flex items-center gap-4">
                                 <div className="text-center">
@@ -2803,6 +2912,7 @@ export default function App() {
                             </div>
                         </div>
                     </div>
+                    )
                  )}
 
                  {/* FASTENER CAULK ROW (when toggled on for metal roofs) */}
