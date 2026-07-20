@@ -1501,34 +1501,40 @@ export default function App() {
         return row;
       };
 
-      if (inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0) {
-        const rate = estimates['10']?.rates?.base ? `${estimates['10'].rates.base} gal/sq` : '';
-        tableData.push(buildRow('Basecoat', inputs.selectedBasecoat, prices.basecoat > 0 ? `${formatCurrency(adj(prices.basecoat))}/gal` : '', rate,
+      // A material row must be shown if ANY warranty year on the PDF calls for it.
+      // Acrylic systems add coats at higher warranty tiers (e.g. Topcoat 2/3 only
+      // appear at 15/20-yr), so gating on the 10-yr option alone would silently drop
+      // those coats from the PDF — even though their gallons are shown in the
+      // clipboard/on-screen exports. Check across every displayed year instead.
+      const anyYearHas = (key) => yearsToShow.some(year => (estimates[year]?.[key] || 0) > 0);
+      // Build the rate cell for a coat across the displayed years. When the rate is
+      // uniform we show a single value; otherwise we list it per-year (a 0 indicates
+      // the coat isn't applied at that tier), matching the gallon columns.
+      const coatRate = (rateKey) => {
+        const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.[rateKey] || 0);
+        if (!ratesByYear.some(r => r > 0)) return '';
+        const allSame = ratesByYear.every(r => r === ratesByYear[0]);
+        return allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n');
+      };
+
+      if (inputs.coatingSystem !== 'Aluminum' && anyYearHas('baseGal')) {
+        tableData.push(buildRow('Basecoat', inputs.selectedBasecoat, prices.basecoat > 0 ? `${formatCurrency(adj(prices.basecoat))}/gal` : '', coatRate('base'),
           yearsToShow.map(year => `${estimates[year]?.baseGal || 0} gal`)));
       }
 
-      if (estimates['10']?.top1Gal > 0) {
-        const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top1 || 0);
-        const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-        const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
-        tableData.push(buildRow('Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', rate,
+      if (anyYearHas('top1Gal')) {
+        tableData.push(buildRow('Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', coatRate('top1'),
           yearsToShow.map(year => `${estimates[year]?.top1Gal || 0} gal`)));
       }
-      if (estimates['10']?.top2Gal > 0) {
-        const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top2 || 0);
-        const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-        const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
-        tableData.push(buildRow('Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', rate,
+      if (anyYearHas('top2Gal')) {
+        tableData.push(buildRow('Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', coatRate('top2'),
           yearsToShow.map(year => `${estimates[year]?.top2Gal || 0} gal`)));
       }
-      if (estimates['10']?.top3Gal > 0) {
-        const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.top3 || 0);
-        const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-        const rate = ratesByYear[0] > 0 ? (allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n')) : '';
-        tableData.push(buildRow('Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', rate,
+      if (anyYearHas('top3Gal')) {
+        tableData.push(buildRow('Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', coatRate('top3'),
           yearsToShow.map(year => `${estimates[year]?.top3Gal || 0} gal`)));
       }
-      if (estimates['10']?.rustPrimerGal > 0) {
+      if (anyYearHas('rustPrimerGal')) {
         tableData.push(buildRow('Rust Primer', pdfPrimers.rust, prices.rustPrimer > 0 ? `${formatCurrency(adj(prices.rustPrimer))}/gal` : '', '0.5 gal/sq',
           yearsToShow.map(year => `${estimates[year]?.rustPrimerGal || 0} gal`)));
       } else if (inputs.hasRust && inputs.rustPrimeMethod === 'spot'
@@ -1538,7 +1544,7 @@ export default function App() {
         tableData.push(buildRow('Rust Primer', `${pdfPrimers.rust} — ${SPOT_PRIME_NOTE}`, '', 'Spot prime',
           yearsToShow.map(() => 'As needed')));
       }
-      if (estimates['10']?.adhesionPrimerGal > 0) {
+      if (anyYearHas('adhesionPrimerGal')) {
         tableData.push(buildRow('Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(adj(prices.adhesionPrimer))}/gal` : '', '0.2 gal/sq',
           yearsToShow.map(year => `${estimates[year]?.adhesionPrimerGal || 0} gal`)));
       }
@@ -1602,10 +1608,10 @@ export default function App() {
           ? (commonResults.accessoryUnit === 'Buckets' ? 'bucket' : 'roll')
           : 'unit';
         const perUnitRows = [
-          { label: 'Basecoat', subtitle: inputs.selectedBasecoat, unit: 'gal', cost: prices.basecoat, show: inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0 },
-          { label: 'Topcoat', subtitle: inputs.selectedTopcoat, unit: 'gal', cost: prices.topcoat, show: estimates['10']?.top1Gal > 0 },
-          { label: 'Rust Primer', subtitle: pdfPrimers.rust, unit: 'gal', cost: prices.rustPrimer, show: estimates['10']?.rustPrimerGal > 0 },
-          { label: 'Adhesion Primer', subtitle: pdfPrimers.adhesion, unit: 'gal', cost: prices.adhesionPrimer, show: estimates['10']?.adhesionPrimerGal > 0 },
+          { label: 'Basecoat', subtitle: inputs.selectedBasecoat, unit: 'gal', cost: prices.basecoat, show: inputs.coatingSystem !== 'Aluminum' && anyYearHas('baseGal') },
+          { label: 'Topcoat', subtitle: inputs.selectedTopcoat, unit: 'gal', cost: prices.topcoat, show: anyYearHas('top1Gal') || anyYearHas('top2Gal') || anyYearHas('top3Gal') },
+          { label: 'Rust Primer', subtitle: pdfPrimers.rust, unit: 'gal', cost: prices.rustPrimer, show: anyYearHas('rustPrimerGal') },
+          { label: 'Adhesion Primer', subtitle: pdfPrimers.adhesion, unit: 'gal', cost: prices.adhesionPrimer, show: anyYearHas('adhesionPrimerGal') },
           { label: commonResults.accessoryName || 'Accessories', subtitle: '', unit: accUnitLabel, cost: prices.accessory, show: commonResults.accessoryQty > 0 },
           { label: 'Fastener Caulk', subtitle: FASTENER_CAULK_NAME, unit: 'tube', cost: prices.fastenerCaulk, show: commonResults.fastenerCaulkTubes > 0 },
           { label: 'Reinforcement Membrane', subtitle: '40" x 324\' rolls', unit: 'roll', cost: prices.membrane, show: commonResults.membraneRolls > 0 },
