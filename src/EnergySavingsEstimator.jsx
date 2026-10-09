@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Zap, DollarSign, TrendingDown, Thermometer, Info, MapPin } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { CLIMATE_DATA, DEFAULT_STATE, getStateOptions } from './climateData.js';
 
 /**
@@ -223,170 +223,117 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
 
   if (!results) {
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mt-6">
-        <div className="flex items-center gap-2 mb-2">
-          <Zap className="text-gray-400" size={24} />
-          <h3 className="text-lg font-bold text-gray-600">Energy Savings Estimator</h3>
-        </div>
-        <p className="text-sm text-gray-500">
-          Enter roof dimensions and select a reflective coating system to see estimated energy savings.
-        </p>
-      </div>
+      <p className="px-4 sm:px-5 py-4 text-[13px] text-ink-3">
+        Enter the roof area and choose a reflective coating system to estimate energy savings.
+      </p>
     );
   }
 
+  const fmt = (n) => `$${n.toLocaleString()}`;
+
   return (
-    <div className="bg-gradient-to-br from-green-50 to-blue-50 border-2 border-green-300 rounded-lg p-6 mt-6 shadow-md">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Zap className="text-green-600" size={28} />
-          <h3 className="text-xl font-bold text-gray-800">Energy Savings Estimator</h3>
+    <div className="px-4 sm:px-5 py-4 space-y-4">
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="energyRegion" className="label">Region</label>
+          <select
+            id="energyRegion"
+            value={regionCode}
+            onChange={(e) => {
+              setRateManuallySet(false);
+              onRegionChange(e.target.value);
+            }}
+            className="input"
+          >
+            {getStateOptions().map(({ code, name }) => (
+              <option key={code} value={code}>
+                {name} (Zone {CLIMATE_DATA[code].climateZone})
+              </option>
+            ))}
+          </select>
+          <p className="hint num">Zone {climateInfo.climateZone} · {climateInfo.cdd} CDD · {climateInfo.solarRadiation} kWh/m²/yr</p>
         </div>
-        <button
-          onClick={() => setShowInfo(!showInfo)}
-          className="text-blue-600 hover:text-blue-800 transition-colors"
-        >
-          <Info size={20} />
-        </button>
+        <div>
+          <label htmlFor="energyRate" className="label">Electricity rate <span className="font-normal text-ink-3">$/kWh</span></label>
+          <input
+            id="energyRate"
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            value={electricityRate}
+            onChange={(e) => {
+              setRateManuallySet(true);
+              setElectricityRate(parseFloat(e.target.value) || 0.12);
+            }}
+            className="input num"
+          />
+          <p className="hint num">{climateInfo.name} average ${climateInfo.electricityRate.toFixed(2)}/kWh. Use the utility bill rate if known.</p>
+        </div>
       </div>
 
-      {/* Methodology Info Panel */}
-      {showInfo && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm">
-          <h4 className="font-bold text-blue-900 mb-2">Calculation Methodology (Highly Conservative)</h4>
-          <ul className="text-blue-800 space-y-1 list-disc list-inside">
+      <dl className="grid grid-cols-2 border border-line rounded-md divide-x divide-line">
+        <div className="px-3.5 py-3">
+          <dt className="text-xs text-ink-3">Annual savings</dt>
+          <dd className="text-base font-semibold num mt-0.5">{fmt(results.annualSavingsLow)} – {fmt(results.annualSavingsHigh)}</dd>
+          <dd className="text-xs text-ink-3 num mt-0.5">{results.annualKwhSavings.toLocaleString()} kWh/yr less cooling</dd>
+        </div>
+        <div className="px-3.5 py-3">
+          <dt className="text-xs text-ink-3">Peak cooling reduction</dt>
+          <dd className="text-base font-semibold num mt-0.5">{results.tonsOfCooling} tons</dd>
+          <dd className="text-xs text-ink-3 mt-0.5">AC capacity at peak sun</dd>
+        </div>
+      </dl>
+
+      <table className="order w-full text-sm border border-line rounded-md overflow-hidden">
+        <thead>
+          <tr>
+            <th scope="col">Savings over warranty</th>
+            <th scope="col">10-year</th>
+            <th scope="col">15-year</th>
+            <th scope="col">20-year</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="row-meta">
+            <td className="text-ink-3 !pt-2.5 !pb-2.5">With 3%/yr rate increase</td>
+            <td className="num font-medium text-ink !pt-2.5">{fmt(results.roi10Year)}</td>
+            <td className="num font-medium text-ink !pt-2.5">{fmt(results.roi15Year)}</td>
+            <td className="num font-medium text-ink !pt-2.5">{fmt(results.roi20Year)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p className="text-[13px] text-ink-2">
+        Reflectance: {results.beforeRoof} → {results.afterRoof} <span className="font-semibold num">+{results.deltaReflectance}%</span>
+      </p>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowInfo(!showInfo)}
+          aria-expanded={showInfo}
+          className="flex items-center gap-1.5 text-[13px] font-medium text-accent-600 hover:text-accent-700"
+        >
+          <Info size={14} /> {showInfo ? 'Hide methodology' : 'How this is calculated'}
+        </button>
+        {showInfo && (
+          <ul className="mt-2 text-xs text-ink-2 space-y-1 list-disc pl-4 leading-relaxed">
             <li>Based on DOE/LBNL Cool Roof Calculator and ASHRAE 90.1 standards</li>
-            <li>{climateInfo.name} climate (Zone {climateInfo.climateZone}): {COOLING_DEGREE_DAYS} Cooling Degree Days, {SOLAR_RADIATION_KWH_M2} kWh/m²/year solar radiation</li>
+            <li>{climateInfo.name} climate (Zone {climateInfo.climateZone}): {COOLING_DEGREE_DAYS} cooling degree days, {SOLAR_RADIATION_KWH_M2} kWh/m²/year solar radiation</li>
             <li>Commercial HVAC: SEER {HVAC_SEER} efficiency assumed</li>
             <li>Roof assembly: R-20 insulation (standard commercial construction)</li>
             <li>Reflectance change: {results.beforeRoof} → {results.afterRoof} (+{results.deltaReflectance}% reflectivity)</li>
-            <li><strong>Highly conservative factors applied:</strong> Cooling season ({Math.round(climateInfo.coolingSeasonFraction * 100)}%), building reality (40%), realistic heat transfer (35%)</li>
-            <li><strong>Targets LOW END of industry range:</strong> $0.25-$0.75 per sq ft/year (aiming for ~$0.30/sq ft)</li>
-            <li>ROI calculations include 3% annual electricity rate increase</li>
+            <li>Highly conservative factors applied: cooling season ({Math.round(climateInfo.coolingSeasonFraction * 100)}%), building reality (40%), realistic heat transfer (35%)</li>
+            <li>Targets the low end of the industry range: $0.25–$0.75 per sq ft/year (aiming for ~$0.30/sq ft)</li>
+            <li>ROI includes a 3% annual electricity rate increase</li>
           </ul>
-        </div>
-      )}
-
-      {/* Region Selector */}
-      <div className="mb-4">
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
-          <MapPin size={14} className="inline mr-1" />
-          Region / State
-        </label>
-        <select
-          value={regionCode}
-          onChange={(e) => {
-            setRateManuallySet(false);
-            onRegionChange(e.target.value);
-          }}
-          className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none bg-white"
-        >
-          {getStateOptions().map(({ code, name }) => (
-            <option key={code} value={code}>
-              {name} (Zone {CLIMATE_DATA[code].climateZone})
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-gray-500 mt-1">
-          Climate Zone {climateInfo.climateZone} — {climateInfo.cdd} CDD, {climateInfo.solarRadiation} kWh/m²/year
-        </p>
+        )}
       </div>
 
-      {/* Electricity Rate Input */}
-      <div className="mb-6">
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
-          Your Electricity Rate ($/kWh)
-        </label>
-        <input
-          type="number"
-          step="0.01"
-          value={electricityRate}
-          onChange={(e) => {
-            setRateManuallySet(true);
-            setElectricityRate(parseFloat(e.target.value) || 0.12);
-          }}
-          className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-        />
-        <p className="text-xs text-gray-500 mt-1">{climateInfo.name} average: ${climateInfo.electricityRate.toFixed(2)}/kWh. Check your utility bill for your actual rate.</p>
-      </div>
-
-      {/* Results Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {/* Annual Savings */}
-        <div className="bg-white rounded-lg p-4 shadow">
-          <div className="flex items-center gap-2 mb-2">
-            <DollarSign className="text-green-600" size={20} />
-            <h4 className="font-bold text-gray-700">Annual Savings</h4>
-          </div>
-          <div className="text-3xl font-bold text-green-600 mb-1">
-            ${results.annualSavingsLow.toLocaleString()} - ${results.annualSavingsHigh.toLocaleString()}
-          </div>
-          <p className="text-xs text-gray-600">Conservative range based on {results.annualKwhSavings.toLocaleString()} kWh/year reduction</p>
-        </div>
-
-        {/* Cooling Load Reduction */}
-        <div className="bg-white rounded-lg p-4 shadow">
-          <div className="flex items-center gap-2 mb-2">
-            <Thermometer className="text-blue-600" size={20} />
-            <h4 className="font-bold text-gray-700">Peak Cooling Reduction</h4>
-          </div>
-          <div className="text-3xl font-bold text-blue-600 mb-1">
-            {results.tonsOfCooling} Tons
-          </div>
-          <p className="text-xs text-gray-600">Equivalent AC capacity reduction during peak sun hours</p>
-        </div>
-      </div>
-
-      {/* Long-Term ROI */}
-      <div className="bg-white rounded-lg p-4 shadow mb-4">
-        <div className="flex items-center gap-2 mb-3">
-          <TrendingDown className="text-purple-600" size={20} />
-          <h4 className="font-bold text-gray-700">Warranty Period ROI</h4>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="text-center">
-            <div className="text-xs font-semibold text-gray-600 mb-1">10-Year</div>
-            <div className="text-2xl font-bold text-purple-600">${results.roi10Year.toLocaleString()}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-xs font-semibold text-gray-600 mb-1">15-Year</div>
-            <div className="text-2xl font-bold text-purple-600">${results.roi15Year.toLocaleString()}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-xs font-semibold text-gray-600 mb-1">20-Year</div>
-            <div className="text-2xl font-bold text-purple-600">${results.roi20Year.toLocaleString()}</div>
-          </div>
-        </div>
-        <p className="text-xs text-gray-500 mt-3 text-center">Projected total savings with 3% annual electricity rate increase</p>
-      </div>
-
-      {/* Reflectivity Comparison */}
-      <div className="bg-white rounded-lg p-4 shadow">
-        <h4 className="font-bold text-gray-700 mb-3 text-sm">Reflectivity Improvement</h4>
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <div className="text-xs text-gray-600 mb-1">Before: {results.beforeRoof}</div>
-            <div className="bg-gray-800 h-6 rounded flex items-center justify-center">
-              <span className="text-white text-xs font-semibold">Low Reflection</span>
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-green-600">→</div>
-          <div className="flex-1">
-            <div className="text-xs text-gray-600 mb-1">After: {results.afterRoof}</div>
-            <div className="bg-gradient-to-r from-blue-100 to-white h-6 rounded flex items-center justify-center border border-gray-300">
-              <span className="text-gray-700 text-xs font-semibold">+{results.deltaReflectance}% Reflection</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Disclaimer */}
-      <div className="mt-4 text-xs text-gray-500 italic">
-        * Estimates based on {climateInfo.name} (Zone {climateInfo.climateZone}) climate data and typical commercial building characteristics.
-        Actual savings vary by building insulation, HVAC efficiency, occupancy patterns, and weather conditions.
-        These are conservative engineering estimates for planning purposes.
-      </div>
+      <p className="text-xs text-ink-3 leading-relaxed">
+        Estimates use {climateInfo.name} (Zone {climateInfo.climateZone}) climate data and typical commercial building characteristics.
+        Actual savings vary by building insulation, HVAC efficiency, occupancy patterns and weather. These are conservative engineering estimates for planning purposes.
+      </p>
     </div>
   );
 };

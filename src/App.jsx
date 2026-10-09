@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer } from 'lucide-react';
+import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import EnergySavingsEstimator from './EnergySavingsEstimator.jsx';
@@ -61,6 +61,16 @@ export default function App() {
   // Which version is shown in the preview & copied — mirrors the PDF buttons.
   const [emailViewMode, setEmailViewMode] = useState('distributor'); // 'distributor' | 'contractor'
   const [copySuccess, setCopySuccess] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+  const [mobileTier, setMobileTier] = useState('15');
+  const [toast, setToast] = useState(null);
+  const showToast = (message) => setToast(message);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // Pricing state
   const [prices, setPrices] = useState({
@@ -458,7 +468,7 @@ export default function App() {
     const updatedQuotes = [quote, ...existingQuotes];
     localStorage.setItem('savedQuotes', JSON.stringify(updatedQuotes));
     setSavedQuotes(updatedQuotes);
-    alert('Quote saved successfully!');
+    showToast(`Saved ${inputs.projectName || 'untitled quote'}`);
   };
 
   const loadQuote = (quote) => {
@@ -526,12 +536,13 @@ export default function App() {
       try {
         const quote = JSON.parse(e.target.result);
         loadQuote(quote);
-        alert('Quote imported successfully!');
+        showToast('Quote imported');
       } catch (error) {
         alert('Error importing quote. Please check the file format.');
       }
     };
     reader.readAsText(file);
+    event.target.value = '';
   };
 
   // Load saved quotes on mount
@@ -2088,57 +2099,249 @@ export default function App() {
     doc.save('quote-comparison.pdf');
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800 print:bg-white print:p-0 print:text-black">
-      
-      {/* Header */}
-      <div className="max-w-6xl mx-auto mb-8 flex justify-between items-center print:hidden">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-3 rounded-lg shadow-lg">
-            <Calculator className="w-8 h-8 text-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Roofing Materials Calculator</h1>
-            <p className="text-gray-500">Supports Silicone & Acrylic (Reinforced vs Standard) Systems</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasErrors && (
-            <button onClick={() => setShowValidationSummary(!showValidationSummary)} className="flex items-center gap-1 bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors">
-              <AlertTriangle size={16} /> {Object.keys(validationErrors).length} issue{Object.keys(validationErrors).length > 1 ? 's' : ''}
-            </button>
-          )}
-          <button onClick={() => window.print()} className="flex items-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
-            <Printer size={16} /> Print View
-          </button>
-        </div>
+  // --- RENDER HELPERS ---
+  // Plain render functions (not components) so inputs keep focus across re-renders.
+  const tiers = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
+  const colCount = tiers.length + 2;
+  const marginFactor = profitMargin > 0 ? 1 / (1 - profitMargin / 100) : 1;
+  const fmtQty = (n) => (n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const hasCoatingPrices = prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0;
+  const coatingCost = (year) => {
+    const e = estimates[year] || {};
+    return (e.baseGal || 0) * prices.basecoat +
+      (e.top1Gal || 0) * prices.topcoat +
+      (e.top2Gal || 0) * prices.topcoat +
+      (e.top3Gal || 0) * prices.topcoat +
+      (e.adhesionPrimerGal || 0) * prices.adhesionPrimer +
+      (e.rustPrimerGal || 0) * prices.rustPrimer;
+  };
+  const isReinforced = inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Reinforced';
+  const showAccessory = inputs.linearFeet > 0 || (inputs.roofType === 'Metal' && (commonResults.screwBuckets > 0 || commonResults.fastenerCaulkTubes > 0));
+  const hasAccessoryRows = showAccessory || commonResults.fastenerCaulkTubes > 0 || isReinforced;
+  const accUnitSingular = commonResults.accessoryUnit === 'Buckets' ? 'bucket' : 'roll';
+  const roofTypeLabel = useMultiSection && roofSections.length > 0 ? [...new Set(roofSections.map(s => s.roofType))].join(' / ') : inputs.roofType;
+  const systemLabel = inputs.coatingSystem === 'Acrylic' ? `Acrylic, ${inputs.acrylicSystemType.toLowerCase()}` : inputs.coatingSystem;
+  const factorsLabel = useMultiSection && roofSections.length > 0
+    ? 'Per-section waste and stretch'
+    : `${Math.round(inputs.wasteFactor * 100)}% waste · ${Math.round(inputs.stretchFactor * 100)}% stretch`;
+  const leadTier = tiers.includes(mobileTier) ? mobileTier : '10';
+  // On phones only the selected warranty tier column is shown
+  const tierCls = (y) => (y === leadTier ? '' : 'hidden sm:table-cell');
+
+  const productCell = (name, detail, extra) => (
+    <td className="sm:min-w-[190px]">
+      <div className="font-medium text-ink">{name}</div>
+      {detail && <div className="text-xs text-ink-3 mt-0.5 leading-snug">{detail}</div>}
+      {extra}
+    </td>
+  );
+
+  const priceCell = (key, unit) => (
+    <td className="whitespace-nowrap">
+      <div className="relative inline-block print:hidden">
+        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">$</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          min="0"
+          placeholder="0.00"
+          aria-label={`Price per ${unit}`}
+          value={prices[key] || ''}
+          onChange={(e) => handlePriceChange(key, e.target.value)}
+          className="input input-sm num w-[76px] sm:w-[92px] pl-5 text-right"
+        />
       </div>
+      <span className="hidden print-value num">{prices[key] > 0 ? formatCurrency(prices[key]) : '—'}</span>
+      <div className="text-xs text-ink-3 mt-1 num">
+        {profitMargin > 0 && prices[key] > 0 ? `sells at ${formatCurrency(prices[key] * marginFactor)}` : `per ${unit}`}
+      </div>
+    </td>
+  );
+
+  const sameAsCell = (text) => <td className="text-xs text-ink-3 pt-3">{text}</td>;
+
+  const qtyCell = (key, qty, unit, price) => (
+    <td key={key} className={`num whitespace-nowrap ${tierCls(key)}`}>
+      {qty > 0 ? (
+        <>
+          <div className="text-ink font-medium">{fmtQty(qty)} <span className="text-ink-3 font-normal">{unit}</span></div>
+          {price > 0 && <div className="text-xs text-ink-3 mt-0.5">{formatCurrency(qty * price)}</div>}
+        </>
+      ) : (
+        <span className="text-ink-4">—</span>
+      )}
+    </td>
+  );
+
+  const tierQtyCells = (field, unit, price) => tiers.map(y => qtyCell(y, estimates[y]?.[field] || 0, unit, price));
+  const commonQtyCells = (qty, unit, price) => tiers.map(y => qtyCell(y, qty, unit, price));
+
+  const switchRow = (label, checked, onToggle, desc) => (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <div className="min-w-0">
+        <div className="text-sm text-ink">{label}</div>
+        {desc && <div className="text-xs text-ink-3 mt-0.5">{desc}</div>}
+      </div>
+      <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={onToggle} className="switch">
+        <span />
+      </button>
+    </div>
+  );
+
+  const segButton = (label, pressed, onClick) => (
+    <button key={label} type="button" aria-pressed={pressed} onClick={onClick} className="seg-btn">{label}</button>
+  );
+
+  const percentOptions = (max) => [0, 5, 10, 15, 20, 25, 30].filter(v => v <= max).map(v => (
+    <option key={v} value={v === 0 ? '0' : (v / 100).toFixed(2)}>{v}%</option>
+  ));
+
+  return (
+    <div className="min-h-screen pb-20 lg:pb-0 print:bg-white print:pb-0">
+
+      {/* TOP BAR */}
+      <header className="sticky top-0 z-30 bg-white border-b border-line print:hidden">
+        <div className="max-w-[1320px] mx-auto h-14 px-4 lg:px-8 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Layers size={18} className="hidden sm:block text-accent-600 shrink-0" aria-hidden="true" />
+            <h1 className="text-sm sm:text-[15px] font-semibold tracking-[-0.01em] truncate">
+              <span className="sm:hidden">Roofing Calculator</span>
+              <span className="hidden sm:inline">Roofing Materials Calculator</span>
+            </h1>
+          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {hasErrors && (
+              <button onClick={() => setShowValidationSummary(!showValidationSummary)} className="btn-ghost text-red-700 hover:text-red-800 hover:bg-red-50" aria-expanded={showValidationSummary}>
+                <AlertTriangle size={15} />
+                <span className="num">{Object.keys(validationErrors).length}</span>
+                <span className="hidden md:inline">issue{Object.keys(validationErrors).length > 1 ? 's' : ''}</span>
+              </button>
+            )}
+            <div className="relative">
+              <button onClick={() => setShowSaved(!showSaved)} className="btn-secondary" aria-expanded={showSaved} aria-label="Saved quotes">
+                <FileText size={15} />
+                <span className="hidden md:inline">Saved</span>
+                <span className="num text-ink-3">{savedQuotes.length}</span>
+                <ChevronDown size={14} className="text-ink-3" />
+              </button>
+              {showSaved && (
+                <>
+                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close saved quotes" onClick={() => { setShowSaved(false); setCompareMode(false); setSelectedForCompare([]); }} />
+                  <div className="absolute right-0 top-10 z-50 w-[340px] max-w-[calc(100vw-2rem)] panel shadow-pop overflow-hidden">
+                    <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-line">
+                      <span className="text-[13px] font-semibold">Saved quotes</span>
+                      {savedQuotes.length >= 2 && (
+                        <button
+                          onClick={() => { setCompareMode(!compareMode); setSelectedForCompare([]); }}
+                          className="text-[13px] font-medium text-accent-600 hover:text-accent-700"
+                        >
+                          {compareMode ? 'Cancel' : 'Compare…'}
+                        </button>
+                      )}
+                    </div>
+                    {savedQuotes.length === 0 ? (
+                      <p className="px-3.5 py-6 text-[13px] text-ink-3 text-center">No saved quotes yet. Use Save quote to keep this one.</p>
+                    ) : (
+                      <ul className="max-h-80 overflow-y-auto divide-y divide-line">
+                        {savedQuotes.map(quote => (
+                          <li key={quote.id} className="flex items-center gap-2 px-3.5 py-2 hover:bg-canvas">
+                            {compareMode && (
+                              <input
+                                type="checkbox"
+                                aria-label={`Compare ${quote.inputs.projectName || 'Untitled'}`}
+                                checked={selectedForCompare.includes(quote.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked && selectedForCompare.length < 3) {
+                                    setSelectedForCompare([...selectedForCompare, quote.id]);
+                                  } else if (!e.target.checked) {
+                                    setSelectedForCompare(selectedForCompare.filter(id => id !== quote.id));
+                                  }
+                                }}
+                                disabled={!selectedForCompare.includes(quote.id) && selectedForCompare.length >= 3}
+                                className="h-4 w-4"
+                              />
+                            )}
+                            <button
+                              onClick={() => { if (!compareMode) { loadQuote(quote); setShowSaved(false); showToast(`Loaded ${quote.inputs.projectName || 'untitled quote'}`); } }}
+                              className={`text-left flex-1 min-w-0 ${compareMode ? 'cursor-default' : ''}`}
+                            >
+                              <div className="text-[13px] font-medium truncate">{quote.inputs.projectName || 'Untitled'}</div>
+                              <div className="text-xs text-ink-3 truncate">
+                                {quote.inputs.coatingSystem} on {quote.inputs.roofType} · {new Date(quote.savedAt).toLocaleDateString()}
+                              </div>
+                            </button>
+                            {!compareMode && (
+                              <button onClick={() => deleteQuote(quote.id)} className="icon-btn hover:text-red-700" aria-label={`Delete ${quote.inputs.projectName || 'Untitled'}`}>
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {compareMode && (
+                      <div className="flex items-center justify-between px-3.5 py-2.5 border-t border-line bg-canvas">
+                        <span className="text-xs text-ink-3">Pick 2 or 3 quotes</span>
+                        <button
+                          disabled={selectedForCompare.length < 2}
+                          onClick={() => { setShowComparison(true); setShowSaved(false); }}
+                          className="btn-primary h-7"
+                        >
+                          Compare{selectedForCompare.length > 0 ? ` (${selectedForCompare.length})` : ''}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <label className="btn-secondary cursor-pointer" aria-label="Import quote file" title="Import quote file">
+              <Upload size={15} />
+              <span className="hidden md:inline">Import</span>
+              <input type="file" accept=".json" onChange={importQuote} className="hidden" />
+            </label>
+            <button onClick={exportQuote} className="btn-secondary" aria-label="Export quote file" title="Export quote file">
+              <Download size={15} />
+              <span className="hidden md:inline">Export</span>
+            </button>
+            <button onClick={() => window.print()} className="btn-secondary hidden sm:inline-flex" aria-label="Print" title="Print">
+              <Printer size={15} />
+              <span className="hidden lg:inline">Print</span>
+            </button>
+            <button onClick={saveQuote} className="btn-primary">
+              <Save size={15} />
+              <span>Save<span className="hidden sm:inline"> quote</span></span>
+            </button>
+          </div>
+        </div>
+      </header>
 
       {/* Validation Summary */}
       {showValidationSummary && hasErrors && (
-        <div className="max-w-6xl mx-auto mb-4 bg-red-50 border border-red-200 rounded-xl p-4 print:hidden">
-          <h3 className="text-sm font-bold text-red-800 mb-2 flex items-center gap-2"><AlertTriangle size={16} /> Input Validation Issues</h3>
-          <ul className="space-y-1">
-            {Object.entries(validationErrors).map(([key, msg]) => (
-              <li key={key} className="text-sm text-red-700 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0" />
-                {msg}
-              </li>
-            ))}
-          </ul>
+        <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pt-4 print:hidden">
+          <div className="callout-danger">
+            <AlertTriangle size={16} className="shrink-0 mt-px" />
+            <div>
+              <div className="font-semibold mb-1">Fix these before sending the quote</div>
+              <ul className="space-y-0.5">
+                {Object.entries(validationErrors).map(([key, msg]) => <li key={key}>{msg}</li>)}
+              </ul>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Print Header (only visible when printing) */}
-      <div className="hidden print:block max-w-6xl mx-auto mb-6">
-        <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
-          <h1 className="text-2xl font-bold text-gray-900">ROOFING SYSTEM ESTIMATE</h1>
-          {inputs.projectName && <p className="text-lg font-semibold mt-1">{inputs.projectName}</p>}
-          <p className="text-sm text-gray-600 mt-1">Date: {quoteDate}</p>
+      <div className="hidden print:block mb-6">
+        <div className="border-b-2 border-ink pb-3 mb-4">
+          <h1 className="text-xl font-bold">Roofing System Estimate</h1>
+          {inputs.projectName && <p className="text-base font-semibold mt-1">{inputs.projectName}</p>}
+          <p className="text-sm text-ink-3 mt-1">Date: {quoteDate}</p>
         </div>
         {(customerInfo.name || customerInfo.company) && (
           <div className="mb-4 text-sm">
-            <h3 className="font-bold text-gray-800 mb-1">Customer Information</h3>
+            <h3 className="font-bold mb-1">Customer information</h3>
             {customerInfo.name && <p>Name: {customerInfo.name}</p>}
             {customerInfo.company && <p>Company: {customerInfo.company}</p>}
             {customerInfo.email && <p>Email: {customerInfo.email}</p>}
@@ -2147,9 +2350,9 @@ export default function App() {
             {customerInfo.projectAddress && <p>Project Address: {customerInfo.projectAddress}</p>}
           </div>
         )}
-        <div className="grid grid-cols-3 gap-4 text-sm bg-gray-100 p-3 rounded">
+        <div className="grid grid-cols-3 gap-2 text-sm border border-line rounded p-3">
           <div><span className="font-bold">System:</span> {inputs.coatingSystem}{inputs.coatingSystem === 'Acrylic' ? ` (${inputs.acrylicSystemType})` : ''}</div>
-          <div><span className="font-bold">Roof Type:</span> {useMultiSection && roofSections.length > 0 ? [...new Set(roofSections.map(s => s.roofType))].join(' / ') : inputs.roofType}</div>
+          <div><span className="font-bold">Roof Type:</span> {roofTypeLabel}</div>
           <div><span className="font-bold">Roof Size:</span> {inputs.roofSizeSqFt.toLocaleString()} sqft ({commonResults.squares.toFixed(1)} sq)</div>
           {inputs.linearFeet > 0 && <div><span className="font-bold">Linear Feet:</span> {inputs.linearFeet.toLocaleString()}</div>}
           {useMultiSection && roofSections.length > 0 ? (
@@ -2166,12 +2369,12 @@ export default function App() {
         </div>
         {useMultiSection && roofSections.length > 0 && (
           <div className="mt-3 text-sm">
-            <h3 className="font-bold text-gray-800 mb-1">Roof Sections</h3>
-            <table className="w-full text-xs border border-gray-300">
-              <thead><tr className="bg-gray-200"><th className="px-2 py-1 text-left">Section</th><th className="px-2 py-1 text-right">Sq Ft</th><th className="px-2 py-1 text-right">Linear Ft</th><th className="px-2 py-1 text-left">Roof Type</th><th className="px-2 py-1 text-right">Waste</th><th className="px-2 py-1 text-right">Stretch</th></tr></thead>
+            <h3 className="font-bold mb-1">Roof sections</h3>
+            <table className="w-full text-xs border border-line">
+              <thead><tr className="bg-canvas"><th className="px-2 py-1 text-left">Section</th><th className="px-2 py-1 text-right">Sq Ft</th><th className="px-2 py-1 text-right">Linear Ft</th><th className="px-2 py-1 text-left">Roof Type</th><th className="px-2 py-1 text-right">Waste</th><th className="px-2 py-1 text-right">Stretch</th></tr></thead>
               <tbody>
                 {roofSections.map(s => (
-                  <tr key={s.id} className="border-t border-gray-200">
+                  <tr key={s.id} className="border-t border-line">
                     <td className="px-2 py-1">{s.name}</td>
                     <td className="px-2 py-1 text-right">{(s.sqFt || 0).toLocaleString()}</td>
                     <td className="px-2 py-1 text-right">{(s.linearFeet || 0).toLocaleString()}</td>
@@ -2186,454 +2389,272 @@ export default function App() {
         )}
       </div>
 
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 print:block">
+      <main className="max-w-[1320px] mx-auto px-4 lg:px-8 py-5 lg:py-6 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:block print:p-0">
 
         {/* LEFT COLUMN: INPUTS */}
-        <div className="lg:col-span-4 space-y-6 print:hidden">
+        <aside className="panel divide-y divide-line print:hidden">
 
-          {/* SAVE/LOAD/EXPORT/IMPORT BUTTONS */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={saveQuote} className="flex items-center justify-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-                <Save size={16} /> Save Quote
-              </button>
-              <button onClick={exportQuote} className="flex items-center justify-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
-                <Download size={16} /> Export
-              </button>
-              <label className="flex items-center justify-center gap-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium cursor-pointer">
-                <Upload size={16} /> Import
-                <input type="file" accept=".json" onChange={importQuote} className="hidden" />
-              </label>
+          {/* PROJECT */}
+          <section className="px-4 sm:px-5 py-5 space-y-4">
+            <h2 className="text-sm font-semibold">Project</h2>
+            <div>
+              <label htmlFor="projectName" className="label">Project name</label>
+              <input
+                id="projectName"
+                type="text"
+                value={inputs.projectName}
+                onChange={(e) => handleChange('projectName', e.target.value)}
+                className="input"
+                placeholder="e.g. Smith Warehouse"
+              />
+            </div>
+            <div>
+              <label htmlFor="quoteDate" className="label">Quote date</label>
+              <input
+                id="quoteDate"
+                type="date"
+                value={quoteDate}
+                onChange={(e) => setQuoteDate(e.target.value)}
+                className="input num"
+              />
+            </div>
+            <div>
               <button
-                onClick={() => document.getElementById('savedQuotesPanel')?.classList.toggle('hidden')}
-                className="flex items-center justify-center gap-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium"
+                type="button"
+                onClick={() => setShowCustomerInfo(!showCustomerInfo)}
+                aria-expanded={showCustomerInfo}
+                className="w-full flex items-center justify-between text-[13px] font-medium text-ink-2 hover:text-ink py-1"
               >
-                <FileText size={16} /> Saved ({savedQuotes.length})
+                <span className="flex items-center gap-2"><User size={15} className="text-ink-3" /> Customer details <span className="font-normal text-ink-3">Optional</span></span>
+                <ChevronDown size={16} className={`text-ink-3 transition-transform ${showCustomerInfo ? 'rotate-180' : ''}`} />
               </button>
-            </div>
-
-            {/* Saved Quotes Panel */}
-            <div id="savedQuotesPanel" className="hidden mt-4 max-h-64 overflow-y-auto border-t border-gray-200 pt-4">
-              {savedQuotes.length >= 2 && (
-                <div className="flex items-center justify-between mb-3">
-                  <button
-                    onClick={() => { setCompareMode(!compareMode); setSelectedForCompare([]); }}
-                    className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${compareMode ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                  >
-                    {compareMode ? 'Cancel Compare' : 'Compare Quotes'}
-                  </button>
-                  {compareMode && selectedForCompare.length >= 2 && (
-                    <button
-                      onClick={() => setShowComparison(true)}
-                      className="text-xs px-3 py-1 rounded-full font-medium bg-green-600 text-white hover:bg-green-700"
-                    >
-                      Compare ({selectedForCompare.length})
-                    </button>
-                  )}
-                </div>
-              )}
-              {savedQuotes.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">No saved quotes yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {savedQuotes.map(quote => (
-                    <div key={quote.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                      {compareMode && (
-                        <input
-                          type="checkbox"
-                          checked={selectedForCompare.includes(quote.id)}
-                          onChange={(e) => {
-                            if (e.target.checked && selectedForCompare.length < 3) {
-                              setSelectedForCompare([...selectedForCompare, quote.id]);
-                            } else if (!e.target.checked) {
-                              setSelectedForCompare(selectedForCompare.filter(id => id !== quote.id));
-                            }
-                          }}
-                          disabled={!selectedForCompare.includes(quote.id) && selectedForCompare.length >= 3}
-                          className="mr-2 accent-blue-600"
-                        />
-                      )}
-                      <button onClick={() => !compareMode && loadQuote(quote)} className={`text-left flex-1 ${compareMode ? 'cursor-default' : 'hover:text-blue-600'}`}>
-                        <div className="text-sm font-medium">{quote.inputs.projectName || 'Untitled'}</div>
-                        <div className="text-xs text-gray-500">
-                          {quote.inputs.coatingSystem} on {quote.inputs.roofType} &middot; {new Date(quote.savedAt).toLocaleDateString()}
-                        </div>
-                      </button>
-                      {!compareMode && (
-                        <button onClick={() => deleteQuote(quote.id)} className="text-red-600 hover:text-red-800 ml-2">
-                          <AlertTriangle size={16} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+              {showCustomerInfo && (
+                <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label htmlFor="custName" className="label">Customer name</label>
+                    <input id="custName" type="text" value={customerInfo.name} onChange={(e) => handleCustomerInfoChange('name', e.target.value)} className="input" placeholder="Jane Doe" />
+                  </div>
+                  <div>
+                    <label htmlFor="custCompany" className="label">Company</label>
+                    <input id="custCompany" type="text" value={customerInfo.company} onChange={(e) => handleCustomerInfoChange('company', e.target.value)} className="input" placeholder="ABC Roofing Co." />
+                  </div>
+                  <div>
+                    <label htmlFor="custPhone" className="label">Phone</label>
+                    <input id="custPhone" type="tel" value={customerInfo.phone} onChange={(e) => handleCustomerInfoChange('phone', e.target.value)} className={`input ${validationErrors.phone ? 'input-error' : ''}`} placeholder="(555) 123-4567" />
+                    <ValidationError field="phone" />
+                  </div>
+                  <div>
+                    <label htmlFor="custEmail" className="label">Email</label>
+                    <input id="custEmail" type="email" value={customerInfo.email} onChange={(e) => handleCustomerInfoChange('email', e.target.value)} className={`input ${validationErrors.email ? 'input-error' : ''}`} placeholder="customer@email.com" />
+                    <ValidationError field="email" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="custAddress" className="label">Mailing address</label>
+                    <input id="custAddress" type="text" value={customerInfo.address} onChange={(e) => handleCustomerInfoChange('address', e.target.value)} className="input" placeholder="123 Main St, City, State 12345" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="custProjectAddress" className="label">Project address</label>
+                    <input id="custProjectAddress" type="text" value={customerInfo.projectAddress} onChange={(e) => handleCustomerInfoChange('projectAddress', e.target.value)} className="input" placeholder="456 Project St, City, State 12345" />
+                  </div>
                 </div>
               )}
             </div>
-          </div>
+          </section>
 
-          {/* QUOTE DATE */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
-              <Calendar size={16} /> Quote Date
-            </label>
-            <input
-              type="date"
-              value={quoteDate}
-              onChange={(e) => setQuoteDate(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-            />
-          </div>
-
-          {/* CUSTOMER INFO (COLLAPSIBLE) */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <button
-              onClick={() => setShowCustomerInfo(!showCustomerInfo)}
-              className="w-full flex items-center justify-between text-sm font-medium text-gray-700 mb-3"
-            >
-              <span className="flex items-center gap-2">
-                <User size={16} /> Customer Information (Optional)
-              </span>
-              {showCustomerInfo ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
-
-            {showCustomerInfo && (
-              <div className="space-y-3 mt-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Customer Name</label>
-                  <input
-                    type="text"
-                    value={customerInfo.name}
-                    onChange={(e) => handleCustomerInfoChange('name', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder="John Doe"
-                  />
+          {/* SYSTEM */}
+          <section className="px-4 sm:px-5 py-5 space-y-4">
+            <h2 className="text-sm font-semibold">Coating system</h2>
+            <div className="seg" role="group" aria-label="Coating system">
+              {['Silicone', 'Acrylic', 'Aluminum'].map(sys => segButton(sys, inputs.coatingSystem === sys, () => handleChange('coatingSystem', sys)))}
+            </div>
+            {inputs.coatingSystem === 'Acrylic' && (
+              <div>
+                <span className="label">Acrylic system type</span>
+                <div className="seg" role="group" aria-label="Acrylic system type">
+                  {segButton('Standard', inputs.acrylicSystemType === 'Standard', () => handleChange('acrylicSystemType', 'Standard'))}
+                  {segButton('Reinforced', inputs.acrylicSystemType === 'Reinforced', () => handleChange('acrylicSystemType', 'Reinforced'))}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
-                  <input
-                    type="text"
-                    value={customerInfo.company}
-                    onChange={(e) => handleCustomerInfoChange('company', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder="ABC Roofing Co."
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
-                  <input
-                    type="text"
-                    value={customerInfo.address}
-                    onChange={(e) => handleCustomerInfoChange('address', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder="123 Main St, City, State 12345"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                  <input
-                    type="tel"
-                    value={customerInfo.phone}
-                    onChange={(e) => handleCustomerInfoChange('phone', e.target.value)}
-                    className={`w-full p-2 border rounded-lg text-sm ${inputBorder('phone')}`}
-                    placeholder="(555) 123-4567"
-                  />
-                  <ValidationError field="phone" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={customerInfo.email}
-                    onChange={(e) => handleCustomerInfoChange('email', e.target.value)}
-                    className={`w-full p-2 border rounded-lg text-sm ${inputBorder('email')}`}
-                    placeholder="customer@email.com"
-                  />
-                  <ValidationError field="email" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Project Address</label>
-                  <input
-                    type="text"
-                    value={customerInfo.projectAddress}
-                    onChange={(e) => handleCustomerInfoChange('projectAddress', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder="456 Project St, City, State 12345"
-                  />
-                </div>
+                <p className="hint">{inputs.acrylicSystemType === 'Reinforced' ? 'Full-system membrane reinforcement.' : 'No membrane.'}</p>
               </div>
             )}
-          </div>
-
-          {/* PRODUCT & SYSTEM SELECTION */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-                <Droplet size={16} /> Coating System
-            </label>
-            <div className="grid grid-cols-3 gap-2 mb-6">
-                <button
-                    onClick={() => handleChange('coatingSystem', 'Silicone')}
-                    className={`p-2 text-sm rounded-lg border transition-all ${inputs.coatingSystem === 'Silicone' ? 'bg-teal-600 text-white border-teal-600 font-bold' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
-                >
-                    Silicone
-                </button>
-                <button
-                    onClick={() => handleChange('coatingSystem', 'Acrylic')}
-                    className={`p-2 text-sm rounded-lg border transition-all ${inputs.coatingSystem === 'Acrylic' ? 'bg-orange-600 text-white border-orange-600 font-bold' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
-                >
-                    Acrylic
-                </button>
-                <button
-                    onClick={() => handleChange('coatingSystem', 'Aluminum')}
-                    className={`p-2 text-sm rounded-lg border transition-all ${inputs.coatingSystem === 'Aluminum' ? 'bg-gray-600 text-white border-gray-600 font-bold' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
-                >
-                    Aluminum
-                </button>
+            <div>
+              <label htmlFor="topcoat" className="label">Topcoat</label>
+              <select id="topcoat" className="input" value={inputs.selectedTopcoat} onChange={(e) => handleChange('selectedTopcoat', e.target.value)}>
+                {currentOptions.topcoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
             </div>
-
-            {/* PRODUCT DROPDOWNS */}
-            <div className="space-y-4">
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Top Coat Product</label>
-                    <select className="w-full p-2 border border-gray-300 rounded-lg text-sm" value={inputs.selectedTopcoat} onChange={(e) => handleChange('selectedTopcoat', e.target.value)}>
-                        {currentOptions.topcoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                </div>
-                {/* Hide basecoat for Aluminum system */}
-                {inputs.coatingSystem !== 'Aluminum' && (
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Base Coat Product</label>
-                        <select className="w-full p-2 border border-gray-300 rounded-lg text-sm" value={inputs.selectedBasecoat} onChange={(e) => handleChange('selectedBasecoat', e.target.value)}>
-                            {currentOptions.basecoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
-                    </div>
-                )}
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Seam Treatment (Butter Grade)</label>
-                    <select className="w-full p-2 border border-gray-300 rounded-lg text-sm" value={inputs.selectedButterGrade} onChange={(e) => handleChange('selectedButterGrade', e.target.value)}>
-                        {currentOptions.butterGrades.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                </div>
-
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fabric / Mesh</label>
-                    <select
-                        className="w-full p-2 border border-gray-300 rounded-lg text-sm"
-                        value={inputs.selectedFabric}
-                        onChange={(e) => handleChange('selectedFabric', e.target.value)}
-                        disabled={inputs.accessoryType === 'Butter Grade'}
-                    >
-                        {currentOptions.fabrics.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                </div>
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Detailing Preference</label>
-                    <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => handleChange('accessoryType', 'Butter Grade')} className={`p-2 text-sm rounded-lg border ${inputs.accessoryType === 'Butter Grade' ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-gray-300 text-gray-600'}`}>Butter Grade</button>
-                        <button onClick={() => handleChange('accessoryType', 'Fabric')} className={`p-2 text-sm rounded-lg border ${inputs.accessoryType === 'Fabric' ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold' : 'border-gray-300 text-gray-600'}`}>Fabric</button>
-                    </div>
-                </div>
-            </div>
-
-            {/* ACRYLIC SYSTEM TYPE TOGGLE */}
-            {inputs.coatingSystem === 'Acrylic' && (
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                    <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-                        <Grid size={16} /> Acrylic System Type
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                        <button
-                            onClick={() => handleChange('acrylicSystemType', 'Standard')}
-                            className={`p-2 text-sm rounded-lg border transition-all ${inputs.acrylicSystemType === 'Standard' ? 'bg-orange-500 text-white border-orange-500 font-bold' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
-                        >
-                            Standard (No Membrane)
-                        </button>
-                        <button
-                            onClick={() => handleChange('acrylicSystemType', 'Reinforced')}
-                            className={`p-2 text-sm rounded-lg border transition-all ${inputs.acrylicSystemType === 'Reinforced' ? 'bg-orange-500 text-white border-orange-500 font-bold' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
-                        >
-                            Reinforced (Membrane)
-                        </button>
-                    </div>
-                </div>
+            {inputs.coatingSystem !== 'Aluminum' && (
+              <div>
+                <label htmlFor="basecoat" className="label">Basecoat</label>
+                <select id="basecoat" className="input" value={inputs.selectedBasecoat} onChange={(e) => handleChange('selectedBasecoat', e.target.value)}>
+                  {currentOptions.basecoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </div>
             )}
-          </div>
+            <div>
+              <label htmlFor="butterGrade" className="label">Seam treatment (butter grade)</label>
+              <select id="butterGrade" className="input" value={inputs.selectedButterGrade} onChange={(e) => handleChange('selectedButterGrade', e.target.value)}>
+                {currentOptions.butterGrades.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+            <div>
+              <span className="label">Detailing</span>
+              <div className="seg" role="group" aria-label="Detailing preference">
+                {segButton('Butter grade', inputs.accessoryType === 'Butter Grade', () => handleChange('accessoryType', 'Butter Grade'))}
+                {segButton('Fabric', inputs.accessoryType === 'Fabric', () => handleChange('accessoryType', 'Fabric'))}
+              </div>
+            </div>
+            <div>
+              <label htmlFor="fabric" className="label">Fabric / mesh</label>
+              <select
+                id="fabric"
+                className="input"
+                value={inputs.selectedFabric}
+                onChange={(e) => handleChange('selectedFabric', e.target.value)}
+                disabled={inputs.accessoryType === 'Butter Grade'}
+              >
+                {currentOptions.fabrics.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+              {inputs.accessoryType === 'Butter Grade' && <p className="hint">Only used when detailing with fabric.</p>}
+            </div>
+          </section>
 
-          {/* Project Name */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
-            <input 
-              type="text" 
-              value={inputs.projectName}
-              onChange={(e) => handleChange('projectName', e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              placeholder="e.g. Smith Residence"
-            />
-          </div>
-
-          {/* Dimensions */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold flex items-center gap-2 mb-4 text-blue-800">
-              <Ruler size={20} /> Dimensions
-            </h2>
-
-            {/* Multi-Section Toggle */}
-            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200 mb-4">
-              <span className="text-sm font-medium text-blue-800 flex items-center gap-2"><Layers size={16} /> Multi-Section Roof?</span>
-              <button onClick={() => { setUseMultiSection(!useMultiSection); if (!useMultiSection && roofSections.length === 0) addRoofSection(); }} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${useMultiSection ? 'bg-blue-600' : 'bg-gray-300'}`}>
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useMultiSection ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
+          {/* ROOF */}
+          <section className="px-4 sm:px-5 py-5 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-sm font-semibold">Roof</h2>
+              <label className="flex items-center gap-2.5 text-[13px] text-ink-2 cursor-pointer">
+                Multiple sections
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={useMultiSection}
+                  aria-label="Multiple roof sections"
+                  onClick={() => { setUseMultiSection(!useMultiSection); if (!useMultiSection && roofSections.length === 0) addRoofSection(); }}
+                  className="switch"
+                >
+                  <span />
+                </button>
+              </label>
             </div>
 
             {!useMultiSection ? (
-              <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Roof Size (sq ft)</label>
+                  <label htmlFor="roofSize" className="label">Roof area <span className="font-normal text-ink-3">sq ft</span></label>
                   <input
+                    id="roofSize"
                     type="number"
+                    inputMode="decimal"
                     min="0"
                     max="1000000"
                     value={inputs.roofSizeSqFt || ''}
                     onChange={(e) => handleChange('roofSizeSqFt', parseFloat(e.target.value) || 0)}
-                    className={`w-full p-2 border rounded-lg ${inputBorder('roofSizeSqFt')}`}
-                    placeholder="e.g. 5000"
+                    className={`input num ${validationErrors.roofSizeSqFt ? 'input-error' : ''}`}
+                    placeholder="5,000"
                   />
                   <ValidationError field="roofSizeSqFt" />
-                  <div className="text-xs text-gray-500 mt-1 text-right">= {commonResults.squares.toFixed(2)} Squares</div>
+                  <p className="hint num">{commonResults.squares.toFixed(2)} squares</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Linear Feet</label>
+                  <label htmlFor="linearFeet" className="label">Seams <span className="font-normal text-ink-3">linear ft</span></label>
                   <input
+                    id="linearFeet"
                     type="number"
+                    inputMode="decimal"
                     min="0"
                     max="100000"
                     value={inputs.linearFeet || ''}
                     onChange={(e) => handleChange('linearFeet', parseFloat(e.target.value) || 0)}
-                    className={`w-full p-2 border rounded-lg ${inputBorder('linearFeet')}`}
-                    placeholder="e.g. 250"
+                    className={`input num ${validationErrors.linearFeet ? 'input-error' : ''}`}
+                    placeholder="250"
                   />
                   <ValidationError field="linearFeet" />
                 </div>
               </div>
             ) : (
-              /* Multi-Section Roof UI */
               <div className="space-y-3">
-                {roofSections.map((section, idx) => (
-                  <div key={section.id} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <input
-                        type="text"
-                        value={section.name}
-                        onChange={(e) => updateRoofSection(section.id, 'name', e.target.value)}
-                        className="text-sm font-semibold text-blue-800 bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-600 w-40"
-                      />
-                      <button onClick={() => removeRoofSection(section.id)} className="text-red-500 hover:text-red-700 p-1" title="Remove section">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-0.5">Sq Ft</label>
+                <ul className="border border-line rounded-md divide-y divide-line">
+                  {roofSections.map((section) => (
+                    <li key={section.id} className="p-3 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
                         <input
-                          type="number"
-                          min="0"
-                          value={section.sqFt || ''}
-                          onChange={(e) => updateRoofSection(section.id, 'sqFt', parseFloat(e.target.value) || 0)}
-                          className={`w-full p-1.5 text-sm border rounded ${inputBorder(`section_${section.id}_sqFt`)}`}
-                          placeholder="0"
+                          type="text"
+                          aria-label="Section name"
+                          value={section.name}
+                          onChange={(e) => updateRoofSection(section.id, 'name', e.target.value)}
+                          className="min-w-0 flex-1 text-[13px] font-semibold bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-canvas focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-100"
                         />
-                        <ValidationError field={`section_${section.id}_sqFt`} />
+                        <button onClick={() => removeRoofSection(section.id)} className="icon-btn hover:text-red-700" aria-label={`Remove ${section.name}`}>
+                          <Trash2 size={14} />
+                        </button>
                       </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-0.5">Linear Ft</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={section.linearFeet || ''}
-                          onChange={(e) => updateRoofSection(section.id, 'linearFeet', parseFloat(e.target.value) || 0)}
-                          className={`w-full p-1.5 text-sm border rounded ${inputBorder(`section_${section.id}_lf`)}`}
-                          placeholder="0"
-                        />
-                        <ValidationError field={`section_${section.id}_lf`} />
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="label text-xs mb-1">Sq ft</label>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            value={section.sqFt || ''}
+                            onChange={(e) => updateRoofSection(section.id, 'sqFt', parseFloat(e.target.value) || 0)}
+                            className={`input input-sm num ${validationErrors[`section_${section.id}_sqFt`] ? 'input-error' : ''}`}
+                            placeholder="0"
+                          />
+                          <ValidationError field={`section_${section.id}_sqFt`} />
+                        </div>
+                        <div>
+                          <label className="label text-xs mb-1">Linear ft</label>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            value={section.linearFeet || ''}
+                            onChange={(e) => updateRoofSection(section.id, 'linearFeet', parseFloat(e.target.value) || 0)}
+                            className={`input input-sm num ${validationErrors[`section_${section.id}_lf`] ? 'input-error' : ''}`}
+                            placeholder="0"
+                          />
+                          <ValidationError field={`section_${section.id}_lf`} />
+                        </div>
+                        <div>
+                          <label className="label text-xs mb-1">Roof type</label>
+                          <select value={section.roofType} onChange={(e) => updateRoofSection(section.id, 'roofType', e.target.value)} className="input input-sm">
+                            {getAvailableRoofTypes().map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-0.5">Roof Type</label>
-                        <select
-                          value={section.roofType}
-                          onChange={(e) => updateRoofSection(section.id, 'roofType', e.target.value)}
-                          className="w-full p-1.5 text-sm border border-gray-300 rounded"
-                        >
-                          {getAvailableRoofTypes().map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="label text-xs mb-1">Waste</label>
+                          <select value={section.wasteFactor} onChange={(e) => updateRoofSection(section.id, 'wasteFactor', e.target.value)} className="input input-sm num">
+                            {percentOptions(15)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label text-xs mb-1">Stretch</label>
+                          <select value={section.stretchFactor} onChange={(e) => updateRoofSection(section.id, 'stretchFactor', e.target.value)} className="input input-sm num">
+                            {percentOptions(30)}
+                          </select>
+                        </div>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-0.5">Waste Factor</label>
-                        <select
-                          value={section.wasteFactor}
-                          onChange={(e) => updateRoofSection(section.id, 'wasteFactor', e.target.value)}
-                          className="w-full p-1.5 text-sm border border-gray-300 rounded"
-                        >
-                          <option value="0">0%</option>
-                          <option value="0.05">5%</option>
-                          <option value="0.10">10%</option>
-                          <option value="0.15">15%</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-0.5">Stretch Factor</label>
-                        <select
-                          value={section.stretchFactor}
-                          onChange={(e) => updateRoofSection(section.id, 'stretchFactor', e.target.value)}
-                          className="w-full p-1.5 text-sm border border-gray-300 rounded"
-                        >
-                          <option value="0">0%</option>
-                          <option value="0.05">5%</option>
-                          <option value="0.10">10%</option>
-                          <option value="0.15">15%</option>
-                          <option value="0.20">20%</option>
-                          <option value="0.25">25%</option>
-                          <option value="0.30">30%</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <button onClick={addRoofSection} className="w-full py-2 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-medium hover:bg-blue-50 flex items-center justify-center gap-1">
-                  <Plus size={14} /> Add Section
+                    </li>
+                  ))}
+                </ul>
+                <button onClick={addRoofSection} className="btn-secondary w-full">
+                  <Plus size={14} /> Add section
                 </button>
-                <div className="bg-blue-100 rounded-lg p-3 text-sm">
-                  <div className="flex justify-between text-blue-800">
-                    <span className="font-bold">Total Roof Size:</span>
-                    <span className="font-mono font-bold">{inputs.roofSizeSqFt.toLocaleString()} sq ft ({commonResults.squares.toFixed(2)} squares)</span>
-                  </div>
-                  <div className="flex justify-between text-blue-700 mt-1">
-                    <span className="font-medium">Total Linear Feet:</span>
-                    <span className="font-mono">{inputs.linearFeet.toLocaleString()} LF</span>
-                  </div>
-                </div>
+                <dl className="text-[13px] space-y-1 num">
+                  <div className="flex justify-between"><dt className="text-ink-3">Total area</dt><dd className="font-medium">{inputs.roofSizeSqFt.toLocaleString()} sq ft · {commonResults.squares.toFixed(2)} sq</dd></div>
+                  <div className="flex justify-between"><dt className="text-ink-3">Total seams</dt><dd className="font-medium">{inputs.linearFeet.toLocaleString()} LF</dd></div>
+                </dl>
               </div>
             )}
-          </div>
 
-          {/* System Specs */}
-          <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 ${useMultiSection ? 'opacity-50 pointer-events-none' : ''}`}>
-            <h2 className="text-lg font-semibold flex items-center gap-2 mb-4 text-blue-800">
-              <Layers size={20} /> System Specs
-            </h2>
-            {useMultiSection && (
-              <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-                These settings are configured per-section when Multi-Section mode is active.
-              </div>
-            )}
-            <div className="space-y-4">
+            <fieldset disabled={useMultiSection} className={`space-y-4 ${useMultiSection ? 'opacity-60' : ''}`}>
+              {useMultiSection && <p className="hint mt-0">Roof type, waste and stretch are set per section above.</p>}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Roof Type</label>
-                <select
-                  className="w-full p-2 border border-gray-300 rounded-lg"
-                  value={inputs.roofType}
-                  onChange={(e) => handleChange('roofType', e.target.value)}
-                >
+                <label htmlFor="roofType" className="label">Roof type</label>
+                <select id="roofType" className="input" value={inputs.roofType} onChange={(e) => handleChange('roofType', e.target.value)}>
                   <option value="Capsheet">Capsheet</option>
                   {/* Single-Ply not available for Aluminum */}
                   {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
@@ -2642,1158 +2663,511 @@ export default function App() {
                   {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
                   {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
                 </select>
-                {inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Reinforced' && (
-                    <div className="text-xs text-orange-600 mt-1">Reinforced Acrylic system valid for Capsheet & Single-Ply only.</div>
-                )}
-                {inputs.coatingSystem === 'Aluminum' && (
-                    <div className="text-xs text-gray-600 mt-1">Aluminum system supports Metal & Capsheet only.</div>
-                )}
+                {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet and single-ply only.</p>}
+                {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and capsheet only.</p>}
               </div>
 
               {/* Fastener encapsulation method — sits right under Roof Type so it's
                   immediately visible when Metal is picked (otherwise it's easy to miss). */}
               {inputs.roofType === 'Metal' && inputs.accessoryType === 'Butter Grade' && (
-                <div className={`rounded-lg border-2 p-3 transition-all ${inputs.useFastenerCaulk ? 'border-amber-400 bg-amber-50' : 'border-blue-300 bg-blue-50'}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Hammer size={16} className={inputs.useFastenerCaulk ? 'text-amber-700' : 'text-blue-700'} />
-                      <label className="text-sm font-bold text-gray-800">Fastener Encapsulation</label>
-                    </div>
-                    {inputs.useFastenerCaulk && (
-                      <span className="text-xs font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <CheckCircle size={10} /> Caulk Active
-                      </span>
-                    )}
+                <div>
+                  <span className="label">Fastener encapsulation</span>
+                  <div className="seg" role="group" aria-label="Fastener encapsulation">
+                    {segButton('Butter grade', !inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', false))}
+                    {segButton('Self-leveling caulk', !!inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', true))}
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => handleChange('useFastenerCaulk', false)}
-                      className={`p-2 text-sm rounded-lg border-2 transition-all ${!inputs.useFastenerCaulk ? 'bg-white border-blue-500 text-blue-700 font-bold shadow-sm' : 'bg-white/60 border-gray-300 text-gray-600 hover:bg-white'}`}
-                    >
-                      Butter Grade
-                    </button>
-                    <button
-                      onClick={() => handleChange('useFastenerCaulk', true)}
-                      className={`p-2 text-sm rounded-lg border-2 transition-all ${inputs.useFastenerCaulk ? 'bg-white border-amber-500 text-amber-700 font-bold shadow-sm' : 'bg-white/60 border-gray-300 text-gray-600 hover:bg-white'}`}
-                    >
-                      Self-Leveling Caulk
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-700 mt-2">
+                  <p className="hint">
                     {inputs.useFastenerCaulk
-                      ? `Fasteners covered by self-leveling caulk (~${FASTENERS_PER_CAULK_TUBE}/tube). Butter grade stays for seams & penetrations only.`
-                      : 'Butter grade buckets cover both seams and fasteners. Switch to caulk if your contractor prefers it.'}
+                      ? `Fasteners covered by self-leveling caulk (~${FASTENERS_PER_CAULK_TUBE}/tube). Butter grade stays for seams and penetrations only.`
+                      : 'Butter grade buckets cover both seams and fasteners. Switch to caulk if the contractor prefers it.'}
                   </p>
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Waste Factor</label>
-                  <select className="w-full p-2 border border-gray-300 rounded-lg" value={inputs.wasteFactor} onChange={(e) => handleChange('wasteFactor', e.target.value)}>
-                    <option value="0">0%</option>
-                    <option value="0.05">5%</option>
-                    <option value="0.10">10%</option>
-                    <option value="0.15">15%</option>
+                  <label htmlFor="waste" className="label">Waste</label>
+                  <select id="waste" className="input num" value={inputs.wasteFactor} onChange={(e) => handleChange('wasteFactor', e.target.value)}>
+                    {percentOptions(15)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Stretch Factor</label>
-                  <select className="w-full p-2 border border-gray-300 rounded-lg" value={inputs.stretchFactor} onChange={(e) => handleChange('stretchFactor', e.target.value)}>
-                    <option value="0">0%</option>
-                    <option value="0.05">5%</option>
-                    <option value="0.10">10%</option>
-                    <option value="0.15">15%</option>
-                    <option value="0.20">20%</option>
-                    <option value="0.25">25%</option>
-                    <option value="0.30">30%</option>
+                  <label htmlFor="stretch" className="label">Stretch</label>
+                  <select id="stretch" className="input num" value={inputs.stretchFactor} onChange={(e) => handleChange('stretchFactor', e.target.value)}>
+                    {percentOptions(30)}
                   </select>
                 </div>
               </div>
-            </div>
-          </div>
+            </fieldset>
+          </section>
 
-          {/* Conditions */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold flex items-center gap-2 mb-4 text-blue-800">
-              <AlertTriangle size={20} /> Conditions
-            </h2>
-            <div className="space-y-4">
+          {/* CONDITIONS */}
+          <section className="px-4 sm:px-5 pt-5 pb-2">
+            <h2 className="text-sm font-semibold mb-1">Site conditions</h2>
+            <div className="divide-y divide-line">
               {/* Adhesion test not needed for Aluminum */}
               {inputs.coatingSystem !== 'Aluminum' && (
-                <>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <span className="text-sm font-medium text-gray-700">Passed Adhesion Test?</span>
-                    <button onClick={() => handleChange('passedAdhesion', !inputs.passedAdhesion)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${inputs.passedAdhesion ? 'bg-green-500' : 'bg-red-500'}`}>
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${inputs.passedAdhesion ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
-                  </div>
+                <div>
+                  {switchRow('Passed adhesion test', inputs.passedAdhesion, () => handleChange('passedAdhesion', !inputs.passedAdhesion))}
                   {!inputs.passedAdhesion && (
-                    <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex gap-2"><AlertTriangle size={14} className="mt-0.5" /><span>Adhesion Failure: Extra primer added.</span></div>
+                    <div className="callout-danger mb-3">
+                      <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                      <span>Adhesion failure: adhesion primer added to the order.</span>
+                    </div>
                   )}
-                </>
+                </div>
               )}
 
               {/* RUST TOGGLE - FOR SILICONE OR ACRYLIC ON METAL (not Aluminum) */}
               {(inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic') && inputs.roofType === 'Metal' && (
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
-                        <span className="text-sm font-medium text-orange-900 flex items-center gap-2"><Hammer size={16} /> Rust Present?</span>
-                        <button onClick={() => handleChange('hasRust', !inputs.hasRust)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${inputs.hasRust ? 'bg-orange-500' : 'bg-gray-300'}`}>
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${inputs.hasRust ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
-                    </div>
-
-                    {inputs.hasRust && (
-                      <div className="rounded-lg border-2 border-orange-300 bg-orange-50 p-3 space-y-2">
-                        <label className="text-xs font-bold text-orange-900 uppercase tracking-wide">Rust Primer Coverage</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => handleChange('rustPrimeMethod', 'field')}
-                            className={`p-2 text-sm rounded-lg border-2 transition-all ${inputs.rustPrimeMethod !== 'spot' ? 'bg-white border-orange-500 text-orange-700 font-bold shadow-sm' : 'bg-white/60 border-gray-300 text-gray-600 hover:bg-white'}`}
-                          >
-                            Field Prime
-                          </button>
-                          <button
-                            onClick={() => handleChange('rustPrimeMethod', 'spot')}
-                            className={`p-2 text-sm rounded-lg border-2 transition-all ${inputs.rustPrimeMethod === 'spot' ? 'bg-white border-amber-500 text-amber-700 font-bold shadow-sm' : 'bg-white/60 border-gray-300 text-gray-600 hover:bg-white'}`}
-                          >
-                            Spot Prime
-                          </button>
-                        </div>
-                        <p className="text-xs text-orange-800">
-                          {inputs.rustPrimeMethod === 'spot'
-                            ? `No primer quantity calculated. All quotes will read: "${SPOT_PRIME_NOTE}".`
-                            : 'Calculates rust primer at 0.5 gal/sq for the entire field.'}
-                        </p>
+                <div>
+                  {switchRow('Rust present', inputs.hasRust, () => handleChange('hasRust', !inputs.hasRust))}
+                  {inputs.hasRust && (
+                    <div className="pb-3">
+                      <span className="label">Rust primer coverage</span>
+                      <div className="seg" role="group" aria-label="Rust primer coverage">
+                        {segButton('Field prime', inputs.rustPrimeMethod !== 'spot', () => handleChange('rustPrimeMethod', 'field'))}
+                        {segButton('Spot prime', inputs.rustPrimeMethod === 'spot', () => handleChange('rustPrimeMethod', 'spot'))}
                       </div>
-                    )}
+                      <p className="hint">
+                        {inputs.rustPrimeMethod === 'spot'
+                          ? `No primer quantity calculated. All quotes will read: "${SPOT_PRIME_NOTE}".`
+                          : 'Rust primer at 0.5 gal/sq across the entire field.'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <span className="text-sm font-medium text-gray-700">Goldseal Warranty?</span>
-                <button onClick={() => handleChange('goldseal', !inputs.goldseal)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${inputs.goldseal ? 'bg-yellow-500' : 'bg-gray-300'}`}>
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${inputs.goldseal ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-              </div>
+              {switchRow('Goldseal warranty', inputs.goldseal, () => handleChange('goldseal', !inputs.goldseal))}
             </div>
-          </div>
-        </div>
+          </section>
+        </aside>
 
         {/* RIGHT COLUMN: RESULTS */}
-        <div className="lg:col-span-8 print:w-full print:col-span-12">
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden sticky top-8 print:static print:shadow-none print:border-0">
-            <div className="bg-gray-900 text-white p-6 border-b border-gray-800 flex justify-between items-center">
-              <div>
-                <h2 className="text-2xl font-bold flex items-center gap-2"><FileText /> Material Options</h2>
-                <div className="flex gap-2 text-xs mt-1">
-                    <span className={`px-2 py-1 rounded-full text-white ${inputs.coatingSystem === 'Acrylic' ? 'bg-orange-600' : 'bg-teal-600'}`}>{inputs.coatingSystem}</span>
-                    {inputs.coatingSystem === 'Acrylic' && <span className="bg-orange-700 px-2 py-1 rounded-full text-white">{inputs.acrylicSystemType}</span>}
-                    <span className="bg-gray-800 px-2 py-1 rounded-full text-gray-300">{inputs.roofType}</span>
-                </div>
+        <div className="results-col min-w-0 space-y-5 lg:space-y-6">
+          <section id="order" className="panel overflow-hidden print:border-0 scroll-mt-20">
+            <div className="flex items-start justify-between gap-4 px-4 sm:px-5 py-4 border-b border-line">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold tracking-[-0.01em]">Material order</h2>
+                <p className="text-[13px] text-ink-3 mt-0.5">{systemLabel} on {roofTypeLabel} · {factorsLabel}</p>
               </div>
-              <div className="text-right">
-                <div className="text-3xl font-mono font-bold text-green-400">{commonResults.squares.toFixed(1)}</div>
-                <div className="text-xs text-gray-400 uppercase tracking-wider">Total Squares</div>
+              <div className="text-right shrink-0">
+                <div className="text-lg font-semibold num leading-tight">{commonResults.squares.toFixed(1)} <span className="text-[13px] font-normal text-ink-3">sq</span></div>
+                <div className="text-xs text-ink-3 num">{inputs.roofSizeSqFt.toLocaleString()} sq ft</div>
               </div>
             </div>
 
-            <div className="p-6">
-              {/* ACCESSORIES COMMON */}
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 print:border-gray-300">
-                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Required Accessories</h3>
-                 
-                 {/* Warning message when linear feet is missing */}
-                 {inputs.linearFeet <= 0 && (
-                    <div className="bg-orange-50 border-l-4 border-orange-500 p-4 mb-4">
-                        <div className="flex items-center">
-                            <div className="flex-shrink-0"><AlertTriangle className="h-5 w-5 text-orange-500" /></div>
-                            <div className="ml-3">
-                                <p className="text-sm text-orange-700"><span className="font-bold">Quote Incomplete:</span> Missing Linear Feet - required to calculate butter grade (seam sealant) quantity.</p>
-                                {inputs.roofType === 'Metal' && commonResults.screwBuckets > 0 && (
-                                   <p className="text-xs text-orange-600 mt-1 font-semibold">
-                                     (Note: Fastener encapsulation for ~{commonResults.screwCount} screws IS included based on roof area.)
-                                   </p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                 )}
-
-                 {/* Accessory pricing section - shows when there ARE linear feet OR when there are metal screws to encapsulate */}
-                 {(inputs.linearFeet > 0 || (inputs.roofType === 'Metal' && (commonResults.screwBuckets > 0 || commonResults.fastenerCaulkTubes > 0))) && (
-                    commonResults.screwBuckets > 0 ? (
-                    /* Metal roof: the seam sealer does double duty — sealing seams (by
-                       linear feet) and encapsulating fasteners (by roof area). Show them
-                       as separate line items sharing one per-bucket price. */
-                    <div className="mb-4">
-                        <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1">
-                                <div className="font-bold text-lg text-gray-900">{commonResults.accessoryName || 'Seam Sealer'}</div>
-                                <div className="text-sm text-gray-500">{commonResults.accessoryDesc}</div>
-                            </div>
-                            <div className="text-center">
-                                <div className="text-xs text-gray-500 mb-1">Price/Bucket</div>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="$0.00"
-                                    value={prices.accessory || ''}
-                                    onChange={(e) => handlePriceChange('accessory', e.target.value)}
-                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
-                                />
-                            </div>
-                        </div>
-                        {commonResults.linearBuckets > 0 && (
-                            <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                                <div className="flex-1">
-                                    <div className="font-medium text-gray-800">Seam Sealer — Seams</div>
-                                    <div className="text-xs text-gray-500">By linear feet</div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-xl font-bold text-blue-700">
-                                        {commonResults.linearBuckets} <span className="text-sm text-gray-600 font-normal">Buckets</span>
-                                    </div>
-                                    {prices.accessory > 0 && (
-                                        <div className="text-sm font-bold text-green-700">= ${(commonResults.linearBuckets * prices.accessory).toFixed(2)}</div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                        <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                            <div className="flex-1">
-                                <div className="font-medium text-gray-800">Seam Sealer — Fastener Encapsulation</div>
-                                <div className="text-xs text-gray-500">Encapsulates ~{commonResults.screwCount} fasteners (roof area)</div>
-                            </div>
-                            <div className="text-right">
-                                <div className="text-xl font-bold text-blue-700">
-                                    {commonResults.screwBuckets} <span className="text-sm text-gray-600 font-normal">Buckets</span>
-                                </div>
-                                {prices.accessory > 0 && (
-                                    <div className="text-sm font-bold text-green-700">= ${(commonResults.screwBuckets * prices.accessory).toFixed(2)}</div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                    ) : (
-                    <div className="mb-4">
-                        <div className="flex justify-between items-center">
-                            <div className="flex-1">
-                                <div className="font-bold text-lg text-gray-900">
-                                    {inputs.linearFeet > 0 ? commonResults.accessoryName : 'Fastener Encapsulation'}
-                                </div>
-                                <div className="text-sm text-gray-500">
-                                    {inputs.linearFeet > 0 ? commonResults.accessoryDesc : 'Metal roof screw encapsulation'}
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="text-center">
-                                    <div className="text-xs text-gray-500 mb-1">Price/{commonResults.accessoryUnit === 'Buckets' ? 'Bucket' : 'Roll'}</div>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="$0.00"
-                                        value={prices.accessory || ''}
-                                        onChange={(e) => handlePriceChange('accessory', e.target.value)}
-                                        className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
-                                    />
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-2xl font-bold text-blue-700">
-                                        {commonResults.accessoryQty} <span className="text-sm text-gray-600 font-normal">{commonResults.accessoryUnit}</span>
-                                    </div>
-                                    {prices.accessory > 0 && (
-                                        <div className="text-sm font-bold text-green-700">
-                                            = ${(commonResults.accessoryQty * prices.accessory).toFixed(2)}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    )
-                 )}
-
-                 {/* FASTENER CAULK ROW (when toggled on for metal roofs) */}
-                 {commonResults.fastenerCaulkTubes > 0 && (
-                    <div className="flex justify-between items-center pt-4 border-t border-gray-200 mb-4">
-                        <div className="flex-1">
-                            <div className="font-bold text-lg text-gray-900">Fastener Caulk</div>
-                            <div className="text-sm text-gray-500">{FASTENER_CAULK_NAME} (~{FASTENERS_PER_CAULK_TUBE} fasteners/tube)</div>
-                            <div className="flex items-center gap-1 text-xs text-blue-600 mt-1 font-medium bg-blue-50 px-2 py-1 rounded w-fit">
-                                <Info size={12} /> Covers ~{commonResults.screwCount} fasteners
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <div className="text-center">
-                                <div className="text-xs text-gray-500 mb-1">Price/Tube</div>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="$0.00"
-                                    value={prices.fastenerCaulk || ''}
-                                    onChange={(e) => handlePriceChange('fastenerCaulk', e.target.value)}
-                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
-                                />
-                            </div>
-                            <div className="text-right">
-                                <div className="text-2xl font-bold text-amber-600">
-                                    {commonResults.fastenerCaulkTubes} <span className="text-sm text-gray-600 font-normal">Tubes</span>
-                                </div>
-                                {prices.fastenerCaulk > 0 && (
-                                    <div className="text-sm font-bold text-green-700">
-                                        = ${(commonResults.fastenerCaulkTubes * prices.fastenerCaulk).toFixed(2)}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                 )}
-
-                 {/* ACRYLIC MEMBRANE ROW (Only for Reinforced) */}
-                 {inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Reinforced' && (
-                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                        <div className="flex-1">
-                            <div className="font-bold text-lg text-gray-900">Reinforcement Membrane</div>
-                            <div className="text-sm text-gray-500">Full System Reinforcement (40" x 324' rolls)</div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <div className="text-center">
-                                <div className="text-xs text-gray-500 mb-1">Price/Roll</div>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="$0.00"
-                                    value={prices.membrane || ''}
-                                    onChange={(e) => handlePriceChange('membrane', e.target.value)}
-                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
-                                />
-                            </div>
-                            <div className="text-right">
-                                <div className="text-2xl font-bold text-orange-600">
-                                    {commonResults.membraneRolls} <span className="text-sm text-gray-600 font-normal">Rolls</span>
-                                </div>
-                                {prices.membrane > 0 && (
-                                    <div className="text-sm font-bold text-green-700">
-                                        = ${(commonResults.membraneRolls * prices.membrane).toFixed(2)}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                 )}
-              </div>
-
-              {/* DISTRIBUTOR MARGIN SECTION */}
-              <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-5 print:hidden">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="bg-blue-600 p-2 rounded-lg">
-                    <DollarSign className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-blue-900">Distributor Margin</h3>
-                    <p className="text-xs text-blue-700">Add your margin % to calculate contractor pricing</p>
-                  </div>
-                </div>
-
-                <div className="bg-white p-4 rounded-lg border border-blue-200">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Your Margin Percentage</label>
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <input
-                        type="number"
-                        step="1"
-                        min="0"
-                        max="99"
-                        value={profitMargin}
-                        onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
-                        className={`w-32 p-3 border-2 rounded-lg text-center text-2xl font-bold focus:ring-2 focus:ring-blue-500 ${validationErrors.profitMargin ? 'border-red-400' : 'border-blue-300'}`}
-                        placeholder="0"
-                      />
-                      <ValidationError field="profitMargin" />
-                    </div>
-                    <span className="text-2xl font-bold text-blue-900">%</span>
-                    {profitMargin > 0 && (
-                      <div className="ml-4 text-sm text-green-700 font-medium">
-                        ✓ Contractor prices will show {profitMargin}% margin
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Margin visibility toggle for PDF / Copy Text exports */}
-                  {profitMargin > 0 && (
-                    <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded">
-                      <label className="flex items-start gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={showMarginInExports}
-                          onChange={(e) => setShowMarginInExports(e.target.checked)}
-                          className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <div className="flex-1">
-                          <div className="text-sm font-semibold text-amber-900">
-                            Show margin breakdown in Distributor Estimate / Copy Text
-                          </div>
-                          <div className="text-xs text-amber-800 mt-0.5">
-                            {showMarginInExports
-                              ? 'Distributor Estimate PDF and copy text show distributor cost, margin %, and per-line unit prices.'
-                              : 'Distributor Estimate PDF and copy text show only the final price — cost basis and margin are hidden. (The Contractor Quote PDF always hides this regardless of this setting.)'}
-                          </div>
-                        </div>
-                      </label>
-                    </div>
-                  )}
-
-                  {profitMargin > 0 && (prices.basecoat > 0 || prices.topcoat > 0) && (
-                    <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
-                      <div className="text-xs font-semibold text-blue-900 mb-2">PRICING PREVIEW:</div>
-
-                      {/* Per-unit contractor price (cost → sell). Universal across warranty years. */}
-                      {(() => {
-                        const sellOf = (cost) => cost / (1 - profitMargin / 100);
-                        const accUnitLabel = commonResults.accessoryUnit
-                          ? (commonResults.accessoryUnit === 'Buckets' ? 'bucket' : 'roll')
-                          : 'unit';
-                        const perUnitRows = [
-                          { label: 'Basecoat', unit: 'gal', cost: prices.basecoat },
-                          { label: 'Topcoat', unit: 'gal', cost: prices.topcoat },
-                          { label: 'Rust Primer', unit: 'gal', cost: prices.rustPrimer },
-                          { label: 'Adhesion Primer', unit: 'gal', cost: prices.adhesionPrimer },
-                          { label: commonResults.accessoryName || 'Accessories', unit: accUnitLabel, cost: prices.accessory },
-                          { label: 'Reinforcement Membrane', unit: 'roll', cost: prices.membrane },
-                          { label: 'Fastener Caulk', unit: 'tube', cost: prices.fastenerCaulk },
-                        ].filter(r => r.cost > 0);
-
-                        if (perUnitRows.length === 0) return null;
-
-                        return (
-                          <div className="mb-3 bg-white p-2 rounded border border-blue-200">
-                            <div className="text-[10px] font-bold text-blue-900 uppercase tracking-wide mb-1.5">
-                              Per-Unit Price (after {profitMargin}% margin)
-                            </div>
-                            <div className="space-y-1">
-                              {perUnitRows.map((r, i) => {
-                                const sell = sellOf(r.cost);
-                                return (
-                                  <div key={i} className="flex items-center justify-between text-xs gap-2">
-                                    <span className="font-semibold text-gray-800 truncate">{r.label}</span>
-                                    <div className="flex items-center gap-1.5 whitespace-nowrap">
-                                      <span className="text-gray-500 line-through">${r.cost.toFixed(2)}/{r.unit}</span>
-                                      <span className="text-gray-400">→</span>
-                                      <span className="font-bold text-green-700">${sell.toFixed(2)}/{r.unit}</span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      <div className={`grid ${inputs.coatingSystem === 'Aluminum' ? 'grid-cols-1' : 'grid-cols-3'} gap-3 text-xs`}>
-                        {(inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20']).map(year => {
-                          const costPrice = (estimates[year]?.baseGal || 0) * prices.basecoat +
-                                           (estimates[year]?.top1Gal || 0) * prices.topcoat +
-                                           (estimates[year]?.top2Gal || 0) * prices.topcoat +
-                                           (estimates[year]?.top3Gal || 0) * prices.topcoat +
-                                           (estimates[year]?.adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                           (estimates[year]?.rustPrimerGal || 0) * prices.rustPrimer +
-                                           (commonResults.accessoryQty || 0) * prices.accessory +
-                                           (commonResults.membraneRolls || 0) * prices.membrane +
-                                           (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk +
-                                           (estimates[year]?.goldsealCost || 0);
-
-                          const sellPrice = costPrice / (1 - profitMargin / 100);
-                          const profit = sellPrice - costPrice;
-
-                          return (
-                            <div key={year} className="bg-white p-2 rounded border border-blue-200">
-                              <div className="font-bold text-center text-blue-900 mb-1">{year}-Year</div>
-                              <div className="space-y-1">
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">Your Cost:</span>
-                                  <span className="font-semibold text-blue-700">${costPrice.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between border-t pt-1">
-                                  <span className="text-gray-600">Sell Price:</span>
-                                  <span className="font-bold text-green-700">${sellPrice.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between border-t pt-1">
-                                  <span className="text-gray-600">Your Profit:</span>
-                                  <span className="font-bold text-amber-600">${profit.toFixed(2)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* COMPARISON TABLE */}
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg print:border-gray-300">
-                  <thead>
-                    <tr className="bg-gray-100">
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-green-50 border-l border-r border-gray-200">Price/Unit</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-white border-l border-r border-gray-200">10-Year</th>
-                      {inputs.coatingSystem !== 'Aluminum' && (
-                        <>
-                          <th className="px-4 py-3 text-center text-xs font-bold text-blue-800 uppercase tracking-wider bg-blue-50 border-l border-r border-blue-100">15-Year</th>
-                          <th className="px-4 py-3 text-center text-xs font-bold text-purple-800 uppercase tracking-wider bg-purple-50">20-Year</th>
-                        </>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    
-                    {/* Base Coat (Acrylic) OR System Primer (Silicone) */}
-                    {inputs.coatingSystem !== 'Aluminum' && (estimates['10']?.baseGal > 0 || (inputs.coatingSystem === 'Silicone' && estimates['10']?.baseGal > 0)) && (
-                        <tr>
-                            <td className="px-4 py-3">
-                                <div className="text-sm font-bold text-gray-900">Basecoat</div>
-                                <div className="text-xs text-gray-500">{inputs.selectedBasecoat}</div>
-                            </td>
-                            <td className="px-4 py-3 text-center bg-green-50 border-l border-r border-gray-200">
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="$/gal"
-                                    value={prices.basecoat || ''}
-                                    onChange={(e) => handlePriceChange('basecoat', e.target.value)}
-                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
-                                />
-                            </td>
-                            <td className="px-4 py-3 text-center text-sm text-gray-600 border-l border-r border-gray-200">
-                                <div>{estimates['10'].baseGal} gal</div>
-                                {prices.basecoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].baseGal * prices.basecoat).toFixed(2)}</div>
-                                )}
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center text-sm text-blue-800 font-semibold bg-blue-50 border-l border-r border-blue-100">
-                                        <div>{estimates['15'].baseGal} gal</div>
-                                        {prices.basecoat > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].baseGal * prices.basecoat).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center text-sm text-purple-800 font-semibold bg-purple-50">
-                                        <div>{estimates['20'].baseGal} gal</div>
-                                        {prices.basecoat > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].baseGal * prices.basecoat).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-                    
-                    {/* Spot Prime note row — rust present but user chose spot prime, so no quantities */}
-                    {inputs.hasRust && inputs.rustPrimeMethod === 'spot'
-                      && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
-                      && inputs.roofType === 'Metal' && (
-                        <tr className="bg-amber-50">
-                            <td className="px-4 py-3" colSpan={inputs.coatingSystem === 'Aluminum' ? 3 : 5}>
-                                <div className="flex items-start gap-2">
-                                    <Info size={14} className="mt-0.5 text-amber-700 flex-shrink-0" />
-                                    <div>
-                                        <div className="text-sm font-bold text-amber-900">Rust Primer — Spot Prime</div>
-                                        <div className="text-xs text-amber-800 mt-0.5">{currentPrimers.rust} — {SPOT_PRIME_NOTE}. No field quantity calculated.</div>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                    )}
-
-                    {/* Rust Primer (Silicone Metal Only) */}
-                    {(estimates['10']?.rustPrimerGal > 0) && (
-                        <tr className="bg-orange-50">
-                            <td className="px-4 py-3">
-                                <div className="text-sm font-bold text-orange-900">Rust Primer</div>
-                                <div className="text-xs text-orange-700">{currentPrimers.rust} (Sold in 5-gal pails)</div>
-                            </td>
-                            <td className="px-4 py-3 text-center bg-green-50 border-l border-r border-orange-100">
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="$/gal"
-                                    value={prices.rustPrimer || ''}
-                                    onChange={(e) => handlePriceChange('rustPrimer', e.target.value)}
-                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
-                                />
-                            </td>
-                            <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold border-l border-r border-orange-100">
-                                <div>{estimates['10'].rustPrimerGal} gal</div>
-                                {prices.rustPrimer > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
-                                )}
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold border-l border-r border-orange-100">
-                                        <div>{estimates['15'].rustPrimerGal} gal</div>
-                                        {prices.rustPrimer > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center text-sm text-orange-800 font-semibold">
-                                        <div>{estimates['20'].rustPrimerGal} gal</div>
-                                        {prices.rustPrimer > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].rustPrimerGal * prices.rustPrimer).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-
-                    {/* Adhesion Primer */}
-                    {!inputs.passedAdhesion && (
-                        <tr className="bg-red-50">
-                            <td className="px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm font-bold text-red-900"><AlertTriangle size={14}/> Adhesion Primer</div>
-                                <div className="text-xs text-red-700">{currentPrimers.adhesion} (Sold in 1-gal containers)</div>
-                            </td>
-                            <td className="px-4 py-3 text-center bg-green-50 border-l border-r border-red-100">
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="$/gal"
-                                    value={prices.adhesionPrimer || ''}
-                                    onChange={(e) => handlePriceChange('adhesionPrimer', e.target.value)}
-                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
-                                />
-                            </td>
-                            <td className="px-4 py-3 text-center text-sm text-red-700 border-l border-r border-red-100">
-                                <div>{estimates['10'].adhesionPrimerGal} gal</div>
-                                {prices.adhesionPrimer > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
-                                )}
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold border-l border-r border-red-100">
-                                        <div>{estimates['15'].adhesionPrimerGal} gal</div>
-                                        {prices.adhesionPrimer > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center text-sm text-red-700 font-semibold">
-                                        <div>{estimates['20'].adhesionPrimerGal} gal</div>
-                                        {prices.adhesionPrimer > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].adhesionPrimerGal * prices.adhesionPrimer).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-
-                    {/* Top Coat 1 */}
-                    {(estimates['10']?.top1Gal > 0 || estimates['15']?.top1Gal > 0 || estimates['20']?.top1Gal > 0) && (
-                        <tr>
-                            <td className="px-4 py-3">
-                                <div className="text-sm font-bold text-gray-900">Topcoat 1</div>
-                                <div className="text-xs text-gray-500">{inputs.selectedTopcoat}</div>
-                            </td>
-                            <td className="px-4 py-3 text-center bg-green-50 border-l border-r border-gray-200">
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="$/gal"
-                                    value={prices.topcoat || ''}
-                                    onChange={(e) => handlePriceChange('topcoat', e.target.value)}
-                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center print:border-0 print:bg-transparent"
-                                />
-                            </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">
-                                <div>{estimates['10'].top1Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].top1Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
-                                        <div>{estimates['15'].top1Gal} gal</div>
-                                        {prices.topcoat > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].top1Gal * prices.topcoat).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
-                                        <div>{estimates['20'].top1Gal} gal</div>
-                                        {prices.topcoat > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].top1Gal * prices.topcoat).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-
-                    {/* Top Coat 2 */}
-                    {(estimates['10']?.top2Gal > 0 || estimates['15']?.top2Gal > 0 || estimates['20']?.top2Gal > 0) && (
-                        <tr>
-                            <td className="px-4 py-3">
-                                <div className="text-sm font-bold text-gray-900">Topcoat 2</div>
-                                <div className="text-xs text-gray-500">{inputs.selectedTopcoat}</div>
-                            </td>
-                            <td className="px-4 py-3 text-center bg-gray-50 border-l border-r border-gray-200">
-                                <div className="text-xs text-gray-500">Same as above</div>
-                            </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">
-                                <div>{estimates['10'].top2Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].top2Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
-                                        <div>{estimates['15'].top2Gal} gal</div>
-                                        {prices.topcoat > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].top2Gal * prices.topcoat).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
-                                        <div>{estimates['20'].top2Gal} gal</div>
-                                        {prices.topcoat > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].top2Gal * prices.topcoat).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-
-                    {/* Top Coat 3 */}
-                    {(estimates['10']?.top3Gal > 0 || estimates['15']?.top3Gal > 0 || estimates['20']?.top3Gal > 0) && (
-                        <tr>
-                            <td className="px-4 py-3">
-                                <div className="text-sm font-bold text-gray-900">Topcoat 3</div>
-                                <div className="text-xs text-gray-500">{inputs.selectedTopcoat}</div>
-                            </td>
-                            <td className="px-4 py-3 text-center bg-gray-50 border-l border-r border-gray-200">
-                                <div className="text-xs text-gray-500">Same as above</div>
-                            </td>
-                            <td className="px-4 py-3 text-center text-lg font-bold text-gray-900 border-l border-r border-gray-200">
-                                <div>{estimates['10'].top3Gal} gal</div>
-                                {prices.topcoat > 0 && (
-                                    <div className="text-xs font-bold text-green-700">${(estimates['10'].top3Gal * prices.topcoat).toFixed(2)}</div>
-                                )}
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center text-lg font-bold text-blue-700 bg-blue-50 border-l border-r border-blue-100">
-                                        <div>{estimates['15'].top3Gal} gal</div>
-                                        {prices.topcoat > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['15'].top3Gal * prices.topcoat).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-center text-lg font-bold text-purple-700 bg-purple-50">
-                                        <div>{estimates['20'].top3Gal} gal</div>
-                                        {prices.topcoat > 0 && (
-                                            <div className="text-xs font-bold text-green-700">${(estimates['20'].top3Gal * prices.topcoat).toFixed(2)}</div>
-                                        )}
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-
-                    {/* Total System Gallons */}
-                    <tr className="bg-gray-200">
-                        <td className="px-4 py-3 text-sm font-bold text-gray-900">TOTAL SYSTEM (Gallons)</td>
-                        <td className="px-4 py-3 text-center bg-gray-100 border-l border-r border-gray-300">
-                            <div className="text-xs text-gray-600">Materials Subtotal</div>
-                        </td>
-                        <td className="px-4 py-3 text-center text-lg font-black text-gray-900 border-l border-r border-gray-300">
-                            <div>{estimates['10'].totalGallons} gal</div>
-                            {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
-                                <div className="text-sm font-black text-green-700">
-                                    ${((estimates['10'].baseGal || 0) * prices.basecoat +
-                                       (estimates['10'].top1Gal || 0) * prices.topcoat +
-                                       (estimates['10'].top2Gal || 0) * prices.topcoat +
-                                       (estimates['10'].top3Gal || 0) * prices.topcoat +
-                                       (estimates['10'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                       (estimates['10'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
-                                </div>
-                            )}
-                        </td>
-                        {inputs.coatingSystem !== 'Aluminum' && (
-                            <>
-                                <td className="px-4 py-3 text-center text-lg font-black text-blue-900 bg-blue-100 border-l border-r border-blue-200">
-                                    <div>{estimates['15'].totalGallons} gal</div>
-                                    {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
-                                        <div className="text-sm font-black text-green-700">
-                                            ${((estimates['15'].baseGal || 0) * prices.basecoat +
-                                               (estimates['15'].top1Gal || 0) * prices.topcoat +
-                                               (estimates['15'].top2Gal || 0) * prices.topcoat +
-                                               (estimates['15'].top3Gal || 0) * prices.topcoat +
-                                               (estimates['15'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                               (estimates['15'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
-                                        </div>
-                                    )}
-                                </td>
-                                <td className="px-4 py-3 text-center text-lg font-black text-purple-900 bg-purple-100">
-                                    <div>{estimates['20'].totalGallons} gal</div>
-                                    {(prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0) && (
-                                        <div className="text-sm font-black text-green-700">
-                                            ${((estimates['20'].baseGal || 0) * prices.basecoat +
-                                               (estimates['20'].top1Gal || 0) * prices.topcoat +
-                                               (estimates['20'].top2Gal || 0) * prices.topcoat +
-                                               (estimates['20'].top3Gal || 0) * prices.topcoat +
-                                               (estimates['20'].adhesionPrimerGal || 0) * prices.adhesionPrimer +
-                                               (estimates['20'].rustPrimerGal || 0) * prices.rustPrimer).toFixed(2)}
-                                        </div>
-                                    )}
-                                </td>
-                            </>
-                        )}
-                    </tr>
-
-                    {/* Goldseal */}
-                    {inputs.goldseal && (
-                         <tr>
-                            <td className="px-4 py-3 text-sm font-medium text-yellow-900 bg-yellow-50">Goldseal Warranty</td>
-                            <td className="px-4 py-3 text-center bg-yellow-50 border-l border-r border-yellow-200">
-                                <div className="text-xs text-gray-500">Warranty Cost</div>
-                            </td>
-                            <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-50 border-l border-r border-yellow-200">{formatCurrency(estimates['10'].goldsealCost)}</td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-100 border-l border-r border-yellow-200">{formatCurrency(estimates['15'].goldsealCost)}</td>
-                                    <td className="px-4 py-3 text-center text-sm font-bold text-yellow-900 bg-yellow-100">{formatCurrency(estimates['20'].goldsealCost)}</td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-
-                    {/* GRAND TOTAL */}
-                    <tr className="bg-green-100 border-t-4 border-green-600">
-                        <td className="px-4 py-4 text-base font-black text-gray-900">
-                            {profitMargin > 0 ? 'COST TO DISTRIBUTOR' : 'GRAND TOTAL'}
-                        </td>
-                        <td className="px-4 py-4 text-center bg-green-50 border-l border-r border-green-200">
-                            <div className="text-xs text-gray-600 print:hidden">
-                                {profitMargin > 0 ? 'Your Cost' : 'All Costs'}
-                            </div>
-                        </td>
-                        <td className="px-4 py-4 text-center border-l border-r border-green-200">
-                            {hasPrices ? (
-                                <div className="text-xl font-black text-blue-700">
-                                    ${(grandTotals['10'] || 0).toFixed(2)}
-                                </div>
-                            ) : (
-                                <div className="text-sm text-gray-500">Enter prices</div>
-                            )}
-                        </td>
-                        {inputs.coatingSystem !== 'Aluminum' && (
-                            <>
-                                <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
-                                    {hasPrices ? (
-                                        <div className="text-xl font-black text-blue-700">
-                                            ${(grandTotals['15'] || 0).toFixed(2)}
-                                        </div>
-                                    ) : (
-                                        <div className="text-sm text-gray-500">Enter prices</div>
-                                    )}
-                                </td>
-                                <td className="px-4 py-4 text-center bg-purple-50">
-                                    {hasPrices ? (
-                                        <div className="text-xl font-black text-blue-700">
-                                            ${(grandTotals['20'] || 0).toFixed(2)}
-                                        </div>
-                                    ) : (
-                                        <div className="text-sm text-gray-500">Enter prices</div>
-                                    )}
-                                </td>
-                            </>
-                        )}
-                    </tr>
-
-                    {/* COST PER SQ FT */}
-                    {hasPrices && inputs.roofSizeSqFt > 0 && (
-                        <tr className="bg-green-50 border-t border-green-300">
-                            <td className="px-4 py-3 text-sm font-bold text-gray-700">
-                                {profitMargin > 0 ? 'DISTRIBUTOR $/SQ FT' : 'COST PER SQ FT'}
-                            </td>
-                            <td className="px-4 py-3 text-center border-l border-r border-green-200">
-                                <div className="text-xs text-gray-500">Material Cost</div>
-                            </td>
-                            <td className="px-4 py-3 text-center border-l border-r border-green-200">
-                                <div className="text-base font-bold text-blue-700">
-                                    {formatCurrency((grandTotals['10'] || 0) / inputs.roofSizeSqFt)}/sqft
-                                </div>
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center bg-blue-50 border-l border-r border-blue-200">
-                                        <div className="text-base font-bold text-blue-700">
-                                            {formatCurrency((grandTotals['15'] || 0) / inputs.roofSizeSqFt)}/sqft
-                                        </div>
-                                    </td>
-                                    <td className="px-4 py-3 text-center bg-purple-50">
-                                        <div className="text-base font-bold text-blue-700">
-                                            {formatCurrency((grandTotals['20'] || 0) / inputs.roofSizeSqFt)}/sqft
-                                        </div>
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-
-                    {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
-                    {profitMargin > 0 && hasPrices && (
-                        <tr className="bg-gradient-to-r from-green-100 to-emerald-100 border-t-2 border-green-500">
-                            <td className="px-4 py-4 text-base font-black text-gray-900">CONTRACTOR PRICE</td>
-                            <td className="px-4 py-4 text-center bg-green-50 border-l border-r border-green-200">
-                                <div className="text-xs text-green-700 font-semibold print:hidden">{profitMargin}% Margin</div>
-                            </td>
-                            <td className="px-4 py-4 text-center border-l border-r border-green-200">
-                                <div className="text-2xl font-black text-green-700">
-                                    ${((grandTotals['10'] || 0) / (1 - profitMargin / 100)).toFixed(2)}
-                                </div>
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-4 text-center bg-blue-50 border-l border-r border-blue-200">
-                                        <div className="text-2xl font-black text-green-700">
-                                            ${((grandTotals['15'] || 0) / (1 - profitMargin / 100)).toFixed(2)}
-                                        </div>
-                                    </td>
-                                    <td className="px-4 py-4 text-center bg-purple-50">
-                                        <div className="text-2xl font-black text-green-700">
-                                            ${((grandTotals['20'] || 0) / (1 - profitMargin / 100)).toFixed(2)}
-                                        </div>
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-
-                    {/* CONTRACTOR $/SQ FT */}
-                    {profitMargin > 0 && hasPrices && inputs.roofSizeSqFt > 0 && (
-                        <tr className="bg-emerald-50 border-t border-green-300">
-                            <td className="px-4 py-3 text-sm font-bold text-gray-700">CONTRACTOR $/SQ FT</td>
-                            <td className="px-4 py-3 text-center border-l border-r border-green-200">
-                                <div className="text-xs text-gray-500">Sell Price</div>
-                            </td>
-                            <td className="px-4 py-3 text-center border-l border-r border-green-200">
-                                <div className="text-base font-bold text-green-700">
-                                    {formatCurrency((grandTotals['10'] || 0) / (1 - profitMargin / 100) / inputs.roofSizeSqFt)}/sqft
-                                </div>
-                            </td>
-                            {inputs.coatingSystem !== 'Aluminum' && (
-                                <>
-                                    <td className="px-4 py-3 text-center bg-blue-50 border-l border-r border-blue-200">
-                                        <div className="text-base font-bold text-green-700">
-                                            {formatCurrency((grandTotals['15'] || 0) / (1 - profitMargin / 100) / inputs.roofSizeSqFt)}/sqft
-                                        </div>
-                                    </td>
-                                    <td className="px-4 py-3 text-center bg-purple-50">
-                                        <div className="text-base font-bold text-green-700">
-                                            {formatCurrency((grandTotals['20'] || 0) / (1 - profitMargin / 100) / inputs.roofSizeSqFt)}/sqft
-                                        </div>
-                                    </td>
-                                </>
-                            )}
-                        </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* ENERGY SAVINGS ESTIMATOR (TOGGLEABLE) */}
-              <div className="mt-6 print:hidden">
-                <button
-                  onClick={() => setShowEnergySavings(!showEnergySavings)}
-                  className="w-full bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-300 rounded-lg p-4 flex items-center justify-between text-left hover:from-green-100 hover:to-blue-100 transition-all shadow-sm"
-                >
-                  <span className="flex items-center gap-2 font-semibold text-gray-700">
-                    <Zap className="text-green-600" size={20} />
-                    Energy Savings Estimator (Optional)
-                  </span>
-                  {showEnergySavings ? <ChevronUp size={20} className="text-gray-600" /> : <ChevronDown size={20} className="text-gray-600" />}
-                </button>
-
-                {showEnergySavings && (
-                  <div className="mt-2">
-                    <EnergySavingsEstimator
-                      roofSize={inputs.roofSizeSqFt}
-                      roofType={inputs.roofType}
-                      coatingSystem={inputs.coatingSystem}
-                      selectedRegion={energyRegion}
-                      onRegionChange={setEnergyRegion}
-                      onResultsChange={(results, rate, region) => {
-                        setEnergySavingsResults(results);
-                        setEnergyElectricityRate(rate);
-                        if (region) setEnergyRegion(region);
-                      }}
-                    />
-                  </div>
+            {/* DISTRIBUTOR MARGIN */}
+            <div className="px-4 sm:px-5 py-3 border-b border-line flex flex-wrap items-center gap-x-6 gap-y-2 bg-canvas/50 print:hidden">
+              <label htmlFor="margin" className="flex items-center gap-2.5">
+                <span className="text-[13px] font-medium text-ink-2">Distributor margin</span>
+                <span className="relative">
+                  <input
+                    id="margin"
+                    type="number"
+                    inputMode="decimal"
+                    step="1"
+                    min="0"
+                    max="99"
+                    value={profitMargin}
+                    onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
+                    className={`input input-sm num w-[76px] pr-7 text-right ${validationErrors.profitMargin ? 'input-error' : ''}`}
+                    placeholder="0"
+                  />
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">%</span>
+                </span>
+              </label>
+              {profitMargin > 0 && (
+                <label className="flex items-center gap-2 text-[13px] text-ink-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showMarginInExports}
+                    onChange={(e) => setShowMarginInExports(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show cost and margin in distributor estimate and email
+                </label>
+              )}
+              <div className="basis-full -mt-1 empty:hidden">
+                <ValidationError field="profitMargin" />
+                {profitMargin > 0 && (
+                  <p className="text-xs text-ink-3">
+                    {showMarginInExports
+                      ? 'Distributor estimate PDF and email text show distributor cost, margin % and per-line unit prices.'
+                      : 'Distributor estimate PDF and email text show only the final price. The contractor quote never shows cost basis or margin.'}
+                  </p>
                 )}
               </div>
+            </div>
 
-              {/* PDF DOWNLOAD BUTTONS */}
-              <div className="mt-8 print:hidden">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <button
-                    onClick={() => generatePDF('distributor')}
-                    className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-4 px-5 rounded-lg shadow-lg flex flex-col items-center justify-center gap-1 transition-all transform hover:scale-[1.02]"
-                  >
-                    <div className="flex items-center gap-2">
-                      <FileDown size={20} />
-                      <span className="text-base">Distributor Estimate</span>
-                    </div>
-                    <span className="text-xs font-normal opacity-90">Cost basis, margin, sell price — for the distributor</span>
-                  </button>
-                  <button
-                    onClick={() => generatePDF('contractor')}
-                    className="bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-800 hover:to-blue-900 text-white font-bold py-4 px-5 rounded-lg shadow-lg flex flex-col items-center justify-center gap-1 transition-all transform hover:scale-[1.02]"
-                  >
-                    <div className="flex items-center gap-2">
-                      <FileText size={20} />
-                      <span className="text-base">Contractor Quote</span>
-                    </div>
-                    <span className="text-xs font-normal opacity-90">Materials, rates, contractor pricing — no margin</span>
-                  </button>
+            {/* MISSING LINEAR FEET */}
+            {inputs.linearFeet <= 0 && (
+              <div className="px-4 sm:px-5 pt-4">
+                <div className="callout-warn">
+                  <AlertTriangle size={15} className="shrink-0 mt-px text-amber-600" />
+                  <div>
+                    <span className="font-semibold">Quote incomplete.</span> Add seam linear feet to calculate butter grade (seam sealant).
+                    {inputs.roofType === 'Metal' && commonResults.screwBuckets > 0 && (
+                      <span className="block mt-0.5 text-amber-800">Fastener encapsulation for ~{commonResults.screwCount} screws is included, based on roof area.</span>
+                    )}
+                  </div>
                 </div>
               </div>
+            )}
 
-              {/* COPY TO EMAIL SECTION */}
-              <div className="mt-4 bg-slate-800 rounded-lg p-4 print:hidden">
-                <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
-                    <h3 className="text-white font-semibold flex items-center gap-2"><Mail size={16}/> Copy for Email</h3>
-                    <div className="flex items-center gap-2">
-                        <div className="flex rounded-md overflow-hidden border border-slate-600">
-                            <button
-                                onClick={() => setEmailViewMode('distributor')}
-                                className={`text-xs px-3 py-1 transition-colors ${emailViewMode === 'distributor' ? 'bg-red-600 text-white font-semibold' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-                            >
-                                Distributor
-                            </button>
-                            <button
-                                onClick={() => setEmailViewMode('contractor')}
-                                className={`text-xs px-3 py-1 transition-colors ${emailViewMode === 'contractor' ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-                            >
-                                Contractor
-                            </button>
+            {/* ORDER TABLE */}
+            {tiers.length > 1 && (
+              <div className="sm:hidden px-4 pt-4">
+                <div className="seg" role="group" aria-label="Warranty tier">
+                  {tiers.map(y => segButton(`${y}-year`, leadTier === y, () => setMobileTier(y)))}
+                </div>
+              </div>
+            )}
+            <div className="overflow-x-auto mt-3">
+              <table className="order w-full sm:min-w-[600px] text-sm">
+                <thead>
+                  <tr>
+                    <th scope="col">Product</th>
+                    <th scope="col">Price / unit</th>
+                    {tiers.map(y => <th key={y} scope="col" className={`text-ink-2 ${tierCls(y)}`}>{y}-year</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Base Coat (Acrylic) OR System Primer (Silicone) */}
+                  {inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0 && (
+                    <tr>
+                      {productCell('Basecoat', inputs.selectedBasecoat)}
+                      {priceCell('basecoat', 'gal')}
+                      {tierQtyCells('baseGal', 'gal', prices.basecoat)}
+                    </tr>
+                  )}
+
+                  {/* Spot Prime note row — rust present but user chose spot prime, so no quantities */}
+                  {inputs.hasRust && inputs.rustPrimeMethod === 'spot'
+                    && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
+                    && inputs.roofType === 'Metal' && (
+                    <tr>
+                      <td colSpan={colCount} className="!text-left">
+                        <div className="flex items-start gap-2">
+                          <Info size={14} className="mt-0.5 text-amber-600 shrink-0" />
+                          <div>
+                            <div className="font-medium">Rust primer — spot prime</div>
+                            <div className="text-xs text-ink-3 mt-0.5">{currentPrimers.rust} — {SPOT_PRIME_NOTE}. No field quantity calculated.</div>
+                          </div>
                         </div>
-                        <button onClick={copyToClipboard} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded flex items-center gap-1 transition-colors">
-                            {copySuccess ? <CheckCircle size={12}/> : <Copy size={12}/>} {copySuccess ? 'Copied!' : 'Copy to Clipboard'}
-                        </button>
-                    </div>
-                </div>
-                <div className="text-[10px] text-slate-400 mb-2">
-                    {emailViewMode === 'contractor'
-                        ? profitMargin > 0
-                            ? `Prices marked up to contractor price (post ${profitMargin}% margin). No distributor cost or margin info included.`
-                            : 'No margin set — prices shown match the values entered above.'
-                        : 'Distributor view — includes cost basis and margin breakdown per the toggle above.'}
-                </div>
-                <textarea readOnly value={emailViewMode === 'contractor' ? contractorEmailText : emailText} className="w-full h-32 bg-slate-900 text-slate-300 text-xs font-mono p-3 rounded border border-slate-700 focus:outline-none"/>
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Rust Primer (Metal only) */}
+                  {estimates['10']?.rustPrimerGal > 0 && (
+                    <tr>
+                      {productCell('Rust primer', `${currentPrimers.rust} · 5-gal pails`)}
+                      {priceCell('rustPrimer', 'gal')}
+                      {tierQtyCells('rustPrimerGal', 'gal', prices.rustPrimer)}
+                    </tr>
+                  )}
+
+                  {/* Adhesion Primer */}
+                  {!inputs.passedAdhesion && (
+                    <tr>
+                      {productCell('Adhesion primer', `${currentPrimers.adhesion} · 1-gal containers`,
+                        <span className="badge bg-red-50 text-red-700 mt-1.5"><AlertTriangle size={11} /> Failed adhesion test</span>)}
+                      {priceCell('adhesionPrimer', 'gal')}
+                      {tierQtyCells('adhesionPrimerGal', 'gal', prices.adhesionPrimer)}
+                    </tr>
+                  )}
+
+                  {/* Top Coats */}
+                  {['top1Gal', 'top2Gal', 'top3Gal'].map((field, i) => (
+                    (estimates['10']?.[field] > 0 || estimates['15']?.[field] > 0 || estimates['20']?.[field] > 0) && (
+                      <tr key={field}>
+                        {productCell(`Topcoat ${i + 1}`, inputs.selectedTopcoat)}
+                        {i === 0 ? priceCell('topcoat', 'gal') : sameAsCell('Same as topcoat 1')}
+                        {tierQtyCells(field, 'gal', prices.topcoat)}
+                      </tr>
+                    )
+                  ))}
+
+                  {/* Coatings subtotal */}
+                  <tr className="row-sub">
+                    <td>Coatings total</td>
+                    <td />
+                    {tiers.map(y => (
+                      <td key={y} className={`num whitespace-nowrap ${tierCls(y)}`}>
+                        <div>{fmtQty(estimates[y]?.totalGallons)} gal</div>
+                        {hasCoatingPrices && <div className="text-xs text-ink-3 font-normal mt-0.5">{formatCurrency(coatingCost(y))}</div>}
+                      </td>
+                    ))}
+                  </tr>
+
+                  {/* ACCESSORIES (same quantity for every warranty tier) */}
+                  {hasAccessoryRows && (
+                    <tr>
+                      <td colSpan={colCount} className="!text-left !pt-4 !pb-1.5 text-xs font-medium text-ink-3">Accessories</td>
+                    </tr>
+                  )}
+
+                  {showAccessory && (
+                    commonResults.screwBuckets > 0 ? (
+                      /* Metal roof: the seam sealer does double duty — sealing seams (by
+                         linear feet) and encapsulating fasteners (by roof area). Show them
+                         as separate line items sharing one per-bucket price. */
+                      <>
+                        {commonResults.linearBuckets > 0 && (
+                          <tr>
+                            {productCell(`${commonResults.accessoryName || 'Seam sealer'} — seams`, 'By linear feet')}
+                            {priceCell('accessory', 'bucket')}
+                            {commonQtyCells(commonResults.linearBuckets, 'buckets', prices.accessory)}
+                          </tr>
+                        )}
+                        <tr>
+                          {productCell(`${commonResults.accessoryName || 'Seam sealer'} — fasteners`, `Encapsulates ~${(commonResults.screwCount || 0).toLocaleString()} fasteners (by roof area)`)}
+                          {commonResults.linearBuckets > 0 ? sameAsCell('Same as above') : priceCell('accessory', 'bucket')}
+                          {commonQtyCells(commonResults.screwBuckets, 'buckets', prices.accessory)}
+                        </tr>
+                      </>
+                    ) : (
+                      <tr>
+                        {productCell(
+                          inputs.linearFeet > 0 ? commonResults.accessoryName : 'Fastener encapsulation',
+                          inputs.linearFeet > 0 ? commonResults.accessoryDesc : 'Metal roof screw encapsulation'
+                        )}
+                        {priceCell('accessory', accUnitSingular)}
+                        {commonQtyCells(commonResults.accessoryQty, (commonResults.accessoryUnit || '').toLowerCase(), prices.accessory)}
+                      </tr>
+                    )
+                  )}
+
+                  {/* FASTENER CAULK ROW (when toggled on for metal roofs) */}
+                  {commonResults.fastenerCaulkTubes > 0 && (
+                    <tr>
+                      {productCell('Fastener caulk', `${FASTENER_CAULK_NAME} · ~${FASTENERS_PER_CAULK_TUBE} fasteners/tube, covers ~${(commonResults.screwCount || 0).toLocaleString()}`)}
+                      {priceCell('fastenerCaulk', 'tube')}
+                      {commonQtyCells(commonResults.fastenerCaulkTubes, 'tubes', prices.fastenerCaulk)}
+                    </tr>
+                  )}
+
+                  {/* ACRYLIC MEMBRANE ROW (Only for Reinforced) */}
+                  {isReinforced && (
+                    <tr>
+                      {productCell('Reinforcement membrane', `Full-system reinforcement · 40" × 324' rolls`)}
+                      {priceCell('membrane', 'roll')}
+                      {commonQtyCells(commonResults.membraneRolls, 'rolls', prices.membrane)}
+                    </tr>
+                  )}
+
+                  {/* Goldseal */}
+                  {inputs.goldseal && (
+                    <tr>
+                      {productCell('Goldseal warranty', 'Warranty cost')}
+                      <td />
+                      {tiers.map(y => <td key={y} className={`num font-medium ${tierCls(y)}`}>{formatCurrency(estimates[y]?.goldsealCost || 0)}</td>)}
+                    </tr>
+                  )}
+
+                  {/* GRAND TOTAL */}
+                  <tr className="row-total">
+                    <td>{profitMargin > 0 ? 'Cost to distributor' : 'Total'}</td>
+                    <td className="!font-normal text-xs text-ink-3"><span className="print:hidden">{profitMargin > 0 ? 'Your cost' : 'All materials'}</span></td>
+                    {tiers.map(y => (
+                      <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>
+                        {hasPrices ? formatCurrency(grandTotals[y] || 0) : <span className="text-[13px] font-normal text-ink-4">Enter prices</span>}
+                      </td>
+                    ))}
+                  </tr>
+
+                  {/* COST PER SQ FT */}
+                  {hasPrices && inputs.roofSizeSqFt > 0 && (
+                    <tr className="row-meta">
+                      <td>{profitMargin > 0 ? 'Distributor cost per sq ft' : 'Cost per sq ft'}</td>
+                      <td />
+                      {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) / inputs.roofSizeSqFt)}</td>)}
+                    </tr>
+                  )}
+
+                  {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
+                  {profitMargin > 0 && hasPrices && (
+                    <>
+                      <tr className="row-total">
+                        <td>
+                          Contractor price
+                          <div className="text-xs font-normal text-ink-3 mt-0.5 print:hidden">{profitMargin}% margin</div>
+                        </td>
+                        <td />
+                        {tiers.map(y => (
+                          <td key={y} className={`num text-[15px] text-accent-700 whitespace-nowrap ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor)}</td>
+                        ))}
+                      </tr>
+                      <tr className="row-meta print:hidden">
+                        <td>Your profit</td>
+                        <td />
+                        {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor - (grandTotals[y] || 0))}</td>)}
+                      </tr>
+                      {inputs.roofSizeSqFt > 0 && (
+                        <tr className="row-meta">
+                          <td>Contractor price per sq ft</td>
+                          <td />
+                          {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor / inputs.roofSizeSqFt)}</td>)}
+                        </tr>
+                      )}
+                    </>
+                  )}
+                  <tr className="row-meta"><td colSpan={colCount} className="!pb-3" /></tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* PDF DOWNLOADS */}
+            <div className="px-4 sm:px-5 py-4 border-t border-line grid sm:grid-cols-2 gap-x-3 gap-y-4 print:hidden">
+              <div>
+                <button onClick={() => generatePDF('distributor')} className="btn-primary btn-lg w-full">
+                  <FileDown size={16} /> Distributor estimate
+                </button>
+                <p className="hint">PDF with cost basis, margin and sell price, for the distributor.</p>
+              </div>
+              <div>
+                <button onClick={() => generatePDF('contractor')} className="btn-secondary btn-lg w-full">
+                  <FileText size={16} /> Contractor quote
+                </button>
+                <p className="hint">PDF with materials, rates and contractor pricing. No cost basis or margin.</p>
               </div>
             </div>
-            
-            {/* Footer */}
-            <div className="bg-gray-100 p-4 text-xs text-center text-gray-500 border-t border-gray-200">
-              <p className="mb-2">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% Waste and ${Math.round(inputs.stretchFactor * 100)}% Stretch factors.`}</p>
-              <div className="font-bold text-gray-700 mt-2 border-t border-gray-200 pt-2">
-                DISCLAIMER: THIS QUOTE IS PROVIDED AS A GUIDELINE AND ESTIMATE ONLY. ACTUAL MATERIAL QUANTITIES MAY VARY DEPENDING ON FACTORS INCLUDING BUT NOT LIMITED TO: APPLICATION RATES, TRUE MEASUREMENTS, AND WASTE FACTORS. THE END-USER IS SOLELY RESPONSIBLE FOR VERIFYING ALL MEASUREMENTS AND SITE CONDITIONS. FINAL APPROVAL OF QUANTITIES AND COSTS RESTS WITH THE PURCHASER.
+
+            <div className="px-4 sm:px-5 py-3 border-t border-line text-xs text-ink-3 leading-relaxed bg-canvas/50">
+              <p className="mb-1">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% waste and ${Math.round(inputs.stretchFactor * 100)}% stretch.`}</p>
+              <p>
+                Disclaimer: this quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements and waste factors. The end user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.
+              </p>
+            </div>
+          </section>
+
+          {/* COPY TO EMAIL SECTION */}
+          <section className="panel print:hidden">
+            <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 pt-4 pb-3">
+              <h2 className="text-sm font-semibold flex items-center gap-2"><Mail size={15} className="text-ink-3" /> Email text</h2>
+              <div className="flex items-center gap-2">
+                <div className="seg" role="group" aria-label="Email version">
+                  {segButton('Distributor', emailViewMode === 'distributor', () => setEmailViewMode('distributor'))}
+                  {segButton('Contractor', emailViewMode === 'contractor', () => setEmailViewMode('contractor'))}
+                </div>
+                <button onClick={copyToClipboard} className="btn-secondary">
+                  {copySuccess ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {copySuccess ? 'Copied' : 'Copy'}
+                </button>
               </div>
             </div>
-          </div>
+            <div className="px-4 sm:px-5 pb-4">
+              <p className="text-xs text-ink-3 mb-2">
+                {emailViewMode === 'contractor'
+                  ? profitMargin > 0
+                    ? `Prices marked up to contractor price (${profitMargin}% margin). No distributor cost or margin included.`
+                    : 'No margin set, so prices match the values entered above.'
+                  : 'Distributor version. Includes cost basis and margin if that option is on.'}
+              </p>
+              <textarea
+                readOnly
+                aria-label="Email text"
+                value={emailViewMode === 'contractor' ? contractorEmailText : emailText}
+                className="w-full h-44 rounded-md border border-line bg-canvas p-3 font-mono text-xs leading-relaxed text-ink-2 resize-y focus:outline-none focus:border-accent-600 focus:ring-[3px] focus:ring-accent-100"
+              />
+            </div>
+          </section>
+
+          {/* ENERGY SAVINGS ESTIMATOR (TOGGLEABLE) */}
+          <section className="panel overflow-hidden print:hidden">
+            <button
+              onClick={() => setShowEnergySavings(!showEnergySavings)}
+              aria-expanded={showEnergySavings}
+              className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-canvas/60 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Zap size={15} className="text-ink-3" />
+                Energy savings estimate
+                <span className="font-normal text-[13px] text-ink-3">Optional</span>
+              </span>
+              <ChevronDown size={16} className={`text-ink-3 transition-transform ${showEnergySavings ? 'rotate-180' : ''}`} />
+            </button>
+            {showEnergySavings && (
+              <div className="border-t border-line">
+                <EnergySavingsEstimator
+                  roofSize={inputs.roofSizeSqFt}
+                  roofType={inputs.roofType}
+                  coatingSystem={inputs.coatingSystem}
+                  selectedRegion={energyRegion}
+                  onRegionChange={setEnergyRegion}
+                  onResultsChange={(results, rate, region) => {
+                    setEnergySavingsResults(results);
+                    setEnergyElectricityRate(rate);
+                    if (region) setEnergyRegion(region);
+                  }}
+                />
+              </div>
+            )}
+          </section>
         </div>
-      </div>
+      </main>
 
       {/* QUOTE COMPARISON VIEW */}
       {showComparison && selectedForCompare.length >= 2 && (
-        <div className="max-w-6xl mx-auto mt-8 print:hidden">
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Layers size={20} /> Quote Comparison
-              </h2>
+        <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pb-8 print:hidden">
+          <section className="panel overflow-hidden">
+            <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 py-3.5 border-b border-line">
+              <h2 className="text-base font-semibold">Quote comparison</h2>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={copyComparisonText}
-                  className="text-white hover:text-blue-200 text-sm font-medium px-3 py-1 border border-white/30 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-1"
-                >
-                  {compCopied ? <CheckCircle size={14}/> : <Copy size={14}/>} {compCopied ? 'Copied!' : 'Copy Text'}
+                <button onClick={copyComparisonText} className="btn-secondary">
+                  {compCopied ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {compCopied ? 'Copied' : 'Copy text'}
                 </button>
-                <button
-                  onClick={downloadComparisonPDF}
-                  className="text-white hover:text-blue-200 text-sm font-medium px-3 py-1 border border-white/30 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-1"
-                >
-                  <FileDown size={14}/> Download PDF
+                <button onClick={downloadComparisonPDF} className="btn-secondary">
+                  <FileDown size={14} /> PDF
                 </button>
                 <button
                   onClick={() => { setShowComparison(false); setCompareMode(false); setSelectedForCompare([]); }}
-                  className="text-white hover:text-blue-200 text-sm font-medium px-3 py-1 border border-white/30 rounded-lg hover:bg-white/10 transition-colors"
+                  className="icon-btn"
+                  aria-label="Close comparison"
                 >
-                  Close
+                  <X size={16} />
                 </button>
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="order w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700 w-40"></th>
+                  <tr>
+                    <th scope="col" className="w-48"></th>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return (
-                        <th key={id} className="text-center px-4 py-3 font-bold text-gray-900">
-                          {q?.inputs.projectName || 'Untitled'}
-                        </th>
-                      );
+                      return <th key={id} scope="col" className="!text-ink !font-semibold !text-[13px]">{q?.inputs.projectName || 'Untitled'}</th>;
                     })}
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-4 py-2 font-medium text-gray-600">System</td>
+                  <tr>
+                    <td className="text-ink-3">System</td>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return (
-                        <td key={id} className="px-4 py-2 text-center">
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                            {q?.inputs.coatingSystem}
-                          </span>
-                          {q?.inputs.coatingSystem === 'Acrylic' && (
-                            <span className="inline-block ml-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
-                              {q?.inputs.acrylicSystemType}
-                            </span>
-                          )}
-                        </td>
-                      );
+                      return <td key={id}>{q?.inputs.coatingSystem}{q?.inputs.coatingSystem === 'Acrylic' ? `, ${q?.inputs.acrylicSystemType}` : ''}</td>;
                     })}
                   </tr>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <td className="px-4 py-2 font-medium text-gray-600">Roof Type</td>
+                  <tr>
+                    <td className="text-ink-3">Roof type</td>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <td key={id} className="px-4 py-2 text-center">{q?.inputs.roofType}</td>;
+                      return <td key={id}>{q?.inputs.roofType}</td>;
                     })}
                   </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-4 py-2 font-medium text-gray-600">Roof Size</td>
+                  <tr>
+                    <td className="text-ink-3">Roof area</td>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <td key={id} className="px-4 py-2 text-center">{(q?.inputs.roofSizeSqFt || 0).toLocaleString()} sqft</td>;
+                      return <td key={id} className="num">{(q?.inputs.roofSizeSqFt || 0).toLocaleString()} sq ft</td>;
                     })}
                   </tr>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <td className="px-4 py-2 font-medium text-gray-600">Customer</td>
+                  <tr>
+                    <td className="text-ink-3">Customer</td>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <td key={id} className="px-4 py-2 text-center">{q?.customerInfo?.name || q?.customerInfo?.company || '-'}</td>;
+                      return <td key={id}>{q?.customerInfo?.name || q?.customerInfo?.company || '—'}</td>;
                     })}
                   </tr>
                   {/* Totals and gallons for each warranty year */}
@@ -3828,19 +3202,19 @@ export default function App() {
                       <React.Fragment key={year}>
                         {/* Price total row - show if any quote has prices */}
                         {hasPrices && (
-                          <tr className="border-b border-gray-200 bg-blue-50">
-                            <td className="px-4 py-3 font-bold text-gray-700">{year}-Year Total</td>
+                          <tr>
+                            <td className="font-semibold">{year}-year total</td>
                             {quoteData.map((d, i) => (
-                              <td key={selectedForCompare[i]} className="px-4 py-3 text-center">
+                              <td key={selectedForCompare[i]} className="num">
                                 {d === null ? (
-                                  <span className="text-gray-400 text-xs">N/A</span>
+                                  <span className="text-ink-4 text-xs">N/A</span>
                                 ) : d.priceTotal === 0 ? (
-                                  <span className="text-gray-400 text-xs">No prices</span>
+                                  <span className="text-ink-4 text-xs">No prices</span>
                                 ) : (
-                                  <span className={`text-lg font-bold ${d.priceTotal === minTotal && validTotals.length > 1 ? 'text-green-700' : 'text-blue-700'}`}>
+                                  <span className="font-semibold">
                                     {formatCurrency(d.priceTotal)}
                                     {d.priceTotal === minTotal && validTotals.length > 1 && (
-                                      <span className="block text-xs text-green-600 font-normal">Best Value</span>
+                                      <span className="block text-xs text-green-700 font-medium">Best value</span>
                                     )}
                                   </span>
                                 )}
@@ -3849,19 +3223,19 @@ export default function App() {
                           </tr>
                         )}
                         {/* Gallon total row - always show */}
-                        <tr className={`border-b ${hasPrices ? 'border-gray-100' : 'border-gray-200 bg-blue-50'}`}>
-                          <td className={`px-4 ${hasPrices ? 'py-2' : 'py-3'} font-${hasPrices ? 'medium' : 'bold'} text-gray-${hasPrices ? '600' : '700'}`}>{year}-Year Gallons</td>
+                        <tr>
+                          <td className={hasPrices ? 'text-ink-3' : 'font-semibold'}>{year}-year gallons</td>
                           {quoteData.map((d, i) => (
-                            <td key={selectedForCompare[i]} className={`px-4 ${hasPrices ? 'py-2' : 'py-3'} text-center`}>
+                            <td key={selectedForCompare[i]} className="num">
                               {d === null ? (
-                                <span className="text-gray-400 text-xs">N/A</span>
+                                <span className="text-ink-4 text-xs">N/A</span>
                               ) : d.gallons === 0 ? (
-                                <span className="text-gray-400 text-xs">-</span>
+                                <span className="text-ink-4">—</span>
                               ) : (
-                                <span className={`${hasPrices ? 'font-semibold' : 'text-lg font-bold'} ${d.gallons === minGallons && validGallons.length > 1 ? 'text-green-700' : hasPrices ? 'text-gray-700' : 'text-blue-700'}`}>
+                                <span className={hasPrices ? '' : 'font-semibold'}>
                                   {d.gallons} gal
                                   {!hasPrices && d.gallons === minGallons && validGallons.length > 1 && (
-                                    <span className="block text-xs text-green-600 font-normal">Least Material</span>
+                                    <span className="block text-xs text-green-700 font-medium">Least material</span>
                                   )}
                                 </span>
                               )}
@@ -3895,15 +3269,15 @@ export default function App() {
                     const validSqft = sqftData.filter(d => d !== null && d > 0);
                     const minSqft = validSqft.length > 0 ? Math.min(...validSqft) : null;
                     return (
-                      <tr key={`sqft-${year}`} className="border-b border-gray-100">
-                        <td className="px-4 py-2 font-medium text-gray-600">{year}-Year $/sqft</td>
+                      <tr key={`sqft-${year}`}>
+                        <td className="text-ink-3">{year}-year per sq ft</td>
                         {sqftData.map((val, i) => (
-                          <td key={selectedForCompare[i]} className="px-4 py-2 text-center">
+                          <td key={selectedForCompare[i]} className="num">
                             {val === null ? (
-                              <span className="text-gray-400 text-xs">-</span>
+                              <span className="text-ink-4">—</span>
                             ) : (
-                              <span className={`font-bold ${val === minSqft && validSqft.length > 1 ? 'text-green-700' : 'text-gray-700'}`}>
-                                {formatCurrency(val)}/sqft
+                              <span className={val === minSqft && validSqft.length > 1 ? 'font-semibold text-green-700' : ''}>
+                                {formatCurrency(val)}
                               </span>
                             )}
                           </td>
@@ -3911,27 +3285,47 @@ export default function App() {
                       </tr>
                     );
                   })}
-                  <tr className="border-b border-gray-100">
-                    <td className="px-4 py-2 font-medium text-gray-600">Goldseal Warranty</td>
+                  <tr>
+                    <td className="text-ink-3">Goldseal warranty</td>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <td key={id} className="px-4 py-2 text-center">{q?.inputs.goldseal ? 'Yes' : 'No'}</td>;
+                      return <td key={id}>{q?.inputs.goldseal ? 'Yes' : 'No'}</td>;
                     })}
                   </tr>
-                  <tr className="bg-gray-50">
-                    <td className="px-4 py-2 font-medium text-gray-600">Quote Date</td>
+                  <tr>
+                    <td className="text-ink-3">Quote date</td>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <td key={id} className="px-4 py-2 text-center">{q?.date || new Date(q?.savedAt).toLocaleDateString()}</td>;
+                      return <td key={id} className="num">{q?.date || new Date(q?.savedAt).toLocaleDateString()}</td>;
                     })}
                   </tr>
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
-              Quotes without saved estimate data (saved before this update) cannot show totals. Re-save those quotes to enable comparison.
-            </div>
+            <p className="px-4 sm:px-5 py-3 text-xs text-ink-3 border-t border-line">
+              Quotes saved before estimate data was stored can't show totals. Re-save them to compare.
+            </p>
+          </section>
+        </div>
+      )}
+
+      {/* MOBILE SUMMARY BAR */}
+      <div className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-line px-4 py-2.5 flex items-center justify-between gap-3 print:hidden" style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))' }}>
+        <div className="min-w-0 num">
+          <div className="text-xs text-ink-3">{leadTier}-year · {commonResults.squares.toFixed(1)} sq</div>
+          <div className="text-[15px] font-semibold truncate">
+            {fmtQty(estimates[leadTier]?.totalGallons)} gal
+            {hasPrices && <span className="text-ink-3 font-normal"> · </span>}
+            {hasPrices && formatCurrency(grandTotals[leadTier] || 0)}
           </div>
+        </div>
+        <a href="#order" className="btn-secondary shrink-0">View order</a>
+      </div>
+
+      {/* TOAST */}
+      {toast && (
+        <div role="status" className="fixed z-50 bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-md bg-ink text-white text-[13px] px-3.5 py-2.5 shadow-pop print:hidden">
+          <CheckCircle size={15} className="text-green-400" /> {toast}
         </div>
       )}
     </div>

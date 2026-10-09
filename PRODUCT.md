@@ -37,6 +37,7 @@ Built around one manufacturer's real system specs. It uses Henry coating systems
 - **Henry** is the manufacturer.
 - **Enduraroof** is a private label of Henry, created by the user for their distributor partner.
 - **Prograde** product names also appear in the catalog.
+- **Visual standard (chosen 2026-10):** the app has its own neutral look, not Henry or Enduraroof brand colors. It follows the conventional SaaS-tool standard, done at full craft, with Stripe Dashboard as the polish benchmark.
 - Logo slots for both Henry and Enduraroof appear on PDF quotes (`public/logos/henry-logo.png`, `public/logos/enduraroof-logo.png`). These files are not in the repo yet; they come from the user.
 
 ## Evidence on Hand
