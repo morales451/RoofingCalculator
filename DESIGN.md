@@ -149,7 +149,7 @@ components:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
   switch-off:
-    backgroundColor: "{colors.line-strong}"
+    backgroundColor: "{colors.ink-4}"
     rounded: "{rounded.full}"
     height: "20px"
     width: "36px"
@@ -233,7 +233,7 @@ components:
 
 This is the category standard for a working SaaS tool, played straight and finished at Stripe Dashboard craft. The page is a cool neutral ground with white panels on it, hairlines between sections, and one indigo voice. The material order is the hero. Quantities, units, prices per unit and the 10, 15 and 20-year columns are set in tabular figures, so a rep can scan down a column and check it. Everything else stays out of the way.
 
-Density is deliberate. Body text is 14px and controls and labels are 13px. Controls are 32 to 36px tall, and form sections stack inside one panel instead of each field getting its own card. Depth is close to flat. Panels carry a shadow you can barely see, and only floating layers (popovers, menus, the toast) lift off the page. Color carries meaning, not decoration: the accent marks what you can act on, and red, amber and green appear only when something has failed, is missing, or has succeeded.
+Density is deliberate. Body text is 14px and controls and labels are 13px. Controls are 32 to 36px tall with a mouse and at least 44px on touch screens, and form sections stack inside one panel instead of each field getting its own card. Depth is close to flat. Panels carry a shadow you can barely see, and only floating layers (popovers, menus, the toast) lift off the page. Color carries meaning, not decoration: the accent marks what you can act on, and red, amber and green appear only when something has failed, is missing, or has succeeded.
 
 The system rejects the generic "AI tool" look: rainbow buttons, icons in tinted tiles, gradients, and a card for every field.
 
@@ -258,9 +258,9 @@ The palette is a cool blue-grey neutral scale with one saturated indigo and a sm
 - **Ledger Ink** (`ink`): Headings, values, quantities and totals. Also the background of the toast.
 - **Slate Ink** (`ink-2`): Labels, secondary button text, menu items and email text.
 - **Muted Ink** (`ink-3`): Hints, units after quantities, table headers, row meta, inline icons and the "Optional" qualifier.
-- **Faint Ink** (`ink-4`): Empty-cell em dashes, "Enter prices", and disabled input text.
+- **Faint Ink** (`ink-4`): Disabled input text and the switch's off track only. Anything a person needs to read (dashes, "Enter prices", N/A) uses Muted Ink.
 - **Hairline** (`line`): Panel borders, section dividers and table row rules.
-- **Strong Hairline** (`line-strong`): Input and secondary-button borders, the rule above table totals, the switch's off track, and the panel border in print.
+- **Strong Hairline** (`line-strong`): Input and secondary-button borders, the rule above table totals, and the panel border in print.
 - **Canvas** (`canvas`): The page background, table header row, subtotal row, segmented-control track, disabled inputs and hover fills.
 - **Surface** (`surface`): Panels, the top bar, popovers and the phone summary bar.
 - **Row Hover** (`row-hover`): The hover tint on order-table rows.
@@ -268,7 +268,7 @@ The palette is a cool blue-grey neutral scale with one saturated indigo and a sm
 ### State colors
 - **Danger** (`danger`, `danger-text`, `danger-field`, `danger-tint`, `danger-border`, `danger-callout-text`): Failed adhesion, validation errors and destructive hovers (delete icons). Covers the error border on inputs, the inline error text, the danger callout, the "Failed adhesion test" badge and the issue count in the top bar.
 - **Warning** (`warn`, `warn-icon`, `warn-field`, `warn-tint`, `warn-border`, `warn-callout-text`): Incomplete or missing data. Covers the "Quote incomplete" callout, the amber border and tint on a price field with no price, "No price" and "Excludes N unpriced items" text, the spot-prime note icon, and the unpriced count in the phone summary bar.
-- **Success** (`success`, `success-on-dark`): Confirmation and best value. Covers the Copied check, the toast check (`success-on-dark`, on ink), and the "Best value", "Least material" and lowest-per-sq-ft marks in quote comparison.
+- **Success** (`success`, `success-on-dark`): Confirmation and best value. Covers the Copied check, the toast check (`success-on-dark`, on ink), and the "Best value", "Least material" and lowest-per-sq-ft marks in quote comparison. A mark goes to a single winner only; ties carry no mark.
 
 ### Named Rules
 **The Accent-Is-a-Verb Rule.** Indigo marks only something you can press, something focused, or something selected or switched on. It never colors a heading, a figure, a panel or an icon at rest.
@@ -298,13 +298,13 @@ The palette is a cool blue-grey neutral scale with one saturated indigo and a sm
 
 ## Layout
 
-The page sits in a container up to 1320px wide, with 16px side padding (32px from 1024px). A sticky 56px white top bar has a hairline bottom border. It holds the product name on the left and the quote actions on the right: Saved (with count and a popover), Import, Export, Print, then Save quote as the one primary. Below 768px, Import, Export and Print fold into a "more" menu. Below 640px, button labels shorten.
+The page sits in a container up to 1320px wide, with 16px side padding (32px from 1024px). A sticky 56px white top bar has a hairline bottom border. It holds the product name on the left and the quote actions on the right: Saved (with count and a popover), Import, Export, Print, then Save quote as the one primary. Below 768px, Import, Export and Print fold into a "more" menu. Below 640px, button labels shorten. Beside the name, muted text reports the open quote's state: "Not saved yet", "Unsaved changes" or "All changes saved". Below 768px that becomes an amber dot on the Save button. Save updates the open quote. "Save as new" (in the Saved popover and the phone menu) makes a copy and numbers a repeated name ("Name (2)"). Ctrl/Cmd+S saves, and Esc closes the open layer and returns focus to its trigger.
 
-**Workspace grid.** From 1024px, two columns: a form panel 340 to 400px wide and a results column that takes the rest, with 24px gaps (20px below 1024px). Below 1024px the columns stack, form first. The form is one panel. Its sections are separated by hairlines, padded 20px (16px on phones), with 16px between fields. Field labels sit 6px above their controls, and hints sit 6px below.
+**Workspace grid.** From 1024px, two columns: a form panel 340 to 400px wide and a results column that takes the rest, with 24px gaps (20px below 1024px). Below 1024px the columns stack, form first. On phones the form leads with Roof, then Site conditions, Coating system and Project; from 1024px Project leads. Product picks collapse to a one-line summary with a "Change" disclosure (open by default at desk width), and controls that don't apply right now are removed rather than disabled. The form is one panel. Its sections are separated by hairlines, padded 20px (16px on phones), with 16px between fields. Field labels sit 6px above their controls, and hints sit 6px below.
 
 **Bottom-pinned results column.** From 1024px the results column is sticky. Its top offset is the smaller of 72px and (viewport height minus column height minus 16px). A column shorter than the viewport rests under the top bar. A taller one pins its bottom edge 16px above the viewport floor, so the totals and PDF exports stay in view while the form scrolls.
 
-**Below the workspace.** The email-text and energy-savings panels sit in a second row, two columns from 1024px. The footer follows: a hairline rule and the disclaimer in meta text.
+**Below the workspace.** The energy-savings panel (under the form column) and the email-text panel (under the results column) sit in a second row on the same column grid. The footer follows: a hairline rule and the disclaimer in meta text.
 
 **Phone tier.** Below 640px, a segmented 10/15/20-year picker sits above the order table, and the table shows only the selected tier's column. Below 1024px, a fixed white summary bar at the bottom (hairline top border, padding that respects the safe area) shows the tier, squares, any unpriced count, gallons and total, plus a "View order" anchor. The page reserves 80px of bottom padding for it.
 
@@ -352,7 +352,7 @@ Compact and firm, with a fixed 32px rhythm.
 A canvas track with a hairline border, 2px padding, and options of equal width. Options are 32px tall in muted 13px medium text. The selected option becomes a white chip with the control shadow and a faint strong-hairline ring, and its text goes to full ink. The control is used for every pick of two or three options (system, acrylic type, detailing, fastener method, rust coverage, email version, phone warranty tier). Selection stays neutral here: the white chip, not the accent, marks the choice.
 
 ### Switch
-36 by 20px fully round track: strong hairline grey when off, indigo when on. A 16px white knob slides 16px over 150ms. Placed at the right end of a switch row (label in 14px ink, optional 12px description). Rows are separated by hairlines.
+36 by 20px fully round track: Faint Ink when off (3:1 against white), indigo when on. An invisible hit area extends it to 44px tall. A 16px white knob slides 16px over 150ms. Placed at the right end of a switch row (label in 14px ink, optional 12px description). Rows are separated by hairlines.
 
 ### Callouts
 A 6px box with a hairline border, 10px by 12px padding, 13px text, and a leading 14 to 16px icon. **Warn** uses the amber tint, border and text, for incomplete quotes. **Danger** uses the red tint, border and text, for failed adhesion and the validation summary. **Info** uses canvas with a hairline and slate ink. Lead phrases are set in 600.
@@ -387,7 +387,8 @@ The distributor estimate, contractor quote and quote comparison are generated wi
 - **Top bar:** Covered in Layout. The actions are all secondary buttons, with one primary.
 - **Popover:** A panel with the pop shadow, 340px wide (capped at the viewport minus 32px), opening 40px below its trigger and right-aligned. It has a 13px semibold header over a hairline and hairline-divided list rows with canvas hover. A full-screen invisible scrim closes it.
 - **Menu:** A 192px panel with the pop shadow and 4px vertical padding. Items are 36px tall, 12px padding, 13px slate text with a 15px muted icon, and canvas hover.
-- **Toast:** An ink pill with 6px corners, white 13px text, a green-on-dark check and the pop shadow. Centered 24px above the bottom (80px on phones, clear of the summary bar).
+- **Toast:** An ink pill with 6px corners, white 13px text, a green-on-dark check (amber warning icon for errors) and the pop shadow. It sits under the top bar: full width with 16px insets on phones, centered from 640px, right-aligned from 1024px, clear of the totals and exports. An optional text action (Undo) and a dismiss button sit at its right. It stays 2.6s, or 6s when it carries an action.
+- **Confirm dialog:** Used only where work could be lost or a flawed quote sent (replacing an unsaved quote, downloading a PDF with input issues). A 420px white panel, pop shadow, on a 30% ink scrim. Bottom sheet on phones, centered from 640px. Title 15px semibold, body 13px. A canvas footer holds Cancel (ghost, left), the safe choice (secondary, focused first) and the proceed action (primary). Focus is trapped and Esc cancels.
 
 ### Motion
 Color changes take 100ms. The switch knob and track take 150ms. Disclosure chevrons rotate 180° when open. Nothing else moves.
@@ -399,7 +400,7 @@ Color changes take 100ms. The switch knob and track take 150ms. Disclosure chevr
 - **Do** keep exactly one primary button per region. Everything else is secondary or ghost.
 - **Do** apply tabular numerals to every figure, including inputs, dates and counts.
 - **Do** separate sections inside one panel with 1px hairlines (`line`) rather than adding more cards.
-- **Do** use 6px corners, 32px buttons and 36px inputs, with 13px labels sitting 6px above their fields.
+- **Do** use 6px corners, 32px buttons and 36px inputs (44px minimum on touch screens), with 13px labels sitting 6px above their fields.
 - **Do** reserve the pop shadow for popovers, menus and the toast. Panels keep the near-flat panel shadow.
 - **Do** use a neutral white chip for segmented selection.
 - **Do** show a missing value as a faint em dash, and a missing price as the amber "No price" state.

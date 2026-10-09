@@ -4,60 +4,506 @@
   "title": "Design System: Roofing Materials Calculator",
   "extensions": {
     "colorMeta": {
-      "accent": { "role": "primary", "displayName": "Signal Indigo", "canonical": "#4b53d0", "tonalRamp": ["#1f2366", "#323894", "#3c43b3", "#4b53d0", "#8a91e6", "#c5cbf8", "#e1e4fc", "#f0f1fe"] },
-      "accent-hover": { "role": "primary", "displayName": "Pressed Indigo", "canonical": "#3c43b3", "tonalRamp": ["#1f2366", "#323894", "#3c43b3", "#4b53d0", "#8a91e6", "#c5cbf8", "#e1e4fc", "#f0f1fe"] },
-      "accent-press": { "role": "primary", "displayName": "Deep Indigo", "canonical": "#323894", "tonalRamp": ["#1f2366", "#323894", "#3c43b3", "#4b53d0", "#8a91e6", "#c5cbf8", "#e1e4fc", "#f0f1fe"] },
-      "accent-tint": { "role": "primary", "displayName": "Focus Halo", "canonical": "#e1e4fc", "tonalRamp": ["#1f2366", "#323894", "#3c43b3", "#4b53d0", "#8a91e6", "#c5cbf8", "#e1e4fc", "#f0f1fe"] },
-      "ink": { "role": "neutral", "displayName": "Ledger Ink", "canonical": "#1a1f36", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
-      "ink-2": { "role": "neutral", "displayName": "Slate Ink", "canonical": "#3c4257", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
-      "ink-3": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#626c7e", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
-      "ink-4": { "role": "neutral", "displayName": "Faint Ink", "canonical": "#8a94a6", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
-      "line": { "role": "neutral", "displayName": "Hairline", "canonical": "#e3e8ee", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
-      "line-strong": { "role": "neutral", "displayName": "Strong Hairline", "canonical": "#c9d1da", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
-      "canvas": { "role": "neutral", "displayName": "Canvas", "canonical": "#f6f8fa", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
-      "surface": { "role": "neutral", "displayName": "Surface", "canonical": "#ffffff", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
-      "row-hover": { "role": "neutral", "displayName": "Row Hover", "canonical": "#fafbfc", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#fafbfc", "#ffffff"] },
-      "danger": { "role": "state", "displayName": "Danger", "canonical": "#b91c1c", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
-      "danger-text": { "role": "state", "displayName": "Danger Text", "canonical": "#dc2626", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
-      "danger-field": { "role": "state", "displayName": "Danger Field Border", "canonical": "#ef4444", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
-      "danger-tint": { "role": "state", "displayName": "Danger Tint", "canonical": "#fef2f2", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
-      "danger-border": { "role": "state", "displayName": "Danger Border", "canonical": "#fecaca", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
-      "danger-callout-text": { "role": "state", "displayName": "Danger Callout Text", "canonical": "#991b1b", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
-      "warn": { "role": "state", "displayName": "Warning", "canonical": "#b45309", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
-      "warn-icon": { "role": "state", "displayName": "Warning Icon", "canonical": "#d97706", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
-      "warn-field": { "role": "state", "displayName": "Unpriced Field Border", "canonical": "#fbbf24", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
-      "warn-tint": { "role": "state", "displayName": "Warning Tint", "canonical": "#fffbeb", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
-      "warn-border": { "role": "state", "displayName": "Warning Border", "canonical": "#fde68a", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
-      "warn-callout-text": { "role": "state", "displayName": "Warning Callout Text", "canonical": "#78350f", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
-      "success": { "role": "state", "displayName": "Success", "canonical": "#15803d", "tonalRamp": ["#14532d", "#166534", "#15803d", "#16a34a", "#22c55e", "#bbf7d0", "#dcfce7", "#f0fdf4"] },
-      "success-on-dark": { "role": "state", "displayName": "Success on Ink", "canonical": "#4ade80", "tonalRamp": ["#14532d", "#166534", "#15803d", "#16a34a", "#4ade80", "#bbf7d0", "#dcfce7", "#f0fdf4"] }
+      "accent": {
+        "role": "primary",
+        "displayName": "Signal Indigo",
+        "canonical": "#4b53d0",
+        "tonalRamp": [
+          "#1f2366",
+          "#323894",
+          "#3c43b3",
+          "#4b53d0",
+          "#8a91e6",
+          "#c5cbf8",
+          "#e1e4fc",
+          "#f0f1fe"
+        ]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Pressed Indigo",
+        "canonical": "#3c43b3",
+        "tonalRamp": [
+          "#1f2366",
+          "#323894",
+          "#3c43b3",
+          "#4b53d0",
+          "#8a91e6",
+          "#c5cbf8",
+          "#e1e4fc",
+          "#f0f1fe"
+        ]
+      },
+      "accent-press": {
+        "role": "primary",
+        "displayName": "Deep Indigo",
+        "canonical": "#323894",
+        "tonalRamp": [
+          "#1f2366",
+          "#323894",
+          "#3c43b3",
+          "#4b53d0",
+          "#8a91e6",
+          "#c5cbf8",
+          "#e1e4fc",
+          "#f0f1fe"
+        ]
+      },
+      "accent-tint": {
+        "role": "primary",
+        "displayName": "Focus Halo",
+        "canonical": "#e1e4fc",
+        "tonalRamp": [
+          "#1f2366",
+          "#323894",
+          "#3c43b3",
+          "#4b53d0",
+          "#8a91e6",
+          "#c5cbf8",
+          "#e1e4fc",
+          "#f0f1fe"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ledger Ink",
+        "canonical": "#1a1f36",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#f6f8fa",
+          "#ffffff"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Slate Ink",
+        "canonical": "#3c4257",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#f6f8fa",
+          "#ffffff"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#626c7e",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#f6f8fa",
+          "#ffffff"
+        ]
+      },
+      "ink-4": {
+        "role": "neutral",
+        "displayName": "Faint Ink",
+        "canonical": "#8a94a6",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#f6f8fa",
+          "#ffffff"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e3e8ee",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#f6f8fa",
+          "#ffffff"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "#c9d1da",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#f6f8fa",
+          "#ffffff"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "#f6f8fa",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#f6f8fa",
+          "#ffffff"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#f6f8fa",
+          "#ffffff"
+        ]
+      },
+      "row-hover": {
+        "role": "neutral",
+        "displayName": "Row Hover",
+        "canonical": "#fafbfc",
+        "tonalRamp": [
+          "#1a1f36",
+          "#3c4257",
+          "#626c7e",
+          "#8a94a6",
+          "#c9d1da",
+          "#e3e8ee",
+          "#fafbfc",
+          "#ffffff"
+        ]
+      },
+      "danger": {
+        "role": "state",
+        "displayName": "Danger",
+        "canonical": "#b91c1c",
+        "tonalRamp": [
+          "#7f1d1d",
+          "#991b1b",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#fecaca",
+          "#fee2e2",
+          "#fef2f2"
+        ]
+      },
+      "danger-text": {
+        "role": "state",
+        "displayName": "Danger Text",
+        "canonical": "#dc2626",
+        "tonalRamp": [
+          "#7f1d1d",
+          "#991b1b",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#fecaca",
+          "#fee2e2",
+          "#fef2f2"
+        ]
+      },
+      "danger-field": {
+        "role": "state",
+        "displayName": "Danger Field Border",
+        "canonical": "#ef4444",
+        "tonalRamp": [
+          "#7f1d1d",
+          "#991b1b",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#fecaca",
+          "#fee2e2",
+          "#fef2f2"
+        ]
+      },
+      "danger-tint": {
+        "role": "state",
+        "displayName": "Danger Tint",
+        "canonical": "#fef2f2",
+        "tonalRamp": [
+          "#7f1d1d",
+          "#991b1b",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#fecaca",
+          "#fee2e2",
+          "#fef2f2"
+        ]
+      },
+      "danger-border": {
+        "role": "state",
+        "displayName": "Danger Border",
+        "canonical": "#fecaca",
+        "tonalRamp": [
+          "#7f1d1d",
+          "#991b1b",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#fecaca",
+          "#fee2e2",
+          "#fef2f2"
+        ]
+      },
+      "danger-callout-text": {
+        "role": "state",
+        "displayName": "Danger Callout Text",
+        "canonical": "#991b1b",
+        "tonalRamp": [
+          "#7f1d1d",
+          "#991b1b",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#fecaca",
+          "#fee2e2",
+          "#fef2f2"
+        ]
+      },
+      "warn": {
+        "role": "state",
+        "displayName": "Warning",
+        "canonical": "#b45309",
+        "tonalRamp": [
+          "#78350f",
+          "#92400e",
+          "#b45309",
+          "#d97706",
+          "#fbbf24",
+          "#fde68a",
+          "#fef3c7",
+          "#fffbeb"
+        ]
+      },
+      "warn-icon": {
+        "role": "state",
+        "displayName": "Warning Icon",
+        "canonical": "#d97706",
+        "tonalRamp": [
+          "#78350f",
+          "#92400e",
+          "#b45309",
+          "#d97706",
+          "#fbbf24",
+          "#fde68a",
+          "#fef3c7",
+          "#fffbeb"
+        ]
+      },
+      "warn-field": {
+        "role": "state",
+        "displayName": "Unpriced Field Border",
+        "canonical": "#fbbf24",
+        "tonalRamp": [
+          "#78350f",
+          "#92400e",
+          "#b45309",
+          "#d97706",
+          "#fbbf24",
+          "#fde68a",
+          "#fef3c7",
+          "#fffbeb"
+        ]
+      },
+      "warn-tint": {
+        "role": "state",
+        "displayName": "Warning Tint",
+        "canonical": "#fffbeb",
+        "tonalRamp": [
+          "#78350f",
+          "#92400e",
+          "#b45309",
+          "#d97706",
+          "#fbbf24",
+          "#fde68a",
+          "#fef3c7",
+          "#fffbeb"
+        ]
+      },
+      "warn-border": {
+        "role": "state",
+        "displayName": "Warning Border",
+        "canonical": "#fde68a",
+        "tonalRamp": [
+          "#78350f",
+          "#92400e",
+          "#b45309",
+          "#d97706",
+          "#fbbf24",
+          "#fde68a",
+          "#fef3c7",
+          "#fffbeb"
+        ]
+      },
+      "warn-callout-text": {
+        "role": "state",
+        "displayName": "Warning Callout Text",
+        "canonical": "#78350f",
+        "tonalRamp": [
+          "#78350f",
+          "#92400e",
+          "#b45309",
+          "#d97706",
+          "#fbbf24",
+          "#fde68a",
+          "#fef3c7",
+          "#fffbeb"
+        ]
+      },
+      "success": {
+        "role": "state",
+        "displayName": "Success",
+        "canonical": "#15803d",
+        "tonalRamp": [
+          "#14532d",
+          "#166534",
+          "#15803d",
+          "#16a34a",
+          "#22c55e",
+          "#bbf7d0",
+          "#dcfce7",
+          "#f0fdf4"
+        ]
+      },
+      "success-on-dark": {
+        "role": "state",
+        "displayName": "Success on Ink",
+        "canonical": "#4ade80",
+        "tonalRamp": [
+          "#14532d",
+          "#166534",
+          "#15803d",
+          "#16a34a",
+          "#4ade80",
+          "#bbf7d0",
+          "#dcfce7",
+          "#f0fdf4"
+        ]
+      }
     },
     "typographyMeta": {
-      "figure": { "displayName": "Figure", "purpose": "The squares count at the top right of the material order. Tabular." },
-      "headline": { "displayName": "Headline", "purpose": "Panel headings: Material order, Quote comparison." },
-      "title": { "displayName": "Title", "purpose": "Form section headings and the product name in the top bar." },
-      "total": { "displayName": "Total", "purpose": "Grand total and contractor price figures; the phone summary bar figure. Tabular." },
-      "body": { "displayName": "Body", "purpose": "Inputs, table cells, switch labels; product names at 500." },
-      "control": { "displayName": "Control", "purpose": "Buttons, field labels, segmented options, menu items, callouts; row meta at 400." },
-      "meta": { "displayName": "Meta", "purpose": "Hints, table headers, unit and cost sub-lines, badges, footer disclaimer." },
-      "mono": { "displayName": "Mono", "purpose": "Copy-for-email text block only." }
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "The squares count at the top right of the material order. Tabular."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Panel headings: Material order, Quote comparison."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Form section headings and the product name in the top bar."
+      },
+      "total": {
+        "displayName": "Total",
+        "purpose": "Grand total and contractor price figures; the phone summary bar figure. Tabular."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Inputs, table cells, switch labels; product names at 500."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Buttons, field labels, segmented options, menu items, callouts; row meta at 400."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Hints, table headers, unit and cost sub-lines, badges, footer disclaimer."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Copy-for-email text block only."
+      }
     },
     "shadows": [
-      { "name": "panel", "value": "0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.03)", "purpose": "Every panel; reads as a border with a hint of weight. Removed in print." },
-      { "name": "xs", "value": "0 1px 1px rgba(16, 24, 40, 0.05)", "purpose": "Inputs, secondary buttons, selected segmented option, switch knob." },
-      { "name": "primary-press", "value": "0 1px 1px rgba(16, 24, 40, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.12)", "purpose": "Primary button only." },
-      { "name": "pop", "value": "0 8px 24px -4px rgba(16, 24, 40, 0.14), 0 2px 6px rgba(16, 24, 40, 0.06)", "purpose": "Floating layers only: saved-quotes popover, phone more menu, toast." }
+      {
+        "name": "panel",
+        "value": "0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.03)",
+        "purpose": "Every panel; reads as a border with a hint of weight. Removed in print."
+      },
+      {
+        "name": "xs",
+        "value": "0 1px 1px rgba(16, 24, 40, 0.05)",
+        "purpose": "Inputs, secondary buttons, selected segmented option, switch knob."
+      },
+      {
+        "name": "primary-press",
+        "value": "0 1px 1px rgba(16, 24, 40, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.12)",
+        "purpose": "Primary button only."
+      },
+      {
+        "name": "pop",
+        "value": "0 8px 24px -4px rgba(16, 24, 40, 0.14), 0 2px 6px rgba(16, 24, 40, 0.06)",
+        "purpose": "Floating layers only: saved-quotes popover, phone more menu, toast."
+      }
     ],
     "motion": [
-      { "name": "color-fast", "value": "color, background-color, border-color 100ms ease", "purpose": "Hover and press color changes on buttons, inputs, segmented options." },
-      { "name": "switch", "value": "transform 150ms ease, background-color 150ms ease", "purpose": "Switch knob slide and track fill." },
-      { "name": "disclosure", "value": "transform 150ms ease (rotate 180deg)", "purpose": "Chevron on collapsible sections." }
+      {
+        "name": "color-fast",
+        "value": "color, background-color, border-color 100ms ease",
+        "purpose": "Hover and press color changes on buttons, inputs, segmented options."
+      },
+      {
+        "name": "switch",
+        "value": "transform 150ms ease, background-color 150ms ease",
+        "purpose": "Switch knob slide and track fill."
+      },
+      {
+        "name": "disclosure",
+        "value": "transform 150ms ease (rotate 180deg)",
+        "purpose": "Chevron on collapsible sections."
+      }
     ],
     "breakpoints": [
-      { "name": "sm", "value": "640px", "purpose": "Below: single warranty-tier column with tier picker; shortened button labels." },
-      { "name": "md", "value": "768px", "purpose": "Below: Import, Export and Print fold into the more menu." },
-      { "name": "lg", "value": "1024px", "purpose": "From: two-column workspace, bottom-pinned sticky results column; below: fixed phone summary bar." },
-      { "name": "container", "value": "1320px", "purpose": "Max content width." }
+      {
+        "name": "sm",
+        "value": "640px",
+        "purpose": "Below: single warranty-tier column with tier picker; shortened button labels."
+      },
+      {
+        "name": "md",
+        "value": "768px",
+        "purpose": "Below: Import, Export and Print fold into the more menu."
+      },
+      {
+        "name": "lg",
+        "value": "1024px",
+        "purpose": "From: two-column workspace, bottom-pinned sticky results column; below: fixed phone summary bar."
+      },
+      {
+        "name": "container",
+        "value": "1320px",
+        "purpose": "Max content width."
+      }
     ],
     "print": {
       "page": "letter, 0.5in margins",
@@ -149,14 +595,14 @@
       "name": "Toast",
       "kind": "custom",
       "refersTo": "toast",
-      "description": "Ink pill confirming save and load; green check on dark.",
+      "description": "Ink pill under the top bar confirming save, load, delete and downloads; green check on dark, amber warning for errors; optional Undo action and dismiss.",
       "html": "<div class=\"ds-toast\" role=\"status\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#4ade80\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 11.08V12a10 10 0 1 1-5.93-9.14\"/><polyline points=\"22 4 12 14.01 9 11.01\"/></svg>Quote saved</div>",
       "css": ".ds-toast { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 6px; background: #1a1f36; color: #fff; font: 400 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 8px 24px -4px rgba(16,24,40,0.14), 0 2px 6px rgba(16,24,40,0.06); }"
     }
   ],
   "narrative": {
     "northStar": "The Quiet Ledger",
-    "overview": "This is the category standard for a working SaaS tool, played straight and finished at Stripe Dashboard craft. The page is a cool neutral ground with white panels on it, hairlines between sections, and one indigo voice. The material order is the hero. Quantities, units, prices per unit and the 10, 15 and 20-year columns are set in tabular figures, so a rep can scan down a column and check it. Everything else stays out of the way.\n\nDensity is deliberate. Body text is 14px and controls and labels are 13px. Controls are 32 to 36px tall, and form sections stack inside one panel instead of each field getting its own card. Depth is close to flat. Panels carry a shadow you can barely see, and only floating layers (popovers, menus, the toast) lift off the page. Color carries meaning, not decoration: the accent marks what you can act on, and red, amber and green appear only when something has failed, is missing, or has succeeded.\n\nThe system rejects the generic \"AI tool\" look: rainbow buttons, icons in tinted tiles, gradients, and a card for every field.",
+    "overview": "This is the category standard for a working SaaS tool, played straight and finished at Stripe Dashboard craft. The page is a cool neutral ground with white panels on it, hairlines between sections, and one indigo voice. The material order is the hero. Quantities, units, prices per unit and the 10, 15 and 20-year columns are set in tabular figures, so a rep can scan down a column and check it. Everything else stays out of the way.\n\nDensity is deliberate. Body text is 14px and controls and labels are 13px. Controls are 32 to 36px tall with a mouse and at least 44px on touch screens, and form sections stack inside one panel instead of each field getting its own card. Depth is close to flat. Panels carry a shadow you can barely see, and only floating layers (popovers, menus, the toast) lift off the page. Color carries meaning, not decoration: the accent marks what you can act on, and red, amber and green appear only when something has failed, is missing, or has succeeded.\n\nThe system rejects the generic \"AI tool\" look: rainbow buttons, icons in tinted tiles, gradients, and a card for every field.",
     "keyCharacteristics": [
       "Cool neutral canvas, white panels, 1px hairline borders, 6px corners.",
       "One indigo accent, limited to primary actions, focus, selection and on states.",
@@ -166,11 +612,31 @@
       "The print view is a first-class output: white page, hairlines, one left edge."
     ],
     "rules": [
-      { "name": "The Accent-Is-a-Verb Rule", "body": "Indigo marks only something you can press, something focused, or something selected or switched on. It never colors a heading, a figure, a panel or an icon at rest.", "section": "colors" },
-      { "name": "The State-Means-Something Rule", "body": "Red, amber and green appear only when a condition calls for them: failed or invalid (red), incomplete or unpriced (amber), confirmed or best (green). Never use them as decoration or for categories.", "section": "colors" },
-      { "name": "The Tabular Rule", "body": "Every number that can be compared (quantities, prices, totals, squares, dates, counts) uses tabular numerals so the columns line up. Number inputs take the same treatment, and their spinners are hidden.", "section": "typography" },
-      { "name": "The Small Steps Rule", "body": "Sizes step by 1 to 2px, and weights stop at 600. The quote is never louder than its numbers.", "section": "typography" },
-      { "name": "The Float-Only Lift Rule", "body": "Only layers that overlay content get the pop shadow. Bars that are part of the page (the sticky top bar and the phone summary bar) separate from content with a hairline, not a shadow.", "section": "elevation" }
+      {
+        "name": "The Accent-Is-a-Verb Rule",
+        "body": "Indigo marks only something you can press, something focused, or something selected or switched on. It never colors a heading, a figure, a panel or an icon at rest.",
+        "section": "colors"
+      },
+      {
+        "name": "The State-Means-Something Rule",
+        "body": "Red, amber and green appear only when a condition calls for them: failed or invalid (red), incomplete or unpriced (amber), confirmed or best (green). Never use them as decoration or for categories.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every number that can be compared (quantities, prices, totals, squares, dates, counts) uses tabular numerals so the columns line up. Number inputs take the same treatment, and their spinners are hidden.",
+        "section": "typography"
+      },
+      {
+        "name": "The Small Steps Rule",
+        "body": "Sizes step by 1 to 2px, and weights stop at 600. The quote is never louder than its numbers.",
+        "section": "typography"
+      },
+      {
+        "name": "The Float-Only Lift Rule",
+        "body": "Only layers that overlay content get the pop shadow. Bars that are part of the page (the sticky top bar and the phone summary bar) separate from content with a hairline, not a shadow.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do keep indigo (`accent`) for primary buttons, focus outlines and rings, switches and checkboxes in the on state, text selection and inline text actions.",

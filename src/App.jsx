@@ -485,10 +485,21 @@ export default function App() {
   const saveQuote = ({ asNew = false } = {}) => {
     const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
     const updating = !asNew && currentQuoteId && existingQuotes.some(q => q.id === currentQuoteId);
+    // A new copy never shares a name with an existing quote: "Name (2)", "Name (3)"…
+    let name = inputs.projectName;
+    if (asNew && name) {
+      const base = name.replace(/ \(\d+\)$/, '');
+      const taken = new Set(existingQuotes.map(q => q.inputs?.projectName));
+      let n = 2;
+      while (taken.has(`${base} (${n})`)) n++;
+      if (taken.has(name)) name = `${base} (${n})`;
+    }
+    const savedInputs = name === inputs.projectName ? inputs : { ...inputs, projectName: name };
+    if (savedInputs !== inputs) setInputs(savedInputs);
     const quote = {
       id: updating ? currentQuoteId : Date.now(),
       date: quoteDate,
-      inputs,
+      inputs: savedInputs,
       prices,
       profitMargin,
       customerInfo,
@@ -505,15 +516,29 @@ export default function App() {
       : [quote, ...existingQuotes];
     writeQuotes(updatedQuotes);
     setCurrentQuoteId(quote.id);
-    setSavedSnapshot(quoteSnapshot);
-    showToast(updating ? `Saved changes to ${inputs.projectName || 'untitled quote'}` : `Saved ${inputs.projectName || 'untitled quote'}${asNew ? ' as a new quote' : ''}`);
+    // A renamed copy settles one render later, so take the clean snapshot then
+    if (savedInputs !== inputs) setSnapshotPending(true); else setSavedSnapshot(quoteSnapshot);
+    showToast(updating ? `Saved changes to ${name || 'untitled quote'}` : `Saved ${name || 'untitled quote'}${asNew ? ' as a new quote' : ''}`);
   };
 
-  // Loading over unsaved work asks first; everything else is undoable
-  const confirmDiscard = () => !isDirty || window.confirm('Replace the quote you are editing? Unsaved changes will be lost.');
+  // In-app confirmation for the two moments that can lose work or send a flawed quote
+  // { title, body, confirmLabel, onConfirm, secondary?: { label, onClick } }
+  const [confirmState, setConfirmState] = useState(null);
 
-  const startNewQuote = () => {
-    if (!confirmDiscard()) return;
+  // Loading over unsaved work asks first; everything else is undoable
+  const withDiscardCheck = (proceed) => {
+    if (!isDirty) { proceed(); return; }
+    setConfirmState({
+      title: 'Replace the open quote?',
+      body: `${inputs.projectName || 'This quote'} has unsaved changes. Save it first, or replace it and lose those changes.`,
+      confirmLabel: 'Replace',
+      onConfirm: proceed,
+      secondary: { label: 'Save first', onClick: () => { saveQuote(); proceed(); } },
+    });
+  };
+
+  const startNewQuote = () => withDiscardCheck(resetToNewQuote);
+  const resetToNewQuote = () => {
     const defaults = PRODUCT_OPTIONS[initialState.current.inputs.coatingSystem];
     setInputs({
       ...initialState.current.inputs,
@@ -623,9 +648,10 @@ export default function App() {
       try {
         const quote = JSON.parse(e.target.result);
         if (!quote || typeof quote !== 'object' || !quote.inputs) throw new Error('Not a quote file');
-        if (!confirmDiscard()) return;
-        loadQuote(quote, { fromSaved: false });
-        showToast('Quote imported. Save it to keep it in Saved.');
+        withDiscardCheck(() => {
+          loadQuote(quote, { fromSaved: false });
+          showToast('Quote imported. Save it to keep it in Saved.');
+        });
       } catch (error) {
         showToast("That file isn't a quote exported from this calculator. Choose a .json file made with Export.", { tone: 'error' });
       }
@@ -1336,10 +1362,17 @@ export default function App() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
 
-  const generatePDF = async (mode = 'distributor') => {
-    if (hasErrors) {
-      const proceed = window.confirm(`There are ${Object.keys(validationErrors).length} validation issue(s). Generate PDF anyway?`);
-      if (!proceed) return;
+  const generatePDF = async (mode = 'distributor', { force = false } = {}) => {
+    if (hasErrors && !force) {
+      const count = Object.keys(validationErrors).length;
+      setConfirmState({
+        title: `${count} issue${count > 1 ? 's' : ''} in this quote`,
+        body: 'The PDF may show wrong quantities or prices. Review the issues, or download it as it is.',
+        confirmLabel: 'Download anyway',
+        onConfirm: () => generatePDF(mode, { force: true }),
+        secondary: { label: 'Review issues', onClick: () => { window.scrollTo({ top: 0, behavior: 'smooth' }); setShowValidationSummary(true); } },
+      });
+      return;
     }
 
     const isContractor = mode === 'contractor';
@@ -1731,7 +1764,7 @@ export default function App() {
     }
     ['top1Gal', 'top2Gal', 'top3Gal'].forEach((field, i) => {
       if (anyYearHas(field)) {
-        addItem({ name: `Topcoat ${i + 1}`, product: inputs.selectedTopcoat, rate: coatRate(`top${i + 1}`), price: prices.topcoat, unit: 'gal', perYear: tierQty(field, 'gal'), sharedPrice: i > 0 });
+        addItem({ name: `Topcoat, coat ${i + 1}`, product: inputs.selectedTopcoat, rate: coatRate(`top${i + 1}`), price: prices.topcoat, unit: 'gal', perYear: tierQty(field, 'gal'), sharedPrice: i > 0 });
       }
     });
     let spotPrime = false;
@@ -2271,13 +2304,12 @@ export default function App() {
       + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0)
       + (q.commonResults?.accessoryQty || 0) * (p.accessory || 0) + (q.commonResults?.membraneRolls || 0) * (p.membrane || 0)
       + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.goldsealCost || 0) : 0;
-    const when = new Date(q.savedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     return [
       `${(q.inputs.roofSizeSqFt || 0).toLocaleString()} sq ft`,
-      cost > 0 ? `${formatCurrency(cost)} (${tier}-yr cost)` : q.inputs.coatingSystem,
-      when,
+      cost > 0 ? `${formatCurrency(cost)} ${tier}-yr` : q.inputs.coatingSystem,
     ].join(' · ');
   };
+  const savedTime = (q) => new Date(q.savedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   // Comparison opens directly under the top bar and takes focus
   const openComparison = () => {
@@ -2480,7 +2512,7 @@ export default function App() {
                       )}
                     </div>
                     {savedQuotes.length === 0 ? (
-                      <p className="px-3.5 py-6 text-[13px] text-ink-3 text-center">No saved quotes yet. Save quote keeps this one here.</p>
+                      <p className="px-3.5 py-6 text-[13px] text-ink-3 text-center">No saved quotes yet. Save keeps the open quote here.</p>
                     ) : (
                       <ul className="max-h-[min(20rem,60vh)] overflow-y-auto divide-y divide-line">
                         {savedQuotes.map(quote => (
@@ -2504,10 +2536,9 @@ export default function App() {
                             <button
                               onClick={() => {
                                 if (compareMode) return;
-                                if (quote.id !== currentQuoteId && !confirmDiscard()) return;
-                                loadQuote(quote);
+                                const open = () => { loadQuote(quote); showToast(`Loaded ${quote.inputs.projectName || 'untitled quote'}`); };
                                 closeSaved();
-                                showToast(`Loaded ${quote.inputs.projectName || 'untitled quote'}`);
+                                if (quote.id === currentQuoteId) open(); else withDiscardCheck(open);
                               }}
                               className={`text-left flex-1 min-w-0 py-0.5 ${compareMode ? 'cursor-default' : ''}`}
                             >
@@ -2516,6 +2547,7 @@ export default function App() {
                                 {quote.id === currentQuoteId && <span className="ml-1.5 text-xs font-normal text-accent-700">Open</span>}
                               </div>
                               <div className="text-xs text-ink-3 truncate num">{savedQuoteSummary(quote)}</div>
+                              <div className="text-xs text-ink-3 num">Saved {savedTime(quote)}</div>
                             </button>
                             {!compareMode && (
                               <button onClick={() => deleteQuote(quote.id)} className="icon-btn hover:text-red-700" aria-label={`Delete ${quote.inputs.projectName || 'Untitled'}`}>
@@ -2589,7 +2621,8 @@ export default function App() {
               <Printer size={15} />
               <span className="hidden lg:inline">Print</span>
             </button>
-            <button onClick={() => saveQuote()} className="btn-primary" title="Save quote (Ctrl+S)">
+            <button onClick={() => saveQuote()} className="btn-primary relative" title="Save quote (Ctrl+S)" aria-label={isDirty ? 'Save quote, unsaved changes' : 'Save quote'}>
+              {isDirty && <span className="md:hidden absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white" aria-hidden="true" />}
               <Save size={15} />
               <span>Save<span className="hidden sm:inline"> quote</span></span>
             </button>
@@ -2667,7 +2700,12 @@ export default function App() {
                     <th scope="col" className="w-48"><span className="sr-only">Field</span></th>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <th key={id} scope="col" className="!text-ink !font-semibold !text-[13px]">{q?.inputs.projectName || 'Untitled'}</th>;
+                      return (
+                        <th key={id} scope="col" className="!text-ink !font-semibold !text-[13px]">
+                          {q?.inputs.projectName || 'Untitled'}
+                          <span className="block !font-normal text-xs text-ink-3 mt-0.5">Saved {q ? savedTime(q) : ''}</span>
+                        </th>
+                      );
                     })}
                   </tr>
                 </thead>
@@ -2836,9 +2874,11 @@ export default function App() {
                 </tbody>
               </table>
             </div>
-            <p className="px-4 sm:px-5 py-3 text-xs text-ink-3 border-t border-line">
-              Quotes saved before estimate data was stored can't show totals. Re-save them to compare.
-            </p>
+            {selectedForCompare.some(id => !savedQuotes.find(sq => sq.id === id)?.estimates) && (
+              <p className="px-4 sm:px-5 py-3 text-xs text-ink-3 border-t border-line">
+                Quotes saved before estimate data was stored can't show totals. Re-save them to compare.
+              </p>
+            )}
           </section>
         </div>
       )}
@@ -3310,8 +3350,8 @@ export default function App() {
               <table className="order w-full sm:min-w-[600px] text-sm border-separate border-spacing-0">
                 <colgroup>
                   <col />
-                  <col className="w-[120px]" />
-                  {tiers.map(y => <col key={y} className={`w-[130px] ${tierCls(y)}`} />)}
+                  <col className="w-[96px] sm:w-[120px]" />
+                  {tiers.map(y => <col key={y} className={`w-[92px] sm:w-[130px] ${tierCls(y)}`} />)}
                 </colgroup>
                 <thead>
                   <tr>
@@ -3370,7 +3410,7 @@ export default function App() {
                   {['top1Gal', 'top2Gal', 'top3Gal'].map((field, i) => (
                     (estimates['10']?.[field] > 0 || estimates['15']?.[field] > 0 || estimates['20']?.[field] > 0) && (
                       <tr key={field}>
-                        {productCell(`Topcoat ${i + 1}`, `${inputs.selectedTopcoat} · ${rateText(`top${i + 1}`)}`)}
+                        {productCell(`Topcoat, coat ${i + 1}`, `${inputs.selectedTopcoat} · ${rateText(`top${i + 1}`)}`)}
                         {i === 0 ? priceCell('topcoat', 'gal') : sameAsCell('Same as topcoat 1')}
                         {tierQtyCells(field, 'gal', prices.topcoat)}
                       </tr>
@@ -3519,6 +3559,7 @@ export default function App() {
               {showMethod && (
                 <ul className="mt-1 text-xs text-ink-2 space-y-1 list-disc pl-4 leading-relaxed max-w-[75ch]">
                   <li>Each coat: squares × the application rate shown under the product (gal per square) × (1 + waste + stretch), rounded up to full 5-gal pails.</li>
+                  <li>Topcoat coats 1–3 are separate passes of the same topcoat. Longer warranties add passes or heavier rates, so a coat can be absent at one tier.</li>
                   <li>Rust primer: 0.5 gal per square, the same way. Adhesion primer: 0.2 gal per square, rounded up to whole gallons.</li>
                   <li>Seam sealer and fabric come from seam linear feet; fastener encapsulation on metal comes from roof area.</li>
                   <li>Line cost = quantity × unit price. Totals add the printed lines, so the math can be checked with a calculator.</li>
@@ -3551,38 +3592,7 @@ export default function App() {
         </div>
       </main>
 
-      <div className="max-w-[1320px] mx-auto px-4 lg:px-8 grid gap-5 lg:gap-6 lg:grid-cols-2 items-start print:hidden">
-          {/* COPY TO EMAIL SECTION */}
-          <section className="panel print:hidden">
-            <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 pt-4 pb-3">
-              <h2 className="text-sm font-semibold flex items-center gap-2"><Mail size={15} className="text-ink-3" /> Email text</h2>
-              <div className="flex items-center gap-2">
-                <div className="seg" role="group" aria-label="Email version">
-                  {segButton('Distributor', emailViewMode === 'distributor', () => setEmailViewMode('distributor'))}
-                  {segButton('Contractor', emailViewMode === 'contractor', () => setEmailViewMode('contractor'))}
-                </div>
-                <button onClick={copyToClipboard} className="btn-secondary">
-                  {copySuccess ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {copySuccess ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
-            <div className="px-4 sm:px-5 pb-4">
-              <p className="text-xs text-ink-3 mb-2">
-                {emailViewMode === 'contractor'
-                  ? profitMargin > 0
-                    ? `Prices marked up to contractor price (${profitMargin}% margin). No distributor cost or margin included.`
-                    : 'No margin set, so prices match the values entered above.'
-                  : 'Distributor version. Includes your cost and margin.'}
-              </p>
-              <textarea
-                readOnly
-                aria-label="Email text"
-                value={emailViewMode === 'contractor' ? contractorEmailText : emailText}
-                className="w-full h-56 sm:h-44 rounded-md border border-line bg-canvas p-3 font-mono text-[13px] sm:text-xs leading-relaxed text-ink-2 resize-y focus:outline-none focus:border-accent-600 focus:ring-[3px] focus:ring-accent-100"
-              />
-            </div>
-          </section>
-
+      <div className="max-w-[1320px] mx-auto px-4 lg:px-8 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:hidden">
           {/* ENERGY SAVINGS ESTIMATOR (TOGGLEABLE) */}
           <section className="panel overflow-hidden print:hidden">
             <button
@@ -3614,6 +3624,37 @@ export default function App() {
               </div>
             )}
           </section>
+          {/* COPY TO EMAIL SECTION */}
+          <section className="panel print:hidden">
+            <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 pt-4 pb-3">
+              <h2 className="text-sm font-semibold flex items-center gap-2"><Mail size={15} className="text-ink-3" /> Email text</h2>
+              <div className="flex items-center gap-2">
+                <div className="seg" role="group" aria-label="Email version">
+                  {segButton('Distributor', emailViewMode === 'distributor', () => setEmailViewMode('distributor'))}
+                  {segButton('Contractor', emailViewMode === 'contractor', () => setEmailViewMode('contractor'))}
+                </div>
+                <button onClick={copyToClipboard} className="btn-secondary">
+                  {copySuccess ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {copySuccess ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <div className="px-4 sm:px-5 pb-4">
+              <p className="text-xs text-ink-3 mb-2">
+                {emailViewMode === 'contractor'
+                  ? profitMargin > 0
+                    ? `Prices marked up to contractor price (${profitMargin}% margin). No distributor cost or margin included.`
+                    : 'No margin set, so prices match the values entered above.'
+                  : 'Distributor version. Includes your cost and margin.'}
+              </p>
+              <textarea
+                readOnly
+                aria-label="Email text"
+                value={emailViewMode === 'contractor' ? contractorEmailText : emailText}
+                className="w-full h-56 sm:h-44 rounded-md border border-line bg-canvas p-3 font-mono text-[13px] sm:text-xs leading-relaxed text-ink-2 resize-y focus:outline-none focus:border-accent-600 focus:ring-[3px] focus:ring-accent-100"
+              />
+            </div>
+          </section>
+
       </div>
 
       <footer className="max-w-[1320px] mx-auto px-4 lg:px-8 text-xs text-ink-3 leading-relaxed print:max-w-none print:px-0">
@@ -3643,9 +3684,17 @@ export default function App() {
         <a href="#order" className="btn-secondary shrink-0">View order</a>
       </div>
 
+      {/* CONFIRM DIALOG */}
+      {confirmState && (
+        <ConfirmDialog
+          state={confirmState}
+          onClose={() => setConfirmState(null)}
+        />
+      )}
+
       {/* TOAST */}
       {toast && (
-        <div key={toast.key} role={toast.tone === 'error' ? 'alert' : 'status'} className="fixed z-50 top-[64px] inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 lg:top-auto lg:bottom-6 flex items-center gap-2.5 rounded-md bg-ink text-white text-[13px] pl-3.5 pr-2 py-2 shadow-pop print:hidden">
+        <div key={toast.key} role={toast.tone === 'error' ? 'alert' : 'status'} className="fixed z-50 top-[64px] inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 lg:left-auto lg:translate-x-0 lg:right-8 max-w-[440px] flex items-center gap-2.5 rounded-md bg-ink text-white text-[13px] pl-3.5 pr-2 py-2 shadow-pop print:hidden">
           {toast.tone === 'error'
             ? <AlertTriangle size={15} className="text-amber-300 shrink-0" />
             : <CheckCircle size={15} className="text-green-400 shrink-0" />}
@@ -3656,6 +3705,50 @@ export default function App() {
           <button onClick={() => setToast(null)} className="shrink-0 rounded p-1.5 text-white/70 hover:text-white hover:bg-white/10" aria-label="Dismiss"><X size={14} /></button>
         </div>
       )}
+    </div>
+  );
+}
+
+// Confirmation for actions that can lose work or send a flawed quote.
+// Focus starts on the safe choice, stays inside the dialog, and Esc cancels.
+function ConfirmDialog({ state, onClose }) {
+  const panelRef = useRef(null);
+  const returnFocus = useRef(typeof document !== 'undefined' ? document.activeElement : null);
+
+  useEffect(() => {
+    panelRef.current?.querySelector('[data-autofocus]')?.focus();
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); onClose(); }
+      if (e.key === 'Tab') {
+        const items = [...panelRef.current.querySelectorAll('button')];
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    const prev = returnFocus.current;
+    return () => { window.removeEventListener('keydown', onKey, true); prev?.focus?.(); };
+  }, [onClose]);
+
+  const run = (fn) => { onClose(); fn(); };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 print:hidden">
+      <div className="absolute inset-0 bg-ink/30" onClick={onClose} aria-hidden="true" />
+      <div ref={panelRef} role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody" className="relative w-full max-w-[420px] bg-white border border-line rounded-md shadow-pop">
+        <div className="px-5 pt-5 pb-4">
+          <h2 id="confirmTitle" className="text-[15px] font-semibold">{state.title}</h2>
+          <p id="confirmBody" className="text-[13px] text-ink-2 mt-1.5 leading-relaxed">{state.body}</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 px-5 py-3 border-t border-line bg-canvas rounded-b-md">
+          <button onClick={onClose} className="btn-ghost mr-auto">Cancel</button>
+          {state.secondary && (
+            <button data-autofocus onClick={() => run(state.secondary.onClick)} className="btn-secondary">{state.secondary.label}</button>
+          )}
+          <button {...(state.secondary ? {} : { 'data-autofocus': true })} onClick={() => run(state.onConfirm)} className="btn-primary">{state.confirmLabel}</button>
+        </div>
+      </div>
     </div>
   );
 }
