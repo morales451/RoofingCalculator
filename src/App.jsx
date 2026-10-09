@@ -2027,7 +2027,6 @@ export default function App() {
     return <div className="text-xs text-red-600 mt-1 flex items-center gap-1"><AlertTriangle size={12} />{err}</div>;
   };
 
-  const inputBorder = (field) => validationErrors[field] ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300';
 
   // Available roof types for current coating system (used in multi-section)
   const getAvailableRoofTypes = () => {
@@ -3037,7 +3036,7 @@ export default function App() {
                         </td>
                         <td />
                         {tiers.map(y => (
-                          <td key={y} className={`num text-[15px] text-accent-700 whitespace-nowrap ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor)}</td>
+                          <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor)}</td>
                         ))}
                       </tr>
                       <tr className="row-meta print:hidden">

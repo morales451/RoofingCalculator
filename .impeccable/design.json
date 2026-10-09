@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-09T12:40:00Z",
+  "title": "Design System: Roofing Materials Calculator",
+  "extensions": {
+    "colorMeta": {
+      "accent": { "role": "primary", "displayName": "Signal Indigo", "canonical": "#4b53d0", "tonalRamp": ["#1f2366", "#323894", "#3c43b3", "#4b53d0", "#8a91e6", "#c5cbf8", "#e1e4fc", "#f0f1fe"] },
+      "accent-hover": { "role": "primary", "displayName": "Pressed Indigo", "canonical": "#3c43b3", "tonalRamp": ["#1f2366", "#323894", "#3c43b3", "#4b53d0", "#8a91e6", "#c5cbf8", "#e1e4fc", "#f0f1fe"] },
+      "accent-press": { "role": "primary", "displayName": "Deep Indigo", "canonical": "#323894", "tonalRamp": ["#1f2366", "#323894", "#3c43b3", "#4b53d0", "#8a91e6", "#c5cbf8", "#e1e4fc", "#f0f1fe"] },
+      "accent-tint": { "role": "primary", "displayName": "Focus Halo", "canonical": "#e1e4fc", "tonalRamp": ["#1f2366", "#323894", "#3c43b3", "#4b53d0", "#8a91e6", "#c5cbf8", "#e1e4fc", "#f0f1fe"] },
+      "ink": { "role": "neutral", "displayName": "Ledger Ink", "canonical": "#1a1f36", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
+      "ink-2": { "role": "neutral", "displayName": "Slate Ink", "canonical": "#3c4257", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
+      "ink-3": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#626c7e", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
+      "ink-4": { "role": "neutral", "displayName": "Faint Ink", "canonical": "#8a94a6", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
+      "line": { "role": "neutral", "displayName": "Hairline", "canonical": "#e3e8ee", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
+      "line-strong": { "role": "neutral", "displayName": "Strong Hairline", "canonical": "#c9d1da", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
+      "canvas": { "role": "neutral", "displayName": "Canvas", "canonical": "#f6f8fa", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
+      "surface": { "role": "neutral", "displayName": "Surface", "canonical": "#ffffff", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#f6f8fa", "#ffffff"] },
+      "row-hover": { "role": "neutral", "displayName": "Row Hover", "canonical": "#fafbfc", "tonalRamp": ["#1a1f36", "#3c4257", "#626c7e", "#8a94a6", "#c9d1da", "#e3e8ee", "#fafbfc", "#ffffff"] },
+      "danger": { "role": "state", "displayName": "Danger", "canonical": "#b91c1c", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
+      "danger-text": { "role": "state", "displayName": "Danger Text", "canonical": "#dc2626", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
+      "danger-field": { "role": "state", "displayName": "Danger Field Border", "canonical": "#ef4444", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
+      "danger-tint": { "role": "state", "displayName": "Danger Tint", "canonical": "#fef2f2", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
+      "danger-border": { "role": "state", "displayName": "Danger Border", "canonical": "#fecaca", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
+      "danger-callout-text": { "role": "state", "displayName": "Danger Callout Text", "canonical": "#991b1b", "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fecaca", "#fee2e2", "#fef2f2"] },
+      "warn": { "role": "state", "displayName": "Warning", "canonical": "#b45309", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
+      "warn-icon": { "role": "state", "displayName": "Warning Icon", "canonical": "#d97706", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
+      "warn-field": { "role": "state", "displayName": "Unpriced Field Border", "canonical": "#fbbf24", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
+      "warn-tint": { "role": "state", "displayName": "Warning Tint", "canonical": "#fffbeb", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
+      "warn-border": { "role": "state", "displayName": "Warning Border", "canonical": "#fde68a", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
+      "warn-callout-text": { "role": "state", "displayName": "Warning Callout Text", "canonical": "#78350f", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#fbbf24", "#fde68a", "#fef3c7", "#fffbeb"] },
+      "success": { "role": "state", "displayName": "Success", "canonical": "#15803d", "tonalRamp": ["#14532d", "#166534", "#15803d", "#16a34a", "#22c55e", "#bbf7d0", "#dcfce7", "#f0fdf4"] },
+      "success-on-dark": { "role": "state", "displayName": "Success on Ink", "canonical": "#4ade80", "tonalRamp": ["#14532d", "#166534", "#15803d", "#16a34a", "#4ade80", "#bbf7d0", "#dcfce7", "#f0fdf4"] }
+    },
+    "typographyMeta": {
+      "figure": { "displayName": "Figure", "purpose": "The squares count at the top right of the material order. Tabular." },
+      "headline": { "displayName": "Headline", "purpose": "Panel headings: Material order, Quote comparison." },
+      "title": { "displayName": "Title", "purpose": "Form section headings and the product name in the top bar." },
+      "total": { "displayName": "Total", "purpose": "Grand total and contractor price figures; the phone summary bar figure. Tabular." },
+      "body": { "displayName": "Body", "purpose": "Inputs, table cells, switch labels; product names at 500." },
+      "control": { "displayName": "Control", "purpose": "Buttons, field labels, segmented options, menu items, callouts; row meta at 400." },
+      "meta": { "displayName": "Meta", "purpose": "Hints, table headers, unit and cost sub-lines, badges, footer disclaimer." },
+      "mono": { "displayName": "Mono", "purpose": "Copy-for-email text block only." }
+    },
+    "shadows": [
+      { "name": "panel", "value": "0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.03)", "purpose": "Every panel; reads as a border with a hint of weight. Removed in print." },
+      { "name": "xs", "value": "0 1px 1px rgba(16, 24, 40, 0.05)", "purpose": "Inputs, secondary buttons, selected segmented option, switch knob." },
+      { "name": "primary-press", "value": "0 1px 1px rgba(16, 24, 40, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.12)", "purpose": "Primary button only." },
+      { "name": "pop", "value": "0 8px 24px -4px rgba(16, 24, 40, 0.14), 0 2px 6px rgba(16, 24, 40, 0.06)", "purpose": "Floating layers only: saved-quotes popover, phone more menu, toast." }
+    ],
+    "motion": [
+      { "name": "color-fast", "value": "color, background-color, border-color 100ms ease", "purpose": "Hover and press color changes on buttons, inputs, segmented options." },
+      { "name": "switch", "value": "transform 150ms ease, background-color 150ms ease", "purpose": "Switch knob slide and track fill." },
+      { "name": "disclosure", "value": "transform 150ms ease (rotate 180deg)", "purpose": "Chevron on collapsible sections." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px", "purpose": "Below: single warranty-tier column with tier picker; shortened button labels." },
+      { "name": "md", "value": "768px", "purpose": "Below: Import, Export and Print fold into the more menu." },
+      { "name": "lg", "value": "1024px", "purpose": "From: two-column workspace, bottom-pinned sticky results column; below: fixed phone summary bar." },
+      { "name": "container", "value": "1320px", "purpose": "Max content width." }
+    ],
+    "print": {
+      "page": "letter, 0.5in margins",
+      "body": "11px on white",
+      "rules": [
+        "Hide top bar, form panel, margin strip, controls, email and energy panels.",
+        "Print header: title, project, date, optional customer block, 2px ink rule.",
+        "Swap price inputs for their printed values.",
+        "Order cells 4px 8px; panel shadows off; panel border line-strong.",
+        "Zero panel padding so all text shares one left edge.",
+        "Repeat table headers; never split a row across pages."
+      ]
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one primary action per region: Save quote, Distributor estimate, Compare.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><polyline points=\"17 21 17 13 7 13 7 21\"/><polyline points=\"7 3 7 8 15 8\"/></svg>Save quote</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #4b53d0; color: #fff; font: 500 13px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; white-space: nowrap; cursor: pointer; box-shadow: 0 1px 1px rgba(16,24,40,0.1), inset 0 -1px 0 rgba(0,0,0,0.12); transition: background-color 100ms; } .ds-btn-primary:hover { background: #3c43b3; } .ds-btn-primary:active { background: #323894; } .ds-btn-primary:focus-visible { outline: 2px solid #4b53d0; outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.5; pointer-events: none; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Every non-primary action: Saved, Import, Export, Print, Copy, Contractor quote.",
+      "html": "<button class=\"ds-btn-secondary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"7 10 12 15 17 10\"/><line x1=\"12\" y1=\"15\" x2=\"12\" y2=\"3\"/></svg>Export</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid #c9d1da; border-radius: 6px; background: #fff; color: #3c4257; font: 500 13px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; white-space: nowrap; cursor: pointer; box-shadow: 0 1px 1px rgba(16,24,40,0.05); transition: background-color 100ms, color 100ms; } .ds-btn-secondary:hover { background: #f6f8fa; color: #1a1f36; } .ds-btn-secondary:active { background: #e3e8ee; } .ds-btn-secondary:focus-visible { outline: 2px solid #4b53d0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input with Affix",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "36px field; small 32px variant in table rows. Tabular, right-aligned when numeric.",
+      "html": "<label class=\"ds-label\">Distributor margin</label><span class=\"ds-affix\"><input class=\"ds-input\" type=\"text\" inputmode=\"decimal\" value=\"18\"><span>%</span></span><p class=\"ds-hint\">Contractor quote never shows cost basis or margin.</p>",
+      "css": ".ds-label { display: block; margin-bottom: 6px; font: 500 13px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #3c4257; } .ds-affix { position: relative; display: inline-block; } .ds-affix span { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 13px; color: #626c7e; pointer-events: none; } .ds-input { box-sizing: border-box; width: 120px; height: 36px; padding: 0 28px 0 10px; border: 1px solid #c9d1da; border-radius: 6px; background: #fff; color: #1a1f36; font: 400 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-variant-numeric: tabular-nums; text-align: right; box-shadow: 0 1px 1px rgba(16,24,40,0.05); outline: none; transition: border-color 100ms, box-shadow 100ms; } .ds-input:focus { border-color: #4b53d0; box-shadow: 0 0 0 3px #e1e4fc; } .ds-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.375; color: #626c7e; }"
+    },
+    {
+      "name": "Select",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Native select in the input box with a muted 16px chevron.",
+      "html": "<select class=\"ds-select\"><option>Enduraroof Premium Silicone</option><option>Prograde 988 Silicone</option></select>",
+      "css": ".ds-select { appearance: none; -webkit-appearance: none; width: 280px; height: 36px; padding: 0 32px 0 10px; border: 1px solid #c9d1da; border-radius: 6px; background: #fff url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23626c7e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 6.5 8 9.5l3-3'/%3E%3C/svg%3E\") no-repeat right 8px center; color: #1a1f36; font: 400 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 1px 1px rgba(16,24,40,0.05); cursor: pointer; outline: none; } .ds-select:focus { border-color: #4b53d0; box-shadow: 0 0 0 3px #e1e4fc; } .ds-select:disabled { background-color: #f6f8fa; color: #8a94a6; cursor: not-allowed; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segmented-option-selected",
+      "description": "Every two- or three-option choice. Selection is a neutral white chip, never the accent.",
+      "html": "<div class=\"ds-seg\" role=\"group\"><button aria-pressed=\"true\">Silicone</button><button aria-pressed=\"false\">Acrylic</button><button aria-pressed=\"false\">Aluminum</button></div>",
+      "css": ".ds-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 2px; width: 340px; border: 1px solid #e3e8ee; border-radius: 6px; background: #f6f8fa; } .ds-seg button { height: 32px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: #626c7e; font: 500 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; cursor: pointer; transition: color 100ms, background-color 100ms; } .ds-seg button:hover { color: #1a1f36; } .ds-seg button[aria-pressed=\"true\"] { background: #fff; color: #1a1f36; box-shadow: 0 1px 1px rgba(16,24,40,0.05), 0 0 0 1px rgba(201,209,218,0.6); } .ds-seg button:focus-visible { outline: 2px solid #4b53d0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Switch Row",
+      "kind": "custom",
+      "refersTo": "switch-on",
+      "description": "Site-condition toggles; indigo when on.",
+      "html": "<div class=\"ds-switch-row\"><span>Passed adhesion test</span><button class=\"ds-switch\" role=\"switch\" aria-checked=\"true\"><span></span></button></div>",
+      "css": ".ds-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 340px; padding: 12px 0; font: 400 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1f36; } .ds-switch { position: relative; display: inline-flex; align-items: center; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 9999px; background: #c9d1da; cursor: pointer; transition: background-color 150ms; } .ds-switch[aria-checked=\"true\"] { background: #4b53d0; } .ds-switch > span { width: 16px; height: 16px; border-radius: 9999px; background: #fff; box-shadow: 0 1px 1px rgba(16,24,40,0.05); transform: translateX(2px); transition: transform 150ms; } .ds-switch[aria-checked=\"true\"] > span { transform: translateX(18px); } .ds-switch:focus-visible { outline: 2px solid #4b53d0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Warning Callout",
+      "kind": "custom",
+      "refersTo": "callout-warn",
+      "description": "Incomplete-quote notice. Danger and info variants share the shape.",
+      "html": "<div class=\"ds-callout-warn\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#d97706\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z\"/><line x1=\"12\" y1=\"9\" x2=\"12\" y2=\"13\"/><line x1=\"12\" y1=\"17\" x2=\"12.01\" y2=\"17\"/></svg><div><strong>Quote incomplete.</strong> Add seam linear feet to calculate butter grade.</div></div>",
+      "css": ".ds-callout-warn { display: flex; gap: 10px; max-width: 480px; padding: 10px 12px; border: 1px solid #fde68a; border-radius: 6px; background: #fffbeb; color: #78350f; font: 400 13px/1.375 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; } .ds-callout-warn svg { flex-shrink: 0; margin-top: 1px; } .ds-callout-warn strong { font-weight: 600; }"
+    },
+    {
+      "name": "Order Table",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Signature component: panel with header, line, subtotal, total and meta rows; every figure tabular.",
+      "html": "<div class=\"ds-panel\"><div class=\"ds-panel-head\"><div><h3>Material order</h3><p>Silicone on Capsheet · 10% waste · 0% stretch</p></div><div class=\"ds-fig\">245.0 <span>sq</span></div></div><table class=\"ds-order\"><thead><tr><th>Product</th><th>10-year</th><th>15-year</th><th>20-year</th></tr></thead><tbody><tr><td><b>Basecoat</b><small>Enduraroof BaseCoat &amp; Sealer</small></td><td><b>310</b> <i>gal</i><small>$11,935.00</small></td><td><b>310</b> <i>gal</i><small>$11,935.00</small></td><td><b>310</b> <i>gal</i><small>$11,935.00</small></td></tr><tr class=\"sub\"><td>Coatings total</td><td>800 gal</td><td>925 gal</td><td>1,045 gal</td></tr></tbody><tfoot><tr class=\"total\"><td>Total</td><td>$39,957.50</td><td>$46,551.25</td><td>$52,881.25</td></tr><tr class=\"meta\"><td>Cost per sq ft</td><td>$1.63</td><td>$1.90</td><td>$2.16</td></tr></tfoot></table></div>",
+      "css": ".ds-panel { width: 640px; background: #fff; border: 1px solid #e3e8ee; border-radius: 6px; box-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.03); overflow: hidden; font: 400 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1f36; } .ds-panel-head { display: flex; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid #e3e8ee; } .ds-panel-head h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; } .ds-panel-head p { margin: 2px 0 0; font-size: 13px; color: #626c7e; } .ds-fig { font-size: 18px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; } .ds-fig span { font-size: 13px; font-weight: 400; color: #626c7e; } .ds-order { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; } .ds-order th { padding: 8px 12px; background: #f6f8fa; border-bottom: 1px solid #e3e8ee; font-size: 12px; font-weight: 500; color: #626c7e; text-align: right; } .ds-order td { padding: 10px 12px; border-bottom: 1px solid #e3e8ee; text-align: right; vertical-align: top; } .ds-order th:first-child, .ds-order td:first-child { text-align: left; padding-left: 16px; } .ds-order th:last-child, .ds-order td:last-child { padding-right: 16px; } .ds-order b { font-weight: 500; } .ds-order i { font-style: normal; color: #626c7e; } .ds-order small { display: block; margin-top: 2px; font-size: 12px; color: #626c7e; } .ds-order tbody tr:hover td { background: #fafbfc; } .ds-order tr.sub td { background: rgba(246,248,250,0.6); font-weight: 500; } .ds-order tr.total td { border-top: 1px solid #c9d1da; border-bottom: 0; padding-top: 12px; font-weight: 600; } .ds-order tr.total td:not(:first-child) { font-size: 15px; } .ds-order tr.meta td { border-bottom: 0; padding-top: 4px; padding-bottom: 6px; font-size: 13px; color: #626c7e; }"
+    },
+    {
+      "name": "Popover Menu",
+      "kind": "nav",
+      "refersTo": "popover",
+      "description": "Floating layer for saved quotes and the phone more menu; the only place the pop shadow lives besides the toast.",
+      "html": "<div class=\"ds-menu\"><button><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#626c7e\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"17 8 12 3 7 8\"/><line x1=\"12\" y1=\"3\" x2=\"12\" y2=\"15\"/></svg>Import quote file</button><button><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#626c7e\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"7 10 12 15 17 10\"/><line x1=\"12\" y1=\"15\" x2=\"12\" y2=\"3\"/></svg>Export quote file</button></div>",
+      "css": ".ds-menu { width: 192px; padding: 4px 0; background: #fff; border: 1px solid #e3e8ee; border-radius: 6px; box-shadow: 0 8px 24px -4px rgba(16,24,40,0.14), 0 2px 6px rgba(16,24,40,0.06); } .ds-menu button { display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 12px; border: 0; background: transparent; color: #3c4257; font: 400 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: left; cursor: pointer; } .ds-menu button:hover { background: #f6f8fa; } .ds-menu button:focus-visible { outline: 2px solid #4b53d0; outline-offset: -2px; }"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "Ink pill confirming save and load; green check on dark.",
+      "html": "<div class=\"ds-toast\" role=\"status\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#4ade80\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 11.08V12a10 10 0 1 1-5.93-9.14\"/><polyline points=\"22 4 12 14.01 9 11.01\"/></svg>Quote saved</div>",
+      "css": ".ds-toast { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 6px; background: #1a1f36; color: #fff; font: 400 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 8px 24px -4px rgba(16,24,40,0.14), 0 2px 6px rgba(16,24,40,0.06); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Ledger",
+    "overview": "This is the category standard for a working SaaS tool, played straight and finished at Stripe Dashboard craft. The page is a cool neutral ground with white panels on it, hairlines between sections, and one indigo voice. The material order is the hero. Quantities, units, prices per unit and the 10, 15 and 20-year columns are set in tabular figures, so a rep can scan down a column and check it. Everything else stays out of the way.\n\nDensity is deliberate. Body text is 14px and controls and labels are 13px. Controls are 32 to 36px tall, and form sections stack inside one panel instead of each field getting its own card. Depth is close to flat. Panels carry a shadow you can barely see, and only floating layers (popovers, menus, the toast) lift off the page. Color carries meaning, not decoration: the accent marks what you can act on, and red, amber and green appear only when something has failed, is missing, or has succeeded.\n\nThe system rejects the generic \"AI tool\" look: rainbow buttons, icons in tinted tiles, gradients, and a card for every field.",
+    "keyCharacteristics": [
+      "Cool neutral canvas, white panels, 1px hairline borders, 6px corners.",
+      "One indigo accent, limited to primary actions, focus, selection and on states.",
+      "System UI sans at 12, 13, 14, 15, 16 and 18px; weights 400, 500 and 600 only.",
+      "Tabular numerals on every figure.",
+      "Flat panels. Soft offset shadows only on floating layers.",
+      "The print view is a first-class output: white page, hairlines, one left edge."
+    ],
+    "rules": [
+      { "name": "The Accent-Is-a-Verb Rule", "body": "Indigo marks only something you can press, something focused, or something selected or switched on. It never colors a heading, a figure, a panel or an icon at rest.", "section": "colors" },
+      { "name": "The State-Means-Something Rule", "body": "Red, amber and green appear only when a condition calls for them: failed or invalid (red), incomplete or unpriced (amber), confirmed or best (green). Never use them as decoration or for categories.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "Every number that can be compared (quantities, prices, totals, squares, dates, counts) uses tabular numerals so the columns line up. Number inputs take the same treatment, and their spinners are hidden.", "section": "typography" },
+      { "name": "The Small Steps Rule", "body": "Sizes step by 1 to 2px, and weights stop at 600. The quote is never louder than its numbers.", "section": "typography" },
+      { "name": "The Float-Only Lift Rule", "body": "Only layers that overlay content get the pop shadow. Bars that are part of the page (the sticky top bar and the phone summary bar) separate from content with a hairline, not a shadow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep indigo (`accent`) for primary buttons, focus outlines and rings, switches and checkboxes in the on state, text selection and inline text actions.",
+      "Do keep exactly one primary button per region. Everything else is secondary or ghost.",
+      "Do apply tabular numerals to every figure, including inputs, dates and counts.",
+      "Do separate sections inside one panel with 1px hairlines (`line`) rather than adding more cards.",
+      "Do use 6px corners, 32px buttons and 36px inputs, with 13px labels sitting 6px above their fields.",
+      "Do reserve the pop shadow for popovers, menus and the toast. Panels keep the near-flat panel shadow.",
+      "Do use a neutral white chip for segmented selection.",
+      "Do show a missing value as a faint em dash, and a missing price as the amber \"No price\" state.",
+      "Do design the print view alongside the screen: white page, hairlines, inputs swapped for their values, one left edge."
+    ],
+    "donts": [
+      "Don't color figures, headings, panels or resting icons with indigo.",
+      "Don't use red, amber or green for anything other than failure, incompleteness or confirmation.",
+      "Don't use gradients anywhere.",
+      "Don't put icons in tinted tiles or circles. Icons sit bare beside their labels.",
+      "Don't give each field its own card, or nest panels inside panels.",
+      "Don't add display faces or weights above 600.",
+      "Don't put shadows on in-page bars (the top bar or the phone summary bar). They separate with a hairline."
+    ]
+  }
+}
