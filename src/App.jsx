@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer, X, MoreHorizontal } from 'lucide-react';
+import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer, X, MoreHorizontal, Pencil } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import EnergySavingsEstimator from './EnergySavingsEstimator.jsx';
@@ -64,6 +64,9 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false);
   const [mobileTier, setMobileTier] = useState('15');
   const [showMore, setShowMore] = useState(false);
+  const [showMethod, setShowMethod] = useState(false);
+  // Product picks start open at desk width and collapsed on phones
+  const [showProducts, setShowProducts] = useState(() => typeof window === 'undefined' || window.matchMedia('(min-width: 1024px)').matches);
 
   // Results column sticks by its bottom edge when taller than the viewport, so every
   // order row stays reachable by page scroll while the totals stay in view during edits.
@@ -79,12 +82,13 @@ export default function App() {
     update();
     return () => { ro.disconnect(); window.removeEventListener('resize', update); };
   }, []);
+  // Toast: { message, tone: 'success' | 'error', action?: { label, onClick } }
   const [toast, setToast] = useState(null);
-  const showToast = (message) => setToast(message);
+  const showToast = (message, options = {}) => setToast({ message, tone: 'success', ...options, key: Date.now() });
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2600);
+    const t = setTimeout(() => setToast(null), toast.action ? 6000 : 2600);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -115,6 +119,10 @@ export default function App() {
     email: '',
     projectAddress: ''
   });
+  // First-render values, used by "New quote" to reset the form
+  const initialState = useRef(null);
+  if (!initialState.current) initialState.current = { inputs, prices, customerInfo };
+
   const [showCustomerInfo, setShowCustomerInfo] = useState(false);
 
   // Quote metadata
@@ -176,21 +184,21 @@ export default function App() {
     if (inputs.roofSizeSqFt < 0) {
       errors.roofSizeSqFt = 'Roof size cannot be negative';
     } else if (inputs.roofSizeSqFt > 1000000) {
-      errors.roofSizeSqFt = 'Roof size exceeds 1,000,000 sq ft maximum';
+      errors.roofSizeSqFt = 'Roof area can be at most 1,000,000 sq ft';
     }
 
     // Linear feet validation
     if (inputs.linearFeet < 0) {
       errors.linearFeet = 'Linear feet cannot be negative';
     } else if (inputs.linearFeet > 100000) {
-      errors.linearFeet = 'Linear feet exceeds 100,000 maximum';
+      errors.linearFeet = 'Seams can be at most 100,000 linear ft';
     }
 
     // Profit margin validation
     if (profitMargin < 0) {
       errors.profitMargin = 'Margin cannot be negative';
     } else if (profitMargin >= 100) {
-      errors.profitMargin = 'Margin must be less than 100%';
+      errors.profitMargin = 'Margin must be below 100%';
     }
 
     // Price validation
@@ -198,25 +206,25 @@ export default function App() {
       if (val < 0) {
         errors[`price_${key}`] = `${key} price cannot be negative`;
       } else if (val > 10000) {
-        errors[`price_${key}`] = `${key} price exceeds $10,000 maximum`;
+        errors[`price_${key}`] = 'Unit price can be at most $10,000';
       }
     });
 
     // Customer email validation
     if (customerInfo.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerInfo.email)) {
-      errors.email = 'Invalid email format';
+      errors.email = 'Email should look like name@company.com';
     }
 
     // Customer phone validation
     if (customerInfo.phone && !/^[\d\s()+-]{7,20}$/.test(customerInfo.phone)) {
-      errors.phone = 'Invalid phone format';
+      errors.phone = 'Phone should be 7–20 digits, e.g. (555) 123-4567';
     }
 
     // Multi-section validation
     if (useMultiSection) {
       roofSections.forEach((section, i) => {
         if (section.sqFt < 0) errors[`section_${section.id}_sqFt`] = `Section ${i + 1}: sq ft cannot be negative`;
-        if (section.sqFt > 500000) errors[`section_${section.id}_sqFt`] = `Section ${i + 1}: sq ft exceeds 500,000 max`;
+        if (section.sqFt > 500000) errors[`section_${section.id}_sqFt`] = `Section ${i + 1}: area can be at most 500,000 sq ft`;
         if (section.linearFeet < 0) errors[`section_${section.id}_lf`] = `Section ${i + 1}: linear feet cannot be negative`;
       });
     }
@@ -418,6 +426,7 @@ export default function App() {
 
   // --- HANDLERS ---
   const handleChange = (field, value) => {
+    if ((field === 'roofSizeSqFt' || field === 'linearFeet') && typeof value === 'number') value = Math.max(0, value);
     if (field === 'coatingSystem') {
         let newRoofType = inputs.roofType;
 
@@ -458,13 +467,26 @@ export default function App() {
   };
 
   // Save/Load/Export/Import functions
-  const saveQuote = () => {
-    if (hasErrors) {
-      const proceed = window.confirm(`There are ${Object.keys(validationErrors).length} validation issue(s). Save quote anyway?`);
-      if (!proceed) return;
-    }
+  // The quote currently being edited, and the saved snapshot it is compared to
+  const [currentQuoteId, setCurrentQuoteId] = useState(null);
+  const [savedSnapshot, setSavedSnapshot] = useState(null);
+  const quoteSnapshot = JSON.stringify({
+    date: quoteDate, inputs, prices, profitMargin, customerInfo, energyRegion,
+    roofSections: useMultiSection ? roofSections : [], useMultiSection,
+  });
+  const hasContent = inputs.roofSizeSqFt > 0 || !!inputs.projectName || Object.values(prices).some(v => v > 0) || !!customerInfo.name || !!customerInfo.company;
+  const isDirty = savedSnapshot ? quoteSnapshot !== savedSnapshot : hasContent;
+
+  const writeQuotes = (quotes) => {
+    localStorage.setItem('savedQuotes', JSON.stringify(quotes));
+    setSavedQuotes(quotes);
+  };
+
+  const saveQuote = ({ asNew = false } = {}) => {
+    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+    const updating = !asNew && currentQuoteId && existingQuotes.some(q => q.id === currentQuoteId);
     const quote = {
-      id: Date.now(),
+      id: updating ? currentQuoteId : Date.now(),
       date: quoteDate,
       inputs,
       prices,
@@ -478,14 +500,40 @@ export default function App() {
       savedAt: new Date().toISOString()
     };
 
-    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
-    const updatedQuotes = [quote, ...existingQuotes];
-    localStorage.setItem('savedQuotes', JSON.stringify(updatedQuotes));
-    setSavedQuotes(updatedQuotes);
-    showToast(`Saved ${inputs.projectName || 'untitled quote'}`);
+    const updatedQuotes = updating
+      ? [quote, ...existingQuotes.filter(q => q.id !== currentQuoteId)]
+      : [quote, ...existingQuotes];
+    writeQuotes(updatedQuotes);
+    setCurrentQuoteId(quote.id);
+    setSavedSnapshot(quoteSnapshot);
+    showToast(updating ? `Saved changes to ${inputs.projectName || 'untitled quote'}` : `Saved ${inputs.projectName || 'untitled quote'}${asNew ? ' as a new quote' : ''}`);
   };
 
-  const loadQuote = (quote) => {
+  // Loading over unsaved work asks first; everything else is undoable
+  const confirmDiscard = () => !isDirty || window.confirm('Replace the quote you are editing? Unsaved changes will be lost.');
+
+  const startNewQuote = () => {
+    if (!confirmDiscard()) return;
+    const defaults = PRODUCT_OPTIONS[initialState.current.inputs.coatingSystem];
+    setInputs({
+      ...initialState.current.inputs,
+      selectedTopcoat: defaults.topcoats[0],
+      selectedBasecoat: defaults.basecoats[0] || '',
+      selectedButterGrade: defaults.butterGrades[0],
+      selectedFabric: defaults.fabrics[0],
+    });
+    setPrices(initialState.current.prices);
+    setCustomerInfo(initialState.current.customerInfo);
+    setProfitMargin(0);
+    setQuoteDate(new Date().toISOString().split('T')[0]);
+    setRoofSections([]);
+    setUseMultiSection(false);
+    setCurrentQuoteId(null);
+    setSavedSnapshot(null);
+    showToast('Started a new quote');
+  };
+
+  const loadQuote = (quote, { fromSaved = true } = {}) => {
     setInputs(quote.inputs);
     setPrices(quote.prices);
     setProfitMargin(quote.profitMargin || 0);
@@ -507,13 +555,39 @@ export default function App() {
     }));
     setRoofSections(migratedSections);
     setUseMultiSection(quote.useMultiSection || false);
+    setCurrentQuoteId(fromSaved ? quote.id : null);
+    // The saved snapshot is taken after the loaded state settles (see effect below)
+    setSnapshotPending(fromSaved);
+    if (!fromSaved) setSavedSnapshot(null);
   };
+
+  // After loading a saved quote, record its settled state as the clean baseline
+  const [snapshotPending, setSnapshotPending] = useState(false);
+  useEffect(() => {
+    if (!snapshotPending) return;
+    const t = setTimeout(() => { setSavedSnapshot(quoteSnapshotRef.current); setSnapshotPending(false); }, 0);
+    return () => clearTimeout(t);
+  }, [snapshotPending]);
+  const quoteSnapshotRef = useRef(quoteSnapshot);
+  quoteSnapshotRef.current = quoteSnapshot;
 
   const deleteQuote = (quoteId) => {
     const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
-    const updatedQuotes = existingQuotes.filter(q => q.id !== quoteId);
-    localStorage.setItem('savedQuotes', JSON.stringify(updatedQuotes));
-    setSavedQuotes(updatedQuotes);
+    const index = existingQuotes.findIndex(q => q.id === quoteId);
+    const removed = existingQuotes[index];
+    if (!removed) return;
+    writeQuotes(existingQuotes.filter(q => q.id !== quoteId));
+    if (quoteId === currentQuoteId) { setCurrentQuoteId(null); setSavedSnapshot(null); }
+    showToast(`Deleted ${removed.inputs?.projectName || 'untitled quote'}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          const now = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+          writeQuotes([...now.slice(0, index), removed, ...now.slice(index)]);
+          setToast(null);
+        },
+      },
+    });
   };
 
   const exportQuote = () => {
@@ -537,6 +611,7 @@ export default function App() {
     link.download = `quote-${inputs.projectName || 'untitled'}-${new Date().toISOString().split('T')[0]}.json`;
     link.click();
     URL.revokeObjectURL(url);
+    showToast('Quote file downloaded');
   };
 
   const importQuote = (event) => {
@@ -547,10 +622,12 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const quote = JSON.parse(e.target.result);
-        loadQuote(quote);
-        showToast('Quote imported');
+        if (!quote || typeof quote !== 'object' || !quote.inputs) throw new Error('Not a quote file');
+        if (!confirmDiscard()) return;
+        loadQuote(quote, { fromSaved: false });
+        showToast('Quote imported. Save it to keep it in Saved.');
       } catch (error) {
-        alert('Error importing quote. Please check the file format.');
+        showToast("That file isn't a quote exported from this calculator. Choose a .json file made with Export.", { tone: 'error' });
       }
     };
     reader.readAsText(file);
@@ -1887,6 +1964,7 @@ export default function App() {
       ? `${inputs.projectName.replace(/[^a-z0-9]/gi, '_')}${suffix}`
       : `Roofing${suffix}`;
     doc.save(fileName);
+    showToast(`${isContractor ? 'Contractor quote' : 'Distributor estimate'} PDF downloaded`);
   };
 
   const currentOptions = PRODUCT_OPTIONS[inputs.coatingSystem];
@@ -1928,7 +2006,7 @@ export default function App() {
   const ValidationError = ({ field }) => {
     const err = validationErrors[field];
     if (!err) return null;
-    return <div className="text-xs text-red-600 mt-1 flex items-center gap-1"><AlertTriangle size={12} />{err}</div>;
+    return <div id={`err-${field}`} role="alert" className="text-xs text-red-700 mt-1.5 flex items-start gap-1"><AlertTriangle size={12} className="mt-px shrink-0" />{err}</div>;
   };
 
 
@@ -2144,7 +2222,79 @@ export default function App() {
       doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 36, { align: 'right' });
     }
     doc.save('quote-comparison.pdf');
+    showToast('Comparison PDF downloaded');
   };
+
+  // --- POPOVERS, SHORTCUTS, NAVIGATION ---
+  const savedBtnRef = useRef(null);
+  const moreBtnRef = useRef(null);
+  const issuesBtnRef = useRef(null);
+  const comparisonRef = useRef(null);
+
+  const closeSaved = () => { setShowSaved(false); setCompareMode(false); setSelectedForCompare([]); };
+
+  // Esc closes whichever layer is open and returns focus to its trigger; Ctrl/Cmd+S saves
+  const saveQuoteRef = useRef(saveQuote);
+  saveQuoteRef.current = saveQuote;
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveQuoteRef.current();
+        return;
+      }
+      if (e.key !== 'Escape') return;
+      if (showSaved) { closeSaved(); savedBtnRef.current?.focus(); }
+      else if (showMore) { setShowMore(false); moreBtnRef.current?.focus(); }
+      else if (showValidationSummary) { setShowValidationSummary(false); issuesBtnRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // Scroll to and focus the field behind a validation message
+  const jumpToField = (key) => {
+    setShowValidationSummary(false);
+    if (key === 'email' || key === 'phone') setShowCustomerInfo(true);
+    setTimeout(() => {
+      const el = document.querySelector(`[data-field="${key}"]`);
+      if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); }
+    }, 50);
+  };
+
+  // One-line summary for a saved quote: area, 15-year (or 10-year) cost, save time
+  const savedQuoteSummary = (q) => {
+    const tier = q.estimates?.['15'] ? '15' : '10';
+    const est = q.estimates?.[tier];
+    const p = q.prices || {};
+    const cost = est ? (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0)
+      + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0)
+      + (q.commonResults?.accessoryQty || 0) * (p.accessory || 0) + (q.commonResults?.membraneRolls || 0) * (p.membrane || 0)
+      + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.goldsealCost || 0) : 0;
+    const when = new Date(q.savedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return [
+      `${(q.inputs.roofSizeSqFt || 0).toLocaleString()} sq ft`,
+      cost > 0 ? `${formatCurrency(cost)} (${tier}-yr cost)` : q.inputs.coatingSystem,
+      when,
+    ].join(' · ');
+  };
+
+  // Comparison opens directly under the top bar and takes focus
+  const openComparison = () => {
+    setShowComparison(true);
+    setShowSaved(false);
+    setTimeout(() => {
+      comparisonRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      comparisonRef.current?.focus({ preventScroll: true });
+    }, 50);
+  };
+
+  // Field wiring for errors: aria-invalid, described-by and a jump target
+  const fieldProps = (key) => ({
+    'data-field': key,
+    'aria-invalid': validationErrors[key] ? true : undefined,
+    'aria-describedby': validationErrors[key] ? `err-${key}` : undefined,
+  });
 
   // --- RENDER HELPERS ---
   // Plain render functions (not components) so inputs keep focus across re-renders.
@@ -2188,6 +2338,12 @@ export default function App() {
   // On phones only the selected warranty tier column is shown
   const tierCls = (y) => (y === leadTier ? '' : 'hidden sm:table-cell');
 
+  // Application rate for a coat across the shown tiers: "1.5 gal/sq" or "1.5 / 2 / 2.5 gal/sq"
+  const rateText = (key) => {
+    const r = tiers.map(y => estimates[y]?.rates?.[key] || 0);
+    return `${r.every(v => v === r[0]) ? r[0] : r.join(' / ')} gal/sq`;
+  };
+
   const productCell = (name, detail, extra) => (
     <td className="sm:min-w-[190px]">
       <div className="font-medium text-ink">{name}</div>
@@ -2207,6 +2363,7 @@ export default function App() {
           min="0"
           placeholder="0.00"
           aria-label={`Price per ${unit}`}
+          {...fieldProps(`price_${key}`)}
           value={prices[key] || ''}
           onChange={(e) => handlePriceChange(key, e.target.value)}
           className={`input input-sm num w-[76px] sm:w-[92px] pl-5 text-right ${isUnpriced(key) ? '!border-amber-400 bg-amber-50/60' : ''}`}
@@ -2229,7 +2386,7 @@ export default function App() {
           {price > 0 && <div className="text-xs text-ink-3 mt-0.5">{formatCurrency(qty * price)}</div>}
         </>
       ) : (
-        <span className="text-ink-4">—</span>
+        <span className="text-ink-3">—</span>
       )}
     </td>
   );
@@ -2269,43 +2426,65 @@ export default function App() {
               <span className="sm:hidden">Roofing Calculator</span>
               <span className="hidden sm:inline">Roofing Materials Calculator</span>
             </h1>
+            <span className="hidden md:inline text-xs text-ink-3 truncate" aria-live="polite">
+              {currentQuoteId ? (isDirty ? 'Unsaved changes' : 'All changes saved') : (hasContent ? 'Not saved yet' : '')}
+            </span>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
             {hasErrors && (
-              <button onClick={() => setShowValidationSummary(!showValidationSummary)} className="btn-ghost text-red-700 hover:text-red-800 hover:bg-red-50" aria-expanded={showValidationSummary}>
-                <AlertTriangle size={15} />
-                <span className="num">{Object.keys(validationErrors).length}</span>
-                <span className="hidden md:inline">issue{Object.keys(validationErrors).length > 1 ? 's' : ''}</span>
-              </button>
+              <div className="relative">
+                <button ref={issuesBtnRef} onClick={() => { setShowValidationSummary(!showValidationSummary); setShowSaved(false); setShowMore(false); }} className="btn-ghost text-red-700 hover:text-red-800 hover:bg-red-50" aria-expanded={showValidationSummary} aria-label={`${Object.keys(validationErrors).length} input issue${Object.keys(validationErrors).length > 1 ? 's' : ''}`}>
+                  <AlertTriangle size={15} />
+                  <span className="num">{Object.keys(validationErrors).length}</span>
+                  <span className="hidden md:inline">issue{Object.keys(validationErrors).length > 1 ? 's' : ''}</span>
+                </button>
+                {showValidationSummary && (
+                  <>
+                    <button className="fixed inset-0 z-40 cursor-default" aria-label="Close issues" tabIndex={-1} onClick={() => setShowValidationSummary(false)} />
+                    <div className="popover">
+                      <div className="px-3.5 py-2.5 border-b border-line text-[13px] font-semibold">Fix before sending</div>
+                      <ul className="py-1">
+                        {Object.entries(validationErrors).map(([key, msg]) => (
+                          <li key={key}>
+                            <button onClick={() => jumpToField(key)} className="w-full text-left flex items-start gap-2 px-3.5 py-2 text-[13px] text-ink-2 hover:bg-canvas">
+                              <AlertTriangle size={14} className="text-red-600 shrink-0 mt-0.5" /> {msg}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
             <div className="relative">
-              <button onClick={() => setShowSaved(!showSaved)} className="btn-secondary" aria-expanded={showSaved} aria-label="Saved quotes">
+              <button ref={savedBtnRef} onClick={() => { setShowSaved(!showSaved); setShowMore(false); setShowValidationSummary(false); }} className="btn-secondary" aria-expanded={showSaved} aria-label={`Saved quotes (${savedQuotes.length})`}>
                 <FileText size={15} />
                 <span className="hidden sm:inline">Saved</span>
-                <span className="num text-ink-3">{savedQuotes.length}</span>
+                {savedQuotes.length > 0 && <span className="num text-ink-3">{savedQuotes.length}</span>}
                 <ChevronDown size={14} className="text-ink-3" />
               </button>
               {showSaved && (
                 <>
-                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close saved quotes" onClick={() => { setShowSaved(false); setCompareMode(false); setSelectedForCompare([]); }} />
-                  <div className="absolute right-0 top-10 z-50 w-[340px] max-w-[calc(100vw-2rem)] panel shadow-pop overflow-hidden">
+                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close saved quotes" tabIndex={-1} onClick={closeSaved} />
+                  <div className="popover sm:w-[380px]" role="dialog" aria-label="Saved quotes">
                     <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-line">
                       <span className="text-[13px] font-semibold">Saved quotes</span>
                       {savedQuotes.length >= 2 && (
                         <button
                           onClick={() => { setCompareMode(!compareMode); setSelectedForCompare([]); }}
-                          className="text-[13px] font-medium text-accent-600 hover:text-accent-700"
+                          className="text-[13px] font-medium text-accent-600 hover:text-accent-700 min-h-[32px]"
                         >
                           {compareMode ? 'Cancel' : 'Compare…'}
                         </button>
                       )}
                     </div>
                     {savedQuotes.length === 0 ? (
-                      <p className="px-3.5 py-6 text-[13px] text-ink-3 text-center">No saved quotes yet. Use Save quote to keep this one.</p>
+                      <p className="px-3.5 py-6 text-[13px] text-ink-3 text-center">No saved quotes yet. Save quote keeps this one here.</p>
                     ) : (
-                      <ul className="max-h-80 overflow-y-auto divide-y divide-line">
+                      <ul className="max-h-[min(20rem,60vh)] overflow-y-auto divide-y divide-line">
                         {savedQuotes.map(quote => (
-                          <li key={quote.id} className="flex items-center gap-2 px-3.5 py-2 hover:bg-canvas">
+                          <li key={quote.id} className={`flex items-center gap-2 px-3.5 py-2 hover:bg-canvas ${quote.id === currentQuoteId ? 'bg-accent-50/60' : ''}`}>
                             {compareMode && (
                               <input
                                 type="checkbox"
@@ -2323,13 +2502,20 @@ export default function App() {
                               />
                             )}
                             <button
-                              onClick={() => { if (!compareMode) { loadQuote(quote); setShowSaved(false); showToast(`Loaded ${quote.inputs.projectName || 'untitled quote'}`); } }}
-                              className={`text-left flex-1 min-w-0 ${compareMode ? 'cursor-default' : ''}`}
+                              onClick={() => {
+                                if (compareMode) return;
+                                if (quote.id !== currentQuoteId && !confirmDiscard()) return;
+                                loadQuote(quote);
+                                closeSaved();
+                                showToast(`Loaded ${quote.inputs.projectName || 'untitled quote'}`);
+                              }}
+                              className={`text-left flex-1 min-w-0 py-0.5 ${compareMode ? 'cursor-default' : ''}`}
                             >
-                              <div className="text-[13px] font-medium truncate">{quote.inputs.projectName || 'Untitled'}</div>
-                              <div className="text-xs text-ink-3 truncate">
-                                {quote.inputs.coatingSystem} on {quote.inputs.roofType} · {new Date(quote.savedAt).toLocaleDateString()}
+                              <div className="text-[13px] font-medium truncate">
+                                {quote.inputs.projectName || 'Untitled'}
+                                {quote.id === currentQuoteId && <span className="ml-1.5 text-xs font-normal text-accent-700">Open</span>}
                               </div>
+                              <div className="text-xs text-ink-3 truncate num">{savedQuoteSummary(quote)}</div>
                             </button>
                             {!compareMode && (
                               <button onClick={() => deleteQuote(quote.id)} className="icon-btn hover:text-red-700" aria-label={`Delete ${quote.inputs.projectName || 'Untitled'}`}>
@@ -2340,16 +2526,23 @@ export default function App() {
                         ))}
                       </ul>
                     )}
-                    {compareMode && (
+                    {compareMode ? (
                       <div className="flex items-center justify-between px-3.5 py-2.5 border-t border-line bg-canvas">
                         <span className="text-xs text-ink-3">Pick 2 or 3 quotes</span>
                         <button
                           disabled={selectedForCompare.length < 2}
-                          onClick={() => { setShowComparison(true); setShowSaved(false); }}
-                          className="btn-primary h-7"
+                          onClick={openComparison}
+                          className="btn-primary"
                         >
                           Compare{selectedForCompare.length > 0 ? ` (${selectedForCompare.length})` : ''}
                         </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 border-t border-line bg-canvas">
+                        <button onClick={() => { closeSaved(); startNewQuote(); }} className="btn-ghost -ml-2"><Plus size={14} /> New quote</button>
+                        {currentQuoteId && (
+                          <button onClick={() => { closeSaved(); saveQuote({ asNew: true }); }} className="btn-ghost -mr-2">Save as new</button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2357,31 +2550,36 @@ export default function App() {
               )}
             </div>
             <div className="relative md:hidden">
-              <button onClick={() => setShowMore(!showMore)} className="btn-secondary px-2" aria-expanded={showMore} aria-label="More actions">
+              <button ref={moreBtnRef} onClick={() => { setShowMore(!showMore); setShowSaved(false); setShowValidationSummary(false); }} className="btn-secondary px-2" aria-expanded={showMore} aria-label="More actions">
                 <MoreHorizontal size={16} />
               </button>
               {showMore && (
                 <>
-                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close menu" onClick={() => setShowMore(false)} />
-                  <div className="absolute right-0 top-10 z-50 w-48 panel shadow-pop py-1">
-                    <label className="flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas cursor-pointer">
+                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close menu" tabIndex={-1} onClick={() => setShowMore(false)} />
+                  <div className="absolute right-0 top-10 z-50 w-52 panel shadow-pop py-1" role="menu">
+                    <label className="menu-item focus-within:bg-canvas focus-within:ring-2 focus-within:ring-inset focus-within:ring-accent-600">
                       <Upload size={15} className="text-ink-3" /> Import quote file
-                      <input type="file" accept=".json" onChange={(e) => { importQuote(e); setShowMore(false); }} className="hidden" />
+                      <input type="file" accept=".json" onChange={(e) => { importQuote(e); setShowMore(false); }} className="sr-only" />
                     </label>
-                    <button onClick={() => { exportQuote(); setShowMore(false); }} className="w-full flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas">
+                    <button onClick={() => { exportQuote(); setShowMore(false); }} className="menu-item">
                       <Download size={15} className="text-ink-3" /> Export quote file
                     </button>
-                    <button onClick={() => { setShowMore(false); window.print(); }} className="w-full flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas">
+                    <button onClick={() => { setShowMore(false); window.print(); }} className="menu-item">
                       <Printer size={15} className="text-ink-3" /> Print
                     </button>
+                    {currentQuoteId && (
+                      <button onClick={() => { setShowMore(false); saveQuote({ asNew: true }); }} className="menu-item">
+                        <Save size={15} className="text-ink-3" /> Save as new quote
+                      </button>
+                    )}
                   </div>
                 </>
               )}
             </div>
-            <label className="btn-secondary cursor-pointer hidden md:inline-flex" aria-label="Import quote file" title="Import quote file">
+            <label className="btn-secondary cursor-pointer hidden md:inline-flex focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-600" title="Import quote file">
               <Upload size={15} />
               <span>Import</span>
-              <input type="file" accept=".json" onChange={importQuote} className="hidden" />
+              <input type="file" accept=".json" onChange={importQuote} className="sr-only" aria-label="Import quote file" />
             </label>
             <button onClick={exportQuote} className="btn-secondary hidden md:inline-flex" aria-label="Export quote file" title="Export quote file">
               <Download size={15} />
@@ -2391,28 +2589,13 @@ export default function App() {
               <Printer size={15} />
               <span className="hidden lg:inline">Print</span>
             </button>
-            <button onClick={saveQuote} className="btn-primary">
+            <button onClick={() => saveQuote()} className="btn-primary" title="Save quote (Ctrl+S)">
               <Save size={15} />
               <span>Save<span className="hidden sm:inline"> quote</span></span>
             </button>
           </div>
         </div>
       </header>
-
-      {/* Validation Summary */}
-      {showValidationSummary && hasErrors && (
-        <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pt-4 print:hidden">
-          <div className="callout-danger">
-            <AlertTriangle size={16} className="shrink-0 mt-px" />
-            <div>
-              <div className="font-semibold mb-1">Fix these before sending the quote</div>
-              <ul className="space-y-0.5">
-                {Object.entries(validationErrors).map(([key, msg]) => <li key={key}>{msg}</li>)}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Print Header (only visible when printing) */}
       <div className="hidden print:block mb-6">
@@ -2455,734 +2638,12 @@ export default function App() {
         )}
       </div>
 
-      <main className="max-w-[1320px] mx-auto px-4 lg:px-8 py-5 lg:py-6 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:block print:p-0 print:max-w-none">
-
-        {/* LEFT COLUMN: INPUTS */}
-        <aside className="panel divide-y divide-line print:hidden">
-
-          {/* PROJECT */}
-          <section className="px-4 sm:px-5 py-5 space-y-4">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Project</h2>
-            <div>
-              <label htmlFor="projectName" className="label">Project name</label>
-              <input
-                id="projectName"
-                type="text"
-                value={inputs.projectName}
-                onChange={(e) => handleChange('projectName', e.target.value)}
-                className="input"
-                placeholder="e.g. Smith Warehouse"
-              />
-            </div>
-            <div>
-              <label htmlFor="quoteDate" className="label">Quote date</label>
-              <input
-                id="quoteDate"
-                type="date"
-                value={quoteDate}
-                onChange={(e) => setQuoteDate(e.target.value)}
-                className="input num"
-              />
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowCustomerInfo(!showCustomerInfo)}
-                aria-expanded={showCustomerInfo}
-                className="w-full flex items-center justify-between text-[13px] font-medium text-ink-2 hover:text-ink py-1"
-              >
-                <span className="flex items-center gap-2"><User size={15} className="text-ink-3" /> Customer details <span className="font-normal text-ink-3">Optional</span></span>
-                <ChevronDown size={16} className={`text-ink-3 transition-transform ${showCustomerInfo ? 'rotate-180' : ''}`} />
-              </button>
-              {showCustomerInfo && (
-                <div className="grid sm:grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <label htmlFor="custName" className="label">Customer name</label>
-                    <input id="custName" type="text" value={customerInfo.name} onChange={(e) => handleCustomerInfoChange('name', e.target.value)} className="input" placeholder="Jane Doe" />
-                  </div>
-                  <div>
-                    <label htmlFor="custCompany" className="label">Company</label>
-                    <input id="custCompany" type="text" value={customerInfo.company} onChange={(e) => handleCustomerInfoChange('company', e.target.value)} className="input" placeholder="ABC Roofing Co." />
-                  </div>
-                  <div>
-                    <label htmlFor="custPhone" className="label">Phone</label>
-                    <input id="custPhone" type="tel" value={customerInfo.phone} onChange={(e) => handleCustomerInfoChange('phone', e.target.value)} className={`input ${validationErrors.phone ? 'input-error' : ''}`} placeholder="(555) 123-4567" />
-                    <ValidationError field="phone" />
-                  </div>
-                  <div>
-                    <label htmlFor="custEmail" className="label">Email</label>
-                    <input id="custEmail" type="email" value={customerInfo.email} onChange={(e) => handleCustomerInfoChange('email', e.target.value)} className={`input ${validationErrors.email ? 'input-error' : ''}`} placeholder="customer@email.com" />
-                    <ValidationError field="email" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label htmlFor="custAddress" className="label">Mailing address</label>
-                    <input id="custAddress" type="text" value={customerInfo.address} onChange={(e) => handleCustomerInfoChange('address', e.target.value)} className="input" placeholder="123 Main St, City, State 12345" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label htmlFor="custProjectAddress" className="label">Project address</label>
-                    <input id="custProjectAddress" type="text" value={customerInfo.projectAddress} onChange={(e) => handleCustomerInfoChange('projectAddress', e.target.value)} className="input" placeholder="456 Project St, City, State 12345" />
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* SYSTEM */}
-          <section className="px-4 sm:px-5 py-5 space-y-4">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Coating system</h2>
-            <div className="seg" role="group" aria-label="Coating system">
-              {['Silicone', 'Acrylic', 'Aluminum'].map(sys => segButton(sys, inputs.coatingSystem === sys, () => handleChange('coatingSystem', sys)))}
-            </div>
-            {inputs.coatingSystem === 'Acrylic' && (
-              <div>
-                <span className="label">Acrylic system type</span>
-                <div className="seg" role="group" aria-label="Acrylic system type">
-                  {segButton('Standard', inputs.acrylicSystemType === 'Standard', () => handleChange('acrylicSystemType', 'Standard'))}
-                  {segButton('Reinforced', inputs.acrylicSystemType === 'Reinforced', () => handleChange('acrylicSystemType', 'Reinforced'))}
-                </div>
-                <p className="hint">{inputs.acrylicSystemType === 'Reinforced' ? 'Full-system membrane reinforcement.' : 'No membrane.'}</p>
-              </div>
-            )}
-            <div>
-              <label htmlFor="topcoat" className="label">Topcoat</label>
-              <select id="topcoat" className="input" value={inputs.selectedTopcoat} onChange={(e) => handleChange('selectedTopcoat', e.target.value)}>
-                {currentOptions.topcoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            </div>
-            {inputs.coatingSystem !== 'Aluminum' && (
-              <div>
-                <label htmlFor="basecoat" className="label">Basecoat</label>
-                <select id="basecoat" className="input" value={inputs.selectedBasecoat} onChange={(e) => handleChange('selectedBasecoat', e.target.value)}>
-                  {currentOptions.basecoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-              </div>
-            )}
-            <div>
-              <label htmlFor="butterGrade" className="label">Seam treatment (butter grade)</label>
-              <select id="butterGrade" className="input" value={inputs.selectedButterGrade} onChange={(e) => handleChange('selectedButterGrade', e.target.value)}>
-                {currentOptions.butterGrades.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            </div>
-            <div>
-              <span className="label">Detailing</span>
-              <div className="seg" role="group" aria-label="Detailing preference">
-                {segButton('Butter grade', inputs.accessoryType === 'Butter Grade', () => handleChange('accessoryType', 'Butter Grade'))}
-                {segButton('Fabric', inputs.accessoryType === 'Fabric', () => handleChange('accessoryType', 'Fabric'))}
-              </div>
-            </div>
-            <div>
-              <label htmlFor="fabric" className="label">Fabric / mesh</label>
-              <select
-                id="fabric"
-                className="input"
-                value={inputs.selectedFabric}
-                onChange={(e) => handleChange('selectedFabric', e.target.value)}
-                disabled={inputs.accessoryType === 'Butter Grade'}
-              >
-                {currentOptions.fabrics.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-              {inputs.accessoryType === 'Butter Grade' && <p className="hint">Only used when detailing with fabric.</p>}
-            </div>
-          </section>
-
-          {/* ROOF */}
-          <section className="px-4 sm:px-5 py-5 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Roof</h2>
-              <label className="flex items-center gap-2.5 text-[13px] text-ink-2 cursor-pointer">
-                Multiple sections
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={useMultiSection}
-                  aria-label="Multiple roof sections"
-                  onClick={() => { setUseMultiSection(!useMultiSection); if (!useMultiSection && roofSections.length === 0) addRoofSection(); }}
-                  className="switch"
-                >
-                  <span />
-                </button>
-              </label>
-            </div>
-
-            {!useMultiSection ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="roofSize" className="label">Roof area <span className="font-normal text-ink-3">sq ft</span></label>
-                  <input
-                    id="roofSize"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    max="1000000"
-                    value={inputs.roofSizeSqFt || ''}
-                    onChange={(e) => handleChange('roofSizeSqFt', parseFloat(e.target.value) || 0)}
-                    className={`input num ${validationErrors.roofSizeSqFt ? 'input-error' : ''}`}
-                    placeholder="5,000"
-                  />
-                  <ValidationError field="roofSizeSqFt" />
-                  <p className="hint num">{commonResults.squares.toFixed(2)} squares</p>
-                </div>
-                <div>
-                  <label htmlFor="linearFeet" className="label">Seams <span className="font-normal text-ink-3">linear ft</span></label>
-                  <input
-                    id="linearFeet"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    max="100000"
-                    value={inputs.linearFeet || ''}
-                    onChange={(e) => handleChange('linearFeet', parseFloat(e.target.value) || 0)}
-                    className={`input num ${validationErrors.linearFeet ? 'input-error' : ''}`}
-                    placeholder="250"
-                  />
-                  <ValidationError field="linearFeet" />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <ul className="border border-line rounded-md divide-y divide-line">
-                  {roofSections.map((section) => (
-                    <li key={section.id} className="p-3 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <input
-                          type="text"
-                          aria-label="Section name"
-                          value={section.name}
-                          onChange={(e) => updateRoofSection(section.id, 'name', e.target.value)}
-                          className="min-w-0 flex-1 text-[13px] font-semibold bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-canvas focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-100"
-                        />
-                        <button onClick={() => removeRoofSection(section.id)} className="icon-btn hover:text-red-700" aria-label={`Remove ${section.name}`}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="label text-xs mb-1">Sq ft</label>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            min="0"
-                            value={section.sqFt || ''}
-                            onChange={(e) => updateRoofSection(section.id, 'sqFt', parseFloat(e.target.value) || 0)}
-                            className={`input input-sm num ${validationErrors[`section_${section.id}_sqFt`] ? 'input-error' : ''}`}
-                            placeholder="0"
-                          />
-                          <ValidationError field={`section_${section.id}_sqFt`} />
-                        </div>
-                        <div>
-                          <label className="label text-xs mb-1">Linear ft</label>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            min="0"
-                            value={section.linearFeet || ''}
-                            onChange={(e) => updateRoofSection(section.id, 'linearFeet', parseFloat(e.target.value) || 0)}
-                            className={`input input-sm num ${validationErrors[`section_${section.id}_lf`] ? 'input-error' : ''}`}
-                            placeholder="0"
-                          />
-                          <ValidationError field={`section_${section.id}_lf`} />
-                        </div>
-                        <div>
-                          <label className="label text-xs mb-1">Roof type</label>
-                          <select value={section.roofType} onChange={(e) => updateRoofSection(section.id, 'roofType', e.target.value)} className="input input-sm">
-                            {getAvailableRoofTypes().map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="label text-xs mb-1">Waste</label>
-                          <select value={section.wasteFactor} onChange={(e) => updateRoofSection(section.id, 'wasteFactor', e.target.value)} className="input input-sm num">
-                            {percentOptions(15)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="label text-xs mb-1">Stretch</label>
-                          <select value={section.stretchFactor} onChange={(e) => updateRoofSection(section.id, 'stretchFactor', e.target.value)} className="input input-sm num">
-                            {percentOptions(30)}
-                          </select>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-                <button onClick={addRoofSection} className="btn-secondary w-full">
-                  <Plus size={14} /> Add section
-                </button>
-                <dl className="text-[13px] space-y-1 num">
-                  <div className="flex justify-between"><dt className="text-ink-3">Total area</dt><dd className="font-medium">{inputs.roofSizeSqFt.toLocaleString()} sq ft · {commonResults.squares.toFixed(2)} sq</dd></div>
-                  <div className="flex justify-between"><dt className="text-ink-3">Total seams</dt><dd className="font-medium">{inputs.linearFeet.toLocaleString()} LF</dd></div>
-                </dl>
-              </div>
-            )}
-
-            <fieldset disabled={useMultiSection} className={`space-y-4 ${useMultiSection ? 'opacity-60' : ''}`}>
-              {useMultiSection && <p className="hint mt-0">Roof type, waste and stretch are set per section above.</p>}
-              <div>
-                <label htmlFor="roofType" className="label">Roof type</label>
-                <select id="roofType" className="input" value={inputs.roofType} onChange={(e) => handleChange('roofType', e.target.value)}>
-                  <option value="Capsheet">Capsheet</option>
-                  {/* Single-Ply not available for Aluminum */}
-                  {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
-                  {/* Sprayfoam for Silicone or Acrylic Standard only, NOT Aluminum */}
-                  {inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
-                  {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
-                  {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
-                </select>
-                {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet and single-ply only.</p>}
-                {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and capsheet only.</p>}
-              </div>
-
-              {/* Fastener encapsulation method — sits right under Roof Type so it's
-                  immediately visible when Metal is picked (otherwise it's easy to miss). */}
-              {inputs.roofType === 'Metal' && inputs.accessoryType === 'Butter Grade' && (
-                <div>
-                  <span className="label">Fastener encapsulation</span>
-                  <div className="seg" role="group" aria-label="Fastener encapsulation">
-                    {segButton('Butter grade', !inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', false))}
-                    {segButton('Self-leveling caulk', !!inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', true))}
-                  </div>
-                  <p className="hint">
-                    {inputs.useFastenerCaulk
-                      ? `Fasteners covered by self-leveling caulk (~${FASTENERS_PER_CAULK_TUBE}/tube). Butter grade stays for seams and penetrations only.`
-                      : 'Butter grade buckets cover both seams and fasteners. Switch to caulk if the contractor prefers it.'}
-                  </p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="waste" className="label">Waste</label>
-                  <select id="waste" className="input num" value={inputs.wasteFactor} onChange={(e) => handleChange('wasteFactor', e.target.value)}>
-                    {percentOptions(15)}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="stretch" className="label">Stretch</label>
-                  <select id="stretch" className="input num" value={inputs.stretchFactor} onChange={(e) => handleChange('stretchFactor', e.target.value)}>
-                    {percentOptions(30)}
-                  </select>
-                </div>
-              </div>
-            </fieldset>
-          </section>
-
-          {/* CONDITIONS */}
-          <section className="px-4 sm:px-5 pt-5 pb-2">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em] mb-1">Site conditions</h2>
-            <div className="divide-y divide-line">
-              {/* Adhesion test not needed for Aluminum */}
-              {inputs.coatingSystem !== 'Aluminum' && (
-                <div>
-                  {switchRow('Passed adhesion test', inputs.passedAdhesion, () => handleChange('passedAdhesion', !inputs.passedAdhesion))}
-                  {!inputs.passedAdhesion && (
-                    <div className="callout-danger mb-3">
-                      <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                      <span>Adhesion failure: adhesion primer added to the order.</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* RUST TOGGLE - FOR SILICONE OR ACRYLIC ON METAL (not Aluminum) */}
-              {(inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic') && inputs.roofType === 'Metal' && (
-                <div>
-                  {switchRow('Rust present', inputs.hasRust, () => handleChange('hasRust', !inputs.hasRust))}
-                  {inputs.hasRust && (
-                    <div className="pb-3">
-                      <span className="label">Rust primer coverage</span>
-                      <div className="seg" role="group" aria-label="Rust primer coverage">
-                        {segButton('Field prime', inputs.rustPrimeMethod !== 'spot', () => handleChange('rustPrimeMethod', 'field'))}
-                        {segButton('Spot prime', inputs.rustPrimeMethod === 'spot', () => handleChange('rustPrimeMethod', 'spot'))}
-                      </div>
-                      <p className="hint">
-                        {inputs.rustPrimeMethod === 'spot'
-                          ? `No primer quantity calculated. All quotes will read: "${SPOT_PRIME_NOTE}".`
-                          : 'Rust primer at 0.5 gal/sq across the entire field.'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {switchRow('Goldseal warranty', inputs.goldseal, () => handleChange('goldseal', !inputs.goldseal))}
-            </div>
-          </section>
-        </aside>
-
-        {/* RIGHT COLUMN: RESULTS */}
-        <div ref={resultsRef} className="results-col min-w-0 lg:sticky" style={{ top: resultsTop }}>
-          <section id="order" className="panel overflow-hidden print:border-0 scroll-mt-20">
-            <div className="flex items-start justify-between gap-4 px-4 sm:px-5 py-4 border-b border-line">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold tracking-[-0.01em]">Material order</h2>
-                <p className="text-[13px] text-ink-3 mt-0.5">{systemLabel} on {roofTypeLabel} · {factorsLabel}</p>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-lg font-semibold num leading-tight">{commonResults.squares.toFixed(1)} <span className="text-[13px] font-normal text-ink-3">sq</span></div>
-                <div className="text-xs text-ink-3 num">{inputs.roofSizeSqFt.toLocaleString()} sq ft</div>
-              </div>
-            </div>
-
-            {/* DISTRIBUTOR MARGIN */}
-            <div className="px-4 sm:px-5 py-3 border-b border-line flex flex-wrap items-center gap-x-6 gap-y-2 bg-canvas/50 print:hidden">
-              <label htmlFor="margin" className="flex items-center gap-2.5">
-                <span className="text-[13px] font-medium text-ink-2">Distributor margin</span>
-                <span className="relative">
-                  <input
-                    id="margin"
-                    type="number"
-                    inputMode="decimal"
-                    step="1"
-                    min="0"
-                    max="99"
-                    value={profitMargin}
-                    onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
-                    className={`input input-sm num w-[76px] pr-7 text-right ${validationErrors.profitMargin ? 'input-error' : ''}`}
-                    placeholder="0"
-                  />
-                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">%</span>
-                </span>
-              </label>
-              <div className="basis-full -mt-1 empty:hidden">
-                <ValidationError field="profitMargin" />
-                <p className="text-xs text-ink-3">
-                  {profitMargin > 0
-                    ? `The distributor estimate shows your cost and the ${profitMargin}% margin. The contractor quote shows marked-up prices only.`
-                    : 'Set a margin to mark up prices on the contractor quote.'}
-                </p>
-              </div>
-            </div>
-
-            {/* MISSING LINEAR FEET */}
-            {inputs.linearFeet <= 0 && (
-              <div className="px-4 sm:px-5 pt-4">
-                <div className="callout-warn">
-                  <AlertTriangle size={15} className="shrink-0 mt-px text-amber-600" />
-                  <div>
-                    <span className="font-semibold">Quote incomplete.</span> Add seam linear feet to calculate butter grade (seam sealant).
-                    {inputs.roofType === 'Metal' && commonResults.screwBuckets > 0 && (
-                      <span className="block mt-0.5 text-amber-800">Fastener encapsulation for ~{commonResults.screwCount} screws is included, based on roof area.</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ORDER TABLE */}
-            {tiers.length > 1 && (
-              <div className="sm:hidden px-4 pt-4">
-                <div className="seg" role="group" aria-label="Warranty tier">
-                  {tiers.map(y => segButton(`${y}-year`, leadTier === y, () => setMobileTier(y)))}
-                </div>
-              </div>
-            )}
-            <div className="overflow-x-auto mt-3 print:overflow-visible">
-              <table className="order w-full sm:min-w-[600px] text-sm border-separate border-spacing-0">
-                <thead>
-                  <tr>
-                    <th scope="col">Product</th>
-                    <th scope="col">Price / unit</th>
-                    {tiers.map(y => <th key={y} scope="col" className={`text-ink-2 ${tierCls(y)}`}>{y}-year</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Base Coat (Acrylic) OR System Primer (Silicone) */}
-                  {inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0 && (
-                    <tr>
-                      {productCell('Basecoat', inputs.selectedBasecoat)}
-                      {priceCell('basecoat', 'gal')}
-                      {tierQtyCells('baseGal', 'gal', prices.basecoat)}
-                    </tr>
-                  )}
-
-                  {/* Spot Prime note row — rust present but user chose spot prime, so no quantities */}
-                  {inputs.hasRust && inputs.rustPrimeMethod === 'spot'
-                    && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
-                    && inputs.roofType === 'Metal' && (
-                    <tr>
-                      <td colSpan={colCount} className="!text-left">
-                        <div className="flex items-start gap-2">
-                          <Info size={14} className="mt-0.5 text-amber-600 shrink-0" />
-                          <div>
-                            <div className="font-medium">Rust primer — spot prime</div>
-                            <div className="text-xs text-ink-3 mt-0.5">{currentPrimers.rust} — {SPOT_PRIME_NOTE}. No field quantity calculated.</div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-
-                  {/* Rust Primer (Metal only) */}
-                  {estimates['10']?.rustPrimerGal > 0 && (
-                    <tr>
-                      {productCell('Rust primer', `${currentPrimers.rust} · 5-gal pails`)}
-                      {priceCell('rustPrimer', 'gal')}
-                      {tierQtyCells('rustPrimerGal', 'gal', prices.rustPrimer)}
-                    </tr>
-                  )}
-
-                  {/* Adhesion Primer */}
-                  {!inputs.passedAdhesion && (
-                    <tr>
-                      {productCell('Adhesion primer', `${currentPrimers.adhesion} · 1-gal containers`,
-                        <span className="badge bg-red-50 text-red-700 mt-1.5"><AlertTriangle size={11} /> Failed adhesion test</span>)}
-                      {priceCell('adhesionPrimer', 'gal')}
-                      {tierQtyCells('adhesionPrimerGal', 'gal', prices.adhesionPrimer)}
-                    </tr>
-                  )}
-
-                  {/* Top Coats */}
-                  {['top1Gal', 'top2Gal', 'top3Gal'].map((field, i) => (
-                    (estimates['10']?.[field] > 0 || estimates['15']?.[field] > 0 || estimates['20']?.[field] > 0) && (
-                      <tr key={field}>
-                        {productCell(`Topcoat ${i + 1}`, inputs.selectedTopcoat)}
-                        {i === 0 ? priceCell('topcoat', 'gal') : sameAsCell('Same as topcoat 1')}
-                        {tierQtyCells(field, 'gal', prices.topcoat)}
-                      </tr>
-                    )
-                  ))}
-
-                  {/* Coatings subtotal */}
-                  <tr className="row-sub">
-                    <td>Coatings total</td>
-                    <td />
-                    {tiers.map(y => (
-                      <td key={y} className={`num whitespace-nowrap ${tierCls(y)}`}>
-                        <div>{fmtQty(estimates[y]?.totalGallons)} gal</div>
-                        {hasCoatingPrices && <div className="text-xs text-ink-3 font-normal mt-0.5">{formatCurrency(coatingCost(y))}</div>}
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* ACCESSORIES (same quantity for every warranty tier) */}
-                  {hasAccessoryRows && (
-                    <tr>
-                      <td colSpan={colCount} className="!text-left !pt-4 !pb-1.5 text-xs font-medium text-ink-3">Accessories</td>
-                    </tr>
-                  )}
-
-                  {showAccessory && (
-                    commonResults.screwBuckets > 0 ? (
-                      /* Metal roof: the seam sealer does double duty — sealing seams (by
-                         linear feet) and encapsulating fasteners (by roof area). Show them
-                         as separate line items sharing one per-bucket price. */
-                      <>
-                        {commonResults.linearBuckets > 0 && (
-                          <tr>
-                            {productCell(`${commonResults.accessoryName || 'Seam sealer'} — seams`, 'By linear feet')}
-                            {priceCell('accessory', 'bucket')}
-                            {commonQtyCells(commonResults.linearBuckets, 'buckets', prices.accessory)}
-                          </tr>
-                        )}
-                        <tr>
-                          {productCell(`${commonResults.accessoryName || 'Seam sealer'} — fasteners`, `Encapsulates ~${(commonResults.screwCount || 0).toLocaleString()} fasteners (by roof area)`)}
-                          {commonResults.linearBuckets > 0 ? sameAsCell('Same as above') : priceCell('accessory', 'bucket')}
-                          {commonQtyCells(commonResults.screwBuckets, 'buckets', prices.accessory)}
-                        </tr>
-                      </>
-                    ) : (
-                      <tr>
-                        {productCell(
-                          inputs.linearFeet > 0 ? commonResults.accessoryName : 'Fastener encapsulation',
-                          inputs.linearFeet > 0 ? commonResults.accessoryDesc : 'Metal roof screw encapsulation'
-                        )}
-                        {priceCell('accessory', accUnitSingular)}
-                        {commonQtyCells(commonResults.accessoryQty, (commonResults.accessoryUnit || '').toLowerCase(), prices.accessory)}
-                      </tr>
-                    )
-                  )}
-
-                  {/* FASTENER CAULK ROW (when toggled on for metal roofs) */}
-                  {commonResults.fastenerCaulkTubes > 0 && (
-                    <tr>
-                      {productCell('Fastener caulk', `${FASTENER_CAULK_NAME} · ~${FASTENERS_PER_CAULK_TUBE} fasteners/tube, covers ~${(commonResults.screwCount || 0).toLocaleString()}`)}
-                      {priceCell('fastenerCaulk', 'tube')}
-                      {commonQtyCells(commonResults.fastenerCaulkTubes, 'tubes', prices.fastenerCaulk)}
-                    </tr>
-                  )}
-
-                  {/* ACRYLIC MEMBRANE ROW (Only for Reinforced) */}
-                  {isReinforced && (
-                    <tr>
-                      {productCell('Reinforcement membrane', `Full-system reinforcement · 40" × 324' rolls`)}
-                      {priceCell('membrane', 'roll')}
-                      {commonQtyCells(commonResults.membraneRolls, 'rolls', prices.membrane)}
-                    </tr>
-                  )}
-
-                  {/* Goldseal */}
-                  {inputs.goldseal && (
-                    <tr>
-                      {productCell('Goldseal warranty', 'Priced per warranty term')}
-                      <td />
-                      {tiers.map(y => qtyCell(y, 1, 'warranty', estimates[y]?.goldsealCost || 0))}
-                    </tr>
-                  )}
-
-                </tbody>
-                <tfoot>
-                  {/* GRAND TOTAL */}
-                  <tr className="row-total">
-                    <td>
-                      {profitMargin > 0 ? 'Cost to distributor' : 'Total'}
-                      {unpricedNote && <div className="text-xs font-normal text-amber-700 mt-0.5">{unpricedNote}</div>}
-                    </td>
-                    <td className="!font-normal text-xs text-ink-3"><span className="print:hidden">{profitMargin > 0 ? 'Your cost' : 'All materials'}</span></td>
-                    {tiers.map(y => (
-                      <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>
-                        {hasPrices ? formatCurrency(grandTotals[y] || 0) : <span className="text-[13px] font-normal text-ink-4">Enter prices</span>}
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* COST PER SQ FT */}
-                  {hasPrices && inputs.roofSizeSqFt > 0 && (
-                    <tr className="row-meta">
-                      <td>{profitMargin > 0 ? 'Distributor cost per sq ft' : 'Cost per sq ft'}</td>
-                      <td />
-                      {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) / inputs.roofSizeSqFt)}</td>)}
-                    </tr>
-                  )}
-
-                  {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
-                  {profitMargin > 0 && hasPrices && (
-                    <>
-                      <tr className="row-total">
-                        <td>
-                          Contractor price
-                          <div className="text-xs font-normal text-ink-3 mt-0.5 print:hidden">{profitMargin}% margin</div>
-                        </td>
-                        <td />
-                        {tiers.map(y => (
-                          <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor))}</td>
-                        ))}
-                      </tr>
-                      <tr className="row-meta print:hidden">
-                        <td>Your profit</td>
-                        <td />
-                        {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) - (grandTotals[y] || 0))}</td>)}
-                      </tr>
-                      {inputs.roofSizeSqFt > 0 && (
-                        <tr className="row-meta">
-                          <td>Contractor price per sq ft</td>
-                          <td />
-                          {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) / inputs.roofSizeSqFt)}</td>)}
-                        </tr>
-                      )}
-                    </>
-                  )}
-                  <tr className="row-meta"><td colSpan={colCount} className="!pb-1" /></tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {/* PDF DOWNLOADS */}
-            <div className="px-4 sm:px-5 py-4 border-t border-line grid sm:grid-cols-2 gap-x-3 gap-y-4 print:hidden">
-              <div>
-                <button onClick={() => generatePDF('distributor')} className="btn-primary btn-lg w-full">
-                  <FileDown size={16} /> Distributor estimate
-                </button>
-                <p className="hint">For the distributor: your cost, margin and the contractor price.</p>
-              </div>
-              <div>
-                <button onClick={() => generatePDF('contractor')} className="btn-secondary btn-lg w-full">
-                  <FileText size={16} /> Contractor quote
-                </button>
-                <p className="hint">
-                  For the contractor: marked-up prices only, never cost or margin.
-                  {!(profitMargin > 0) && <span className="block text-amber-700">No margin set, so prices equal your cost.</span>}
-                </p>
-              </div>
-            </div>
-
-          </section>
-
-        </div>
-      </main>
-
-      <div className="max-w-[1320px] mx-auto px-4 lg:px-8 grid gap-5 lg:gap-6 lg:grid-cols-2 items-start print:hidden">
-          {/* COPY TO EMAIL SECTION */}
-          <section className="panel print:hidden">
-            <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 pt-4 pb-3">
-              <h2 className="text-sm font-semibold flex items-center gap-2"><Mail size={15} className="text-ink-3" /> Email text</h2>
-              <div className="flex items-center gap-2">
-                <div className="seg" role="group" aria-label="Email version">
-                  {segButton('Distributor', emailViewMode === 'distributor', () => setEmailViewMode('distributor'))}
-                  {segButton('Contractor', emailViewMode === 'contractor', () => setEmailViewMode('contractor'))}
-                </div>
-                <button onClick={copyToClipboard} className="btn-secondary">
-                  {copySuccess ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {copySuccess ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
-            <div className="px-4 sm:px-5 pb-4">
-              <p className="text-xs text-ink-3 mb-2">
-                {emailViewMode === 'contractor'
-                  ? profitMargin > 0
-                    ? `Prices marked up to contractor price (${profitMargin}% margin). No distributor cost or margin included.`
-                    : 'No margin set, so prices match the values entered above.'
-                  : 'Distributor version. Includes your cost and margin.'}
-              </p>
-              <textarea
-                readOnly
-                aria-label="Email text"
-                value={emailViewMode === 'contractor' ? contractorEmailText : emailText}
-                className="w-full h-44 rounded-md border border-line bg-canvas p-3 font-mono text-xs leading-relaxed text-ink-2 resize-y focus:outline-none focus:border-accent-600 focus:ring-[3px] focus:ring-accent-100"
-              />
-            </div>
-          </section>
-
-          {/* ENERGY SAVINGS ESTIMATOR (TOGGLEABLE) */}
-          <section className="panel overflow-hidden print:hidden">
-            <button
-              onClick={() => setShowEnergySavings(!showEnergySavings)}
-              aria-expanded={showEnergySavings}
-              className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-canvas/60 transition-colors"
-            >
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                <Zap size={15} className="text-ink-3" />
-                Energy savings estimate
-                <span className="font-normal text-[13px] text-ink-3">Optional</span>
-              </span>
-              <ChevronDown size={16} className={`text-ink-3 transition-transform ${showEnergySavings ? 'rotate-180' : ''}`} />
-            </button>
-            {showEnergySavings && (
-              <div className="border-t border-line">
-                <EnergySavingsEstimator
-                  roofSize={inputs.roofSizeSqFt}
-                  roofType={inputs.roofType}
-                  coatingSystem={inputs.coatingSystem}
-                  selectedRegion={energyRegion}
-                  onRegionChange={setEnergyRegion}
-                  onResultsChange={(results, rate, region) => {
-                    setEnergySavingsResults(results);
-                    setEnergyElectricityRate(rate);
-                    if (region) setEnergyRegion(region);
-                  }}
-                />
-              </div>
-            )}
-          </section>
-      </div>
-
-      <footer className="max-w-[1320px] mx-auto px-4 lg:px-8 text-xs text-ink-3 leading-relaxed print:max-w-none print:px-0">
-        <div className="border-t border-line mt-6 py-5 print:mt-3 print:pt-3">
-            <div className="max-w-[90ch]">
-              <p className="mb-1">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% waste and ${Math.round(inputs.stretchFactor * 100)}% stretch.`}</p>
-              <p>
-                Disclaimer: this quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements and waste factors. The end user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.
-              </p>
-            </div>
-        </div>
-      </footer>
-
       {/* QUOTE COMPARISON VIEW */}
       {showComparison && selectedForCompare.length >= 2 && (
-        <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pb-8 print:hidden">
-          <section id="comparison" className="panel overflow-hidden">
+        <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pt-5 lg:pt-6 print:hidden">
+          <section id="comparison" ref={comparisonRef} tabIndex={-1} aria-labelledby="comparisonTitle" className="panel overflow-hidden scroll-mt-20 focus:outline-none">
             <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 py-3.5 border-b border-line">
-              <h2 className="text-base font-semibold">Quote comparison</h2>
+              <h2 id="comparisonTitle" className="text-base font-semibold">Quote comparison</h2>
               <div className="flex items-center gap-2">
                 <button onClick={copyComparisonText} className="btn-secondary">
                   {compCopied ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {compCopied ? 'Copied' : 'Copy text'}
@@ -3203,7 +2664,7 @@ export default function App() {
               <table className="order w-full text-sm">
                 <thead>
                   <tr>
-                    <th scope="col" className="w-48"></th>
+                    <th scope="col" className="w-48"><span className="sr-only">Field</span></th>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
                       return <th key={id} scope="col" className="!text-ink !font-semibold !text-[13px]">{q?.inputs.projectName || 'Untitled'}</th>;
@@ -3264,9 +2725,11 @@ export default function App() {
                     if (quoteData.every(d => d === null)) return null;
                     const hasPrices = quoteData.some(d => d !== null && d.priceTotal > 0);
                     const validTotals = quoteData.filter(d => d !== null && d.priceTotal > 0).map(d => d.priceTotal);
-                    const minTotal = validTotals.length > 0 ? Math.min(...validTotals) : null;
+                    // Marks go to a single winner only; ties carry no mark
+                    const uniqueMin = (vals) => { if (vals.length < 2) return null; const m = Math.min(...vals); return vals.filter(v => v === m).length === 1 ? m : null; };
+                    const minTotal = uniqueMin(validTotals);
                     const validGallons = quoteData.filter(d => d !== null && d.gallons > 0).map(d => d.gallons);
-                    const minGallons = validGallons.length > 0 ? Math.min(...validGallons) : null;
+                    const minGallons = uniqueMin(validGallons);
                     return (
                       <React.Fragment key={year}>
                         {/* Price total row - show if any quote has prices */}
@@ -3276,9 +2739,9 @@ export default function App() {
                             {quoteData.map((d, i) => (
                               <td key={selectedForCompare[i]} className="num">
                                 {d === null ? (
-                                  <span className="text-ink-4 text-xs">N/A</span>
+                                  <span className="text-ink-3 text-xs">N/A</span>
                                 ) : d.priceTotal === 0 ? (
-                                  <span className="text-ink-4 text-xs">No prices</span>
+                                  <span className="text-ink-3 text-xs">No prices</span>
                                 ) : (
                                   <span className="font-semibold">
                                     {formatCurrency(d.priceTotal)}
@@ -3297,12 +2760,12 @@ export default function App() {
                           {quoteData.map((d, i) => (
                             <td key={selectedForCompare[i]} className="num">
                               {d === null ? (
-                                <span className="text-ink-4 text-xs">N/A</span>
+                                <span className="text-ink-3 text-xs">N/A</span>
                               ) : d.gallons === 0 ? (
-                                <span className="text-ink-4">—</span>
+                                <span className="text-ink-3">—</span>
                               ) : (
                                 <span className={hasPrices ? '' : 'font-semibold'}>
-                                  {d.gallons} gal
+                                  {d.gallons.toLocaleString()} gal
                                   {!hasPrices && d.gallons === minGallons && validGallons.length > 1 && (
                                     <span className="block text-xs text-green-700 font-medium">Least material</span>
                                   )}
@@ -3336,14 +2799,14 @@ export default function App() {
                     });
                     if (sqftData.every(d => d === null)) return null;
                     const validSqft = sqftData.filter(d => d !== null && d > 0);
-                    const minSqft = validSqft.length > 0 ? Math.min(...validSqft) : null;
+                    const minSqft = validSqft.length > 1 && validSqft.filter(v => v === Math.min(...validSqft)).length === 1 ? Math.min(...validSqft) : null;
                     return (
                       <tr key={`sqft-${year}`}>
                         <td className="text-ink-3">{year}-year per sq ft</td>
                         {sqftData.map((val, i) => (
                           <td key={selectedForCompare[i]} className="num">
                             {val === null ? (
-                              <span className="text-ink-4">—</span>
+                              <span className="text-ink-3">—</span>
                             ) : (
                               <span className={val === minSqft && validSqft.length > 1 ? 'font-semibold text-green-700' : ''}>
                                 {formatCurrency(val)}
@@ -3365,7 +2828,9 @@ export default function App() {
                     <td className="text-ink-3">Quote date</td>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <td key={id} className="num">{q?.date || new Date(q?.savedAt).toLocaleDateString()}</td>;
+                      const [yy, mm, dd] = (q?.date || '').split('-').map(Number);
+                      const d = yy ? new Date(yy, mm - 1, dd) : new Date(q?.savedAt);
+                      return <td key={id} className="num">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>;
                     })}
                   </tr>
                 </tbody>
@@ -3378,6 +2843,790 @@ export default function App() {
         </div>
       )}
 
+      <main className="max-w-[1320px] mx-auto px-4 lg:px-8 py-5 lg:py-6 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:block print:p-0 print:max-w-none">
+
+        {/* LEFT COLUMN: INPUTS */}
+        {/* Phones lead with the roof (what a rep measures on site); desks keep project first */}
+        <aside className="panel flex flex-col print:hidden">
+
+          {/* PROJECT */}
+          <section className="order-4 lg:order-1 border-t border-line lg:border-t-0 px-4 sm:px-5 py-5 space-y-4">
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Project</h2>
+            <div>
+              <label htmlFor="projectName" className="label">Project name</label>
+              <input
+                id="projectName"
+                type="text"
+                value={inputs.projectName}
+                onChange={(e) => handleChange('projectName', e.target.value)}
+                className="input"
+                placeholder="e.g. Smith Warehouse"
+              />
+            </div>
+            <div>
+              <label htmlFor="quoteDate" className="label">Quote date</label>
+              <input
+                id="quoteDate"
+                type="date"
+                value={quoteDate}
+                onChange={(e) => setQuoteDate(e.target.value)}
+                className="input num"
+              />
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowCustomerInfo(!showCustomerInfo)}
+                aria-expanded={showCustomerInfo}
+                className="disclosure"
+              >
+                <span className="flex items-center gap-2"><User size={15} className="text-ink-3" /> Customer details <span className="font-normal text-ink-3">Optional</span></span>
+                <ChevronDown size={16} className={`text-ink-3 transition-transform ${showCustomerInfo ? 'rotate-180' : ''}`} />
+              </button>
+              {showCustomerInfo && (
+                <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label htmlFor="custName" className="label">Customer name</label>
+                    <input id="custName" type="text" value={customerInfo.name} onChange={(e) => handleCustomerInfoChange('name', e.target.value)} className="input" placeholder="Jane Doe" autoComplete="name" />
+                  </div>
+                  <div>
+                    <label htmlFor="custCompany" className="label">Company</label>
+                    <input id="custCompany" type="text" value={customerInfo.company} onChange={(e) => handleCustomerInfoChange('company', e.target.value)} className="input" placeholder="ABC Roofing Co." autoComplete="organization" />
+                  </div>
+                  <div>
+                    <label htmlFor="custPhone" className="label">Phone</label>
+                    <input id="custPhone" type="tel" value={customerInfo.phone} onChange={(e) => handleCustomerInfoChange('phone', e.target.value)} className={`input ${validationErrors.phone ? 'input-error' : ''}`} placeholder="(555) 123-4567" autoComplete="tel" {...fieldProps('phone')} />
+                    <ValidationError field="phone" />
+                  </div>
+                  <div>
+                    <label htmlFor="custEmail" className="label">Email</label>
+                    <input id="custEmail" type="email" value={customerInfo.email} onChange={(e) => handleCustomerInfoChange('email', e.target.value)} className={`input ${validationErrors.email ? 'input-error' : ''}`} placeholder="customer@email.com" autoComplete="email" {...fieldProps('email')} />
+                    <ValidationError field="email" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="custAddress" className="label">Mailing address</label>
+                    <input id="custAddress" type="text" value={customerInfo.address} onChange={(e) => handleCustomerInfoChange('address', e.target.value)} className="input" placeholder="123 Main St, City, State 12345" autoComplete="street-address" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="custProjectAddress" className="label">Project address</label>
+                    <input id="custProjectAddress" type="text" value={customerInfo.projectAddress} onChange={(e) => handleCustomerInfoChange('projectAddress', e.target.value)} className="input" placeholder="456 Project St, City, State 12345" />
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* SYSTEM */}
+          <section className="order-3 lg:order-2 border-t border-line px-4 sm:px-5 py-5 space-y-4">
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Coating system</h2>
+            <div className="seg" role="group" aria-label="Coating system">
+              {['Silicone', 'Acrylic', 'Aluminum'].map(sys => segButton(sys, inputs.coatingSystem === sys, () => handleChange('coatingSystem', sys)))}
+            </div>
+            {inputs.coatingSystem === 'Acrylic' && (
+              <div>
+                <span className="label" id="acrylicTypeLabel">Acrylic system type</span>
+                <div className="seg" role="group" aria-labelledby="acrylicTypeLabel">
+                  {segButton('Standard', inputs.acrylicSystemType === 'Standard', () => handleChange('acrylicSystemType', 'Standard'))}
+                  {segButton('Reinforced', inputs.acrylicSystemType === 'Reinforced', () => handleChange('acrylicSystemType', 'Reinforced'))}
+                </div>
+                <p className="hint">{inputs.acrylicSystemType === 'Reinforced' ? 'Full-system membrane reinforcement.' : 'No membrane.'}</p>
+              </div>
+            )}
+            {/* Product picks have sensible defaults; collapsed to one line until the rep needs to change them */}
+            <div>
+              <button type="button" onClick={() => setShowProducts(!showProducts)} aria-expanded={showProducts} className="disclosure items-start text-left">
+                <span className="min-w-0">
+                  <span className="block">Products</span>
+                  {!showProducts && (
+                    <span className="block font-normal text-xs text-ink-3 mt-0.5 leading-snug">
+                      {[inputs.selectedTopcoat, inputs.coatingSystem !== 'Aluminum' ? inputs.selectedBasecoat : null, inputs.accessoryType === 'Fabric' ? inputs.selectedFabric : inputs.selectedButterGrade].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center gap-1 shrink-0 text-xs font-medium text-accent-600">
+                  {showProducts ? 'Done' : 'Change'}
+                  <ChevronDown size={14} className={`transition-transform ${showProducts ? 'rotate-180' : ''}`} />
+                </span>
+              </button>
+              {showProducts && (
+                <div className="space-y-4 mt-3">
+                  <div>
+                    <label htmlFor="topcoat" className="label">Topcoat</label>
+                    <select id="topcoat" className="input" value={inputs.selectedTopcoat} onChange={(e) => handleChange('selectedTopcoat', e.target.value)}>
+                      {currentOptions.topcoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  </div>
+                  {inputs.coatingSystem !== 'Aluminum' && (
+                    <div>
+                      <label htmlFor="basecoat" className="label">Basecoat</label>
+                      <select id="basecoat" className="input" value={inputs.selectedBasecoat} onChange={(e) => handleChange('selectedBasecoat', e.target.value)}>
+                        {currentOptions.basecoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <span className="label" id="detailingLabel">Detailing</span>
+                    <div className="seg" role="group" aria-labelledby="detailingLabel">
+                      {segButton('Butter grade', inputs.accessoryType === 'Butter Grade', () => handleChange('accessoryType', 'Butter Grade'))}
+                      {segButton('Fabric', inputs.accessoryType === 'Fabric', () => handleChange('accessoryType', 'Fabric'))}
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="butterGrade" className="label">Seam treatment product</label>
+                    <select id="butterGrade" className="input" value={inputs.selectedButterGrade} onChange={(e) => handleChange('selectedButterGrade', e.target.value)}>
+                      {currentOptions.butterGrades.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  </div>
+                  {inputs.accessoryType === 'Fabric' && (
+                    <div>
+                      <label htmlFor="fabric" className="label">Fabric / mesh</label>
+                      <select id="fabric" className="input" value={inputs.selectedFabric} onChange={(e) => handleChange('selectedFabric', e.target.value)}>
+                        {currentOptions.fabrics.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ROOF */}
+          <section className="order-1 lg:order-3 lg:border-t border-line px-4 sm:px-5 py-5 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Roof</h2>
+              <div className="flex items-center gap-2.5 text-[13px] text-ink-2">
+                <span id="multiSectionLabel">Multiple sections</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={useMultiSection}
+                  aria-labelledby="multiSectionLabel"
+                  onClick={() => { setUseMultiSection(!useMultiSection); if (!useMultiSection && roofSections.length === 0) addRoofSection(); }}
+                  className="switch"
+                >
+                  <span />
+                </button>
+              </div>
+            </div>
+
+            {!useMultiSection ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="roofSize" className="label">Roof area <span className="font-normal text-ink-3">sq ft</span></label>
+                  <input
+                    id="roofSize"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="1000000"
+                    value={inputs.roofSizeSqFt || ''}
+                    onChange={(e) => handleChange('roofSizeSqFt', parseFloat(e.target.value) || 0)}
+                    className={`input num ${validationErrors.roofSizeSqFt ? 'input-error' : ''}`}
+                    placeholder="5,000"
+                    {...fieldProps('roofSizeSqFt')}
+                  />
+                  <ValidationError field="roofSizeSqFt" />
+                  <p className="hint num">{commonResults.squares.toFixed(2)} squares</p>
+                </div>
+                <div>
+                  <label htmlFor="linearFeet" className="label">Seams <span className="font-normal text-ink-3">linear ft</span></label>
+                  <input
+                    id="linearFeet"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="100000"
+                    value={inputs.linearFeet || ''}
+                    onChange={(e) => handleChange('linearFeet', parseFloat(e.target.value) || 0)}
+                    className={`input num ${validationErrors.linearFeet ? 'input-error' : ''}`}
+                    placeholder="250"
+                    {...fieldProps('linearFeet')}
+                  />
+                  <ValidationError field="linearFeet" />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <ul className="border border-line rounded-md divide-y divide-line">
+                  {roofSections.map((section) => (
+                    <li key={section.id} className="p-3 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="group flex items-center gap-1.5 min-w-0 flex-1 rounded px-1 -mx-1 py-0.5 hover:bg-canvas focus-within:bg-white focus-within:ring-2 focus-within:ring-accent-100 cursor-text">
+                          <input
+                            type="text"
+                            aria-label="Section name"
+                            value={section.name}
+                            onChange={(e) => updateRoofSection(section.id, 'name', e.target.value)}
+                            className="min-w-0 flex-1 text-[13px] font-semibold bg-transparent focus:outline-none"
+                          />
+                          <Pencil size={12} className="text-ink-3 shrink-0" aria-hidden="true" />
+                        </label>
+                        <button onClick={() => removeRoofSection(section.id)} className="icon-btn hover:text-red-700" aria-label={`Remove ${section.name}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label htmlFor={`sec-${section.id}-sqft`} className="label text-xs mb-1">Sq ft</label>
+                          <input
+                            id={`sec-${section.id}-sqft`}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            value={section.sqFt || ''}
+                            onChange={(e) => updateRoofSection(section.id, 'sqFt', Math.max(0, parseFloat(e.target.value) || 0))}
+                            className={`input input-sm num ${validationErrors[`section_${section.id}_sqFt`] ? 'input-error' : ''}`}
+                            placeholder="0"
+                            {...fieldProps(`section_${section.id}_sqFt`)}
+                          />
+                          <ValidationError field={`section_${section.id}_sqFt`} />
+                        </div>
+                        <div>
+                          <label htmlFor={`sec-${section.id}-lf`} className="label text-xs mb-1">Linear ft</label>
+                          <input
+                            id={`sec-${section.id}-lf`}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            value={section.linearFeet || ''}
+                            onChange={(e) => updateRoofSection(section.id, 'linearFeet', Math.max(0, parseFloat(e.target.value) || 0))}
+                            className={`input input-sm num ${validationErrors[`section_${section.id}_lf`] ? 'input-error' : ''}`}
+                            placeholder="0"
+                            {...fieldProps(`section_${section.id}_lf`)}
+                          />
+                          <ValidationError field={`section_${section.id}_lf`} />
+                        </div>
+                        <div>
+                          <label htmlFor={`sec-${section.id}-type`} className="label text-xs mb-1">Roof type</label>
+                          <select id={`sec-${section.id}-type`} value={section.roofType} onChange={(e) => updateRoofSection(section.id, 'roofType', e.target.value)} className="input input-sm">
+                            {getAvailableRoofTypes().map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label htmlFor={`sec-${section.id}-waste`} className="label text-xs mb-1">Waste</label>
+                          <select id={`sec-${section.id}-waste`} value={section.wasteFactor} onChange={(e) => updateRoofSection(section.id, 'wasteFactor', e.target.value)} className="input input-sm num">
+                            {percentOptions(15)}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor={`sec-${section.id}-stretch`} className="label text-xs mb-1">Stretch</label>
+                          <select id={`sec-${section.id}-stretch`} value={section.stretchFactor} onChange={(e) => updateRoofSection(section.id, 'stretchFactor', e.target.value)} className="input input-sm num">
+                            {percentOptions(30)}
+                          </select>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <button onClick={addRoofSection} className="btn-secondary w-full">
+                  <Plus size={14} /> Add section
+                </button>
+                <dl className="text-[13px] space-y-1 num">
+                  <div className="flex justify-between"><dt className="text-ink-3">Total area</dt><dd className="font-medium">{inputs.roofSizeSqFt.toLocaleString()} sq ft · {commonResults.squares.toFixed(2)} sq</dd></div>
+                  <div className="flex justify-between"><dt className="text-ink-3">Total seams</dt><dd className="font-medium">{inputs.linearFeet.toLocaleString()} LF</dd></div>
+                </dl>
+              </div>
+            )}
+
+            {/* Single-roof settings; in multi-section mode each section carries its own */}
+            {!useMultiSection && (
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="roofType" className="label">Roof type</label>
+                  <select id="roofType" className="input" value={inputs.roofType} onChange={(e) => handleChange('roofType', e.target.value)}>
+                    <option value="Capsheet">Capsheet</option>
+                    {/* Single-Ply not available for Aluminum */}
+                    {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
+                    {/* Sprayfoam for Silicone or Acrylic Standard only, NOT Aluminum */}
+                    {inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
+                    {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
+                    {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
+                  </select>
+                  {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet and single-ply only.</p>}
+                  {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and capsheet only.</p>}
+                </div>
+
+                {/* Fastener encapsulation method — sits right under Roof Type so it's
+                    immediately visible when Metal is picked (otherwise it's easy to miss). */}
+                {inputs.roofType === 'Metal' && inputs.accessoryType === 'Butter Grade' && (
+                  <div>
+                    <span className="label" id="fastenerLabel">Fastener encapsulation</span>
+                    <div className="seg" role="group" aria-labelledby="fastenerLabel">
+                      {segButton('Butter grade', !inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', false))}
+                      {segButton('Self-leveling caulk', !!inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', true))}
+                    </div>
+                    <p className="hint">
+                      {inputs.useFastenerCaulk
+                        ? `Fasteners covered by self-leveling caulk (~${FASTENERS_PER_CAULK_TUBE}/tube). Butter grade stays for seams and penetrations only.`
+                        : 'Butter grade buckets cover both seams and fasteners. Switch to caulk if the contractor prefers it.'}
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="waste" className="label">Waste</label>
+                    <select id="waste" className="input num" value={inputs.wasteFactor} onChange={(e) => handleChange('wasteFactor', e.target.value)}>
+                      {percentOptions(15)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="stretch" className="label">Stretch <span className="font-normal text-ink-3">extra coverage</span></label>
+                    <select id="stretch" className="input num" value={inputs.stretchFactor} onChange={(e) => handleChange('stretchFactor', e.target.value)}>
+                      {percentOptions(30)}
+                    </select>
+                  </div>
+                  {!(parseFloat(inputs.wasteFactor) > 0) && (
+                    <p className="hint col-span-2 mt-0">No waste added. Most quotes allow 5–10% for overspray and cut-ins.</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* CONDITIONS */}
+          <section className="order-2 lg:order-4 border-t border-line px-4 sm:px-5 pt-5 pb-2">
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em] mb-1">Site conditions</h2>
+            <div className="divide-y divide-line">
+              {/* Adhesion test not needed for Aluminum */}
+              {inputs.coatingSystem !== 'Aluminum' && (
+                <div>
+                  {switchRow('Passed adhesion test', inputs.passedAdhesion, () => handleChange('passedAdhesion', !inputs.passedAdhesion))}
+                  {!inputs.passedAdhesion && (
+                    <div className="callout-danger mb-3">
+                      <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                      <span>Adhesion failure: adhesion primer added to the order.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* RUST TOGGLE - FOR SILICONE OR ACRYLIC ON METAL (not Aluminum) */}
+              {(inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic') && inputs.roofType === 'Metal' && (
+                <div>
+                  {switchRow('Rust present', inputs.hasRust, () => handleChange('hasRust', !inputs.hasRust))}
+                  {inputs.hasRust && (
+                    <div className="pb-3">
+                      <span className="label" id="rustCoverageLabel">Rust primer coverage</span>
+                      <div className="seg" role="group" aria-labelledby="rustCoverageLabel">
+                        {segButton('Field prime', inputs.rustPrimeMethod !== 'spot', () => handleChange('rustPrimeMethod', 'field'))}
+                        {segButton('Spot prime', inputs.rustPrimeMethod === 'spot', () => handleChange('rustPrimeMethod', 'spot'))}
+                      </div>
+                      <p className="hint">
+                        {inputs.rustPrimeMethod === 'spot'
+                          ? `No primer quantity calculated. All quotes will read: "${SPOT_PRIME_NOTE}".`
+                          : 'Rust primer at 0.5 gal/sq across the entire field.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {switchRow('Goldseal warranty', inputs.goldseal, () => handleChange('goldseal', !inputs.goldseal))}
+            </div>
+          </section>
+        </aside>
+
+        {/* RIGHT COLUMN: RESULTS */}
+        <div ref={resultsRef} className="results-col min-w-0 lg:sticky" style={{ top: resultsTop }}>
+          <section id="order" className="panel overflow-hidden print:border-0 scroll-mt-20">
+            <div className="flex items-start justify-between gap-4 px-4 sm:px-5 py-4 border-b border-line">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold tracking-[-0.01em]">Material order</h2>
+                <p className="text-[13px] text-ink-3 mt-0.5">{systemLabel} on {roofTypeLabel} · {factorsLabel}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-lg font-semibold num leading-tight">{commonResults.squares.toFixed(1)} <span className="text-[13px] font-normal text-ink-3">sq</span></div>
+                <div className="text-xs text-ink-3 num">{inputs.roofSizeSqFt.toLocaleString()} sq ft</div>
+              </div>
+            </div>
+
+            {/* DISTRIBUTOR MARGIN */}
+            <div className="px-4 sm:px-5 py-3 border-b border-line flex flex-wrap items-center gap-x-6 gap-y-2 bg-canvas/50 print:hidden">
+              <label htmlFor="margin" className="flex items-center gap-2.5">
+                <span className="text-[13px] font-medium text-ink-2">Distributor margin</span>
+                <span className="relative">
+                  <input
+                    id="margin"
+                    type="number"
+                    inputMode="decimal"
+                    step="1"
+                    min="0"
+                    max="99"
+                    value={profitMargin}
+                    onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
+                    className={`input input-sm num w-[76px] pr-7 text-right ${validationErrors.profitMargin ? 'input-error' : ''}`}
+                    {...fieldProps('profitMargin')}
+                    placeholder="0"
+                  />
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">%</span>
+                </span>
+              </label>
+              <div className="basis-full -mt-1 empty:hidden">
+                <ValidationError field="profitMargin" />
+                <p className="text-xs text-ink-3">
+                  {profitMargin > 0
+                    ? `The distributor estimate shows your cost and the ${profitMargin}% margin. The contractor quote shows marked-up prices only.`
+                    : 'Set a margin to mark up prices on the contractor quote.'}
+                </p>
+              </div>
+            </div>
+
+            {/* MISSING LINEAR FEET (only once there is a roof to quote) */}
+            {inputs.roofSizeSqFt > 0 && inputs.linearFeet <= 0 && (
+              <div className="px-4 sm:px-5 pt-4">
+                <div className="callout-warn">
+                  <AlertTriangle size={15} className="shrink-0 mt-px text-amber-600" />
+                  <div>
+                    <span className="font-semibold">Quote incomplete.</span> Add seam linear feet to calculate butter grade (seam sealant).
+                    {inputs.roofType === 'Metal' && commonResults.screwBuckets > 0 && (
+                      <span className="block mt-0.5 text-amber-800">Fastener encapsulation for ~{commonResults.screwCount} screws is included, based on roof area.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* EMPTY STATE */}
+            {!(inputs.roofSizeSqFt > 0) && (
+              <div className="px-4 sm:px-5 py-10 text-center">
+                <div className="text-sm font-medium">Enter the roof area to build the order</div>
+                <p className="text-[13px] text-ink-3 mt-1 max-w-[46ch] mx-auto">Quantities for each coat, primer and accessory appear here for the 10, 15 and 20-year systems, with prices once you enter them.</p>
+              </div>
+            )}
+
+            {/* ORDER TABLE */}
+            {inputs.roofSizeSqFt > 0 && (<>
+            {tiers.length > 1 && (
+              <div className="sm:hidden px-4 pt-4">
+                <div className="seg" role="group" aria-label="Warranty tier">
+                  {tiers.map(y => segButton(`${y}-year`, leadTier === y, () => setMobileTier(y)))}
+                </div>
+              </div>
+            )}
+            <div className="overflow-x-auto mt-3 print:overflow-visible">
+              <table className="order w-full sm:min-w-[600px] text-sm border-separate border-spacing-0">
+                <colgroup>
+                  <col />
+                  <col className="w-[120px]" />
+                  {tiers.map(y => <col key={y} className={`w-[130px] ${tierCls(y)}`} />)}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col">Product</th>
+                    <th scope="col">Price / unit</th>
+                    {tiers.map(y => <th key={y} scope="col" className={`text-ink-2 ${tierCls(y)}`}>{y}-year</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Base Coat (Acrylic) OR System Primer (Silicone) */}
+                  {inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0 && (
+                    <tr>
+                      {productCell('Basecoat', `${inputs.selectedBasecoat} · ${rateText('base')}`)}
+                      {priceCell('basecoat', 'gal')}
+                      {tierQtyCells('baseGal', 'gal', prices.basecoat)}
+                    </tr>
+                  )}
+
+                  {/* Spot Prime note row — rust present but user chose spot prime, so no quantities */}
+                  {inputs.hasRust && inputs.rustPrimeMethod === 'spot'
+                    && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
+                    && inputs.roofType === 'Metal' && (
+                    <tr>
+                      <td colSpan={colCount} className="!text-left">
+                        <div className="flex items-start gap-2">
+                          <Info size={14} className="mt-0.5 text-amber-600 shrink-0" />
+                          <div>
+                            <div className="font-medium">Rust primer — spot prime</div>
+                            <div className="text-xs text-ink-3 mt-0.5">{currentPrimers.rust} — {SPOT_PRIME_NOTE}. No field quantity calculated.</div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Rust Primer (Metal only) */}
+                  {estimates['10']?.rustPrimerGal > 0 && (
+                    <tr>
+                      {productCell('Rust primer', `${currentPrimers.rust} · 0.5 gal/sq · 5-gal pails`)}
+                      {priceCell('rustPrimer', 'gal')}
+                      {tierQtyCells('rustPrimerGal', 'gal', prices.rustPrimer)}
+                    </tr>
+                  )}
+
+                  {/* Adhesion Primer */}
+                  {!inputs.passedAdhesion && (
+                    <tr>
+                      {productCell('Adhesion primer', `${currentPrimers.adhesion} · 0.2 gal/sq · 1-gal containers`,
+                        <span className="badge h-auto min-h-5 py-0.5 bg-red-50 text-red-700 mt-1.5"><AlertTriangle size={11} className="shrink-0" /> Failed adhesion test</span>)}
+                      {priceCell('adhesionPrimer', 'gal')}
+                      {tierQtyCells('adhesionPrimerGal', 'gal', prices.adhesionPrimer)}
+                    </tr>
+                  )}
+
+                  {/* Top Coats */}
+                  {['top1Gal', 'top2Gal', 'top3Gal'].map((field, i) => (
+                    (estimates['10']?.[field] > 0 || estimates['15']?.[field] > 0 || estimates['20']?.[field] > 0) && (
+                      <tr key={field}>
+                        {productCell(`Topcoat ${i + 1}`, `${inputs.selectedTopcoat} · ${rateText(`top${i + 1}`)}`)}
+                        {i === 0 ? priceCell('topcoat', 'gal') : sameAsCell('Same as topcoat 1')}
+                        {tierQtyCells(field, 'gal', prices.topcoat)}
+                      </tr>
+                    )
+                  ))}
+
+                  {/* Coatings subtotal */}
+                  <tr className="row-sub">
+                    <td>Coatings total</td>
+                    <td />
+                    {tiers.map(y => (
+                      <td key={y} className={`num whitespace-nowrap ${tierCls(y)}`}>
+                        <div>{fmtQty(estimates[y]?.totalGallons)} gal</div>
+                        {hasCoatingPrices && <div className="text-xs text-ink-3 font-normal mt-0.5">{formatCurrency(coatingCost(y))}</div>}
+                      </td>
+                    ))}
+                  </tr>
+
+                  {/* ACCESSORIES (same quantity for every warranty tier) */}
+                  {hasAccessoryRows && (
+                    <tr>
+                      <td colSpan={colCount} className="!text-left !pt-4 !pb-1.5 text-xs font-medium text-ink-3">Accessories</td>
+                    </tr>
+                  )}
+
+                  {showAccessory && (
+                    commonResults.screwBuckets > 0 ? (
+                      /* Metal roof: the seam sealer does double duty — sealing seams (by
+                         linear feet) and encapsulating fasteners (by roof area). Show them
+                         as separate line items sharing one per-bucket price. */
+                      <>
+                        {commonResults.linearBuckets > 0 && (
+                          <tr>
+                            {productCell(`${commonResults.accessoryName || 'Seam sealer'} — seams`, 'By linear feet')}
+                            {priceCell('accessory', 'bucket')}
+                            {commonQtyCells(commonResults.linearBuckets, 'buckets', prices.accessory)}
+                          </tr>
+                        )}
+                        <tr>
+                          {productCell(`${commonResults.accessoryName || 'Seam sealer'} — fasteners`, `Encapsulates ~${(commonResults.screwCount || 0).toLocaleString()} fasteners (by roof area)`)}
+                          {commonResults.linearBuckets > 0 ? sameAsCell('Same as seams') : priceCell('accessory', 'bucket')}
+                          {commonQtyCells(commonResults.screwBuckets, 'buckets', prices.accessory)}
+                        </tr>
+                      </>
+                    ) : (
+                      <tr>
+                        {productCell(
+                          inputs.linearFeet > 0 ? commonResults.accessoryName : 'Fastener encapsulation',
+                          inputs.linearFeet > 0 ? commonResults.accessoryDesc : 'Metal roof screw encapsulation'
+                        )}
+                        {priceCell('accessory', accUnitSingular)}
+                        {commonQtyCells(commonResults.accessoryQty, (commonResults.accessoryUnit || '').toLowerCase(), prices.accessory)}
+                      </tr>
+                    )
+                  )}
+
+                  {/* FASTENER CAULK ROW (when toggled on for metal roofs) */}
+                  {commonResults.fastenerCaulkTubes > 0 && (
+                    <tr>
+                      {productCell('Fastener caulk', `${FASTENER_CAULK_NAME} · ~${FASTENERS_PER_CAULK_TUBE} fasteners/tube, covers ~${(commonResults.screwCount || 0).toLocaleString()}`)}
+                      {priceCell('fastenerCaulk', 'tube')}
+                      {commonQtyCells(commonResults.fastenerCaulkTubes, 'tubes', prices.fastenerCaulk)}
+                    </tr>
+                  )}
+
+                  {/* ACRYLIC MEMBRANE ROW (Only for Reinforced) */}
+                  {isReinforced && (
+                    <tr>
+                      {productCell('Reinforcement membrane', `Full-system reinforcement · 40" × 324' rolls`)}
+                      {priceCell('membrane', 'roll')}
+                      {commonQtyCells(commonResults.membraneRolls, 'rolls', prices.membrane)}
+                    </tr>
+                  )}
+
+                  {/* Goldseal */}
+                  {inputs.goldseal && (
+                    <tr>
+                      {productCell('Goldseal warranty', 'Priced per warranty term')}
+                      <td />
+                      {tiers.map(y => qtyCell(y, 1, 'warranty', estimates[y]?.goldsealCost || 0))}
+                    </tr>
+                  )}
+
+                </tbody>
+                <tfoot>
+                  {/* GRAND TOTAL */}
+                  <tr className="row-total">
+                    <td>
+                      {profitMargin > 0 ? 'Cost to distributor' : 'Total'}
+                      {unpricedNote && <div className="text-xs font-normal text-amber-700 mt-0.5">{unpricedNote}</div>}
+                    </td>
+                    <td />
+                    {tiers.map(y => (
+                      <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>
+                        {hasPrices ? formatCurrency(grandTotals[y] || 0) : <span className="text-[13px] font-normal text-ink-3">Enter prices</span>}
+                      </td>
+                    ))}
+                  </tr>
+
+                  {/* COST PER SQ FT */}
+                  {hasPrices && inputs.roofSizeSqFt > 0 && (
+                    <tr className="row-meta">
+                      <td>{profitMargin > 0 ? 'Distributor cost per sq ft' : 'Cost per sq ft'}</td>
+                      <td />
+                      {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) / inputs.roofSizeSqFt)}</td>)}
+                    </tr>
+                  )}
+
+                  {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
+                  {profitMargin > 0 && hasPrices && (
+                    <>
+                      <tr className="row-total">
+                        <td>
+                          Contractor price
+                          <div className="text-xs font-normal text-ink-3 mt-0.5 print:hidden">{profitMargin}% margin</div>
+                        </td>
+                        <td />
+                        {tiers.map(y => (
+                          <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor))}</td>
+                        ))}
+                      </tr>
+                      <tr className="row-meta print:hidden">
+                        <td>Your profit</td>
+                        <td />
+                        {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) - (grandTotals[y] || 0))}</td>)}
+                      </tr>
+                      {inputs.roofSizeSqFt > 0 && (
+                        <tr className="row-meta">
+                          <td>Contractor price per sq ft</td>
+                          <td />
+                          {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) / inputs.roofSizeSqFt)}</td>)}
+                        </tr>
+                      )}
+                    </>
+                  )}
+                  <tr className="row-meta"><td colSpan={colCount} className="!pb-1" /></tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* HOW QUANTITIES ARE DERIVED */}
+            <div className="px-4 sm:px-5 pb-3 print:hidden">
+              <button type="button" onClick={() => setShowMethod(!showMethod)} aria-expanded={showMethod} className="flex items-center gap-1.5 text-[13px] font-medium text-accent-600 hover:text-accent-700 min-h-[32px]">
+                <Info size={14} /> {showMethod ? 'Hide how quantities are calculated' : 'How quantities are calculated'}
+              </button>
+              {showMethod && (
+                <ul className="mt-1 text-xs text-ink-2 space-y-1 list-disc pl-4 leading-relaxed max-w-[75ch]">
+                  <li>Each coat: squares × the application rate shown under the product (gal per square) × (1 + waste + stretch), rounded up to full 5-gal pails.</li>
+                  <li>Rust primer: 0.5 gal per square, the same way. Adhesion primer: 0.2 gal per square, rounded up to whole gallons.</li>
+                  <li>Seam sealer and fabric come from seam linear feet; fastener encapsulation on metal comes from roof area.</li>
+                  <li>Line cost = quantity × unit price. Totals add the printed lines, so the math can be checked with a calculator.</li>
+                </ul>
+              )}
+            </div>
+            </>)}
+
+            {/* PDF DOWNLOADS */}
+            <div className="px-4 sm:px-5 py-4 border-t border-line grid sm:grid-cols-2 gap-x-3 gap-y-4 print:hidden">
+              <div>
+                <button onClick={() => generatePDF('distributor')} className="btn-primary btn-lg w-full">
+                  <FileDown size={16} /> Distributor estimate
+                </button>
+                <p className="hint">For the distributor: your cost, margin and the contractor price.</p>
+              </div>
+              <div>
+                <button onClick={() => generatePDF('contractor')} className="btn-secondary btn-lg w-full">
+                  <FileText size={16} /> Contractor quote
+                </button>
+                <p className="hint">
+                  For the contractor: marked-up prices only, never cost or margin.
+                  {!(profitMargin > 0) && <span className="block text-amber-700">No margin set, so prices equal your cost.</span>}
+                </p>
+              </div>
+            </div>
+
+          </section>
+
+        </div>
+      </main>
+
+      <div className="max-w-[1320px] mx-auto px-4 lg:px-8 grid gap-5 lg:gap-6 lg:grid-cols-2 items-start print:hidden">
+          {/* COPY TO EMAIL SECTION */}
+          <section className="panel print:hidden">
+            <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 pt-4 pb-3">
+              <h2 className="text-sm font-semibold flex items-center gap-2"><Mail size={15} className="text-ink-3" /> Email text</h2>
+              <div className="flex items-center gap-2">
+                <div className="seg" role="group" aria-label="Email version">
+                  {segButton('Distributor', emailViewMode === 'distributor', () => setEmailViewMode('distributor'))}
+                  {segButton('Contractor', emailViewMode === 'contractor', () => setEmailViewMode('contractor'))}
+                </div>
+                <button onClick={copyToClipboard} className="btn-secondary">
+                  {copySuccess ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {copySuccess ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <div className="px-4 sm:px-5 pb-4">
+              <p className="text-xs text-ink-3 mb-2">
+                {emailViewMode === 'contractor'
+                  ? profitMargin > 0
+                    ? `Prices marked up to contractor price (${profitMargin}% margin). No distributor cost or margin included.`
+                    : 'No margin set, so prices match the values entered above.'
+                  : 'Distributor version. Includes your cost and margin.'}
+              </p>
+              <textarea
+                readOnly
+                aria-label="Email text"
+                value={emailViewMode === 'contractor' ? contractorEmailText : emailText}
+                className="w-full h-56 sm:h-44 rounded-md border border-line bg-canvas p-3 font-mono text-[13px] sm:text-xs leading-relaxed text-ink-2 resize-y focus:outline-none focus:border-accent-600 focus:ring-[3px] focus:ring-accent-100"
+              />
+            </div>
+          </section>
+
+          {/* ENERGY SAVINGS ESTIMATOR (TOGGLEABLE) */}
+          <section className="panel overflow-hidden print:hidden">
+            <button
+              onClick={() => setShowEnergySavings(!showEnergySavings)}
+              aria-expanded={showEnergySavings}
+              className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-canvas/60 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Zap size={15} className="text-ink-3" />
+                Energy savings estimate
+                <span className="font-normal text-[13px] text-ink-3">Optional</span>
+              </span>
+              <ChevronDown size={16} className={`text-ink-3 transition-transform ${showEnergySavings ? 'rotate-180' : ''}`} />
+            </button>
+            {showEnergySavings && (
+              <div className="border-t border-line">
+                <EnergySavingsEstimator
+                  roofSize={inputs.roofSizeSqFt}
+                  roofType={inputs.roofType}
+                  coatingSystem={inputs.coatingSystem}
+                  selectedRegion={energyRegion}
+                  onRegionChange={setEnergyRegion}
+                  onResultsChange={(results, rate, region) => {
+                    setEnergySavingsResults(results);
+                    setEnergyElectricityRate(rate);
+                    if (region) setEnergyRegion(region);
+                  }}
+                />
+              </div>
+            )}
+          </section>
+      </div>
+
+      <footer className="max-w-[1320px] mx-auto px-4 lg:px-8 text-xs text-ink-3 leading-relaxed print:max-w-none print:px-0">
+        <div className="border-t border-line mt-6 py-5 print:mt-3 print:pt-3">
+            <div className="max-w-[75ch]">
+              <p className="mb-1">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% waste and ${Math.round(inputs.stretchFactor * 100)}% stretch.`}</p>
+              <p>
+                Disclaimer: this quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements and waste factors. The end user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.
+              </p>
+            </div>
+        </div>
+      </footer>
+
       {/* MOBILE SUMMARY BAR */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-line px-4 py-2.5 flex items-center justify-between gap-3 print:hidden" style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))' }}>
         <div className="min-w-0 num">
@@ -3387,8 +3636,8 @@ export default function App() {
           </div>
           <div className="text-[15px] font-semibold truncate">
             {fmtQty(estimates[leadTier]?.totalGallons)} gal
-            {hasPrices && <span className="text-ink-3 font-normal"> · {profitMargin > 0 ? 'your cost ' : 'total '}</span>}
-            {hasPrices && formatCurrency(grandTotals[leadTier] || 0)}
+            {hasPrices && <span className="text-ink-3 font-normal"> · {profitMargin > 0 ? 'contractor ' : 'total '}</span>}
+            {hasPrices && formatCurrency(profitMargin > 0 ? pricedTotal(leadTier, marginFactor) : (grandTotals[leadTier] || 0))}
           </div>
         </div>
         <a href="#order" className="btn-secondary shrink-0">View order</a>
@@ -3396,8 +3645,15 @@ export default function App() {
 
       {/* TOAST */}
       {toast && (
-        <div role="status" className="fixed z-50 bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-md bg-ink text-white text-[13px] px-3.5 py-2.5 shadow-pop print:hidden">
-          <CheckCircle size={15} className="text-green-400" /> {toast}
+        <div key={toast.key} role={toast.tone === 'error' ? 'alert' : 'status'} className="fixed z-50 top-[64px] inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 lg:top-auto lg:bottom-6 flex items-center gap-2.5 rounded-md bg-ink text-white text-[13px] pl-3.5 pr-2 py-2 shadow-pop print:hidden">
+          {toast.tone === 'error'
+            ? <AlertTriangle size={15} className="text-amber-300 shrink-0" />
+            : <CheckCircle size={15} className="text-green-400 shrink-0" />}
+          <span className="flex-1 min-w-0 py-0.5">{toast.message}</span>
+          {toast.action && (
+            <button onClick={toast.action.onClick} className="shrink-0 rounded px-2.5 min-h-[32px] font-semibold text-accent-200 hover:bg-white/10">{toast.action.label}</button>
+          )}
+          <button onClick={() => setToast(null)} className="shrink-0 rounded p-1.5 text-white/70 hover:text-white hover:bg-white/10" aria-label="Dismiss"><X size={14} /></button>
         </div>
       )}
     </div>
