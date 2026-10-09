@@ -1811,7 +1811,7 @@ export default function App() {
       y = sectionTitle('Energy savings estimate', y, `${e.regionName} · climate zone ${e.climateZone}`);
       y = plainTable({
         y,
-        head: [['Estimate', '']],
+        head: [['', '']],
         body: [
           ['Annual savings', `$${e.annualSavingsLow.toLocaleString()} – $${e.annualSavingsHigh.toLocaleString()}`],
           ['Energy reduction', `${e.annualKwhSavings.toLocaleString()} kWh per year`],
@@ -2093,7 +2093,8 @@ export default function App() {
         data.forEach((d, i) => { if (d && d.perSqFt === minSq && minSq !== null) marks[`${body.length}:${i + 1}`] = 'Lowest'; });
         body.push(['Per sq ft', ...data.map(d => d === null || d.perSqFt === null ? '—' : formatCurrency(d.perSqFt))]); kinds.push('item');
       }
-      data.forEach((d, i) => { if (d && d.gallons === minGal && minGal !== null) marks[`${body.length}:${i + 1}`] = 'Least material'; });
+      // Matches the screen: least material is marked only when no prices are entered
+      if (!priced) data.forEach((d, i) => { if (d && d.gallons === minGal && minGal !== null) marks[`${body.length}:${i + 1}`] = 'Least material'; });
       body.push(['Coating gallons', ...data.map(d => d === null ? 'N/A' : d.gallons > 0 ? `${d.gallons.toLocaleString()} gal` : '—')]); kinds.push('item');
     });
 
@@ -2111,7 +2112,6 @@ export default function App() {
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.textColor = ink;
           data.cell.styles.halign = 'left';
-          data.cell.styles.cellPadding = { ...data.cell.styles.cellPadding, left: 6 };
         } else if (kind === 'total') {
           data.cell.styles.fontStyle = 'bold';
           if (data.column.index === 0) data.cell.styles.textColor = ink;
