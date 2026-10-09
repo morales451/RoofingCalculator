@@ -25,3 +25,9 @@ dist-ssr
 
 # Local Netlify folder
 .netlify
+
+# Impeccable engine binaries (fetched on demand by the launcher)
+.claude/skills/impeccable/scripts/bin/
+
+# Impeccable review captures (regenerated each review)
+.impeccable/review/

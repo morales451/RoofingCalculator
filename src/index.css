@@ -2,170 +2,115 @@
 @tailwind components;
 @tailwind utilities;
 
-@media print {
-  /* Page setup */
-  @page {
-    size: letter;
-    margin: 0.5in;
-  }
-
-  /* Global print resets */
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
   body {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    color-adjust: exact !important;
-    font-size: 11px !important;
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  ::selection { background: theme('colors.accent.100'); color: theme('colors.ink.DEFAULT'); }
+  input, textarea, select { caret-color: theme('colors.accent.600'); }
+  input[type="checkbox"] { accent-color: theme('colors.accent.600'); }
+  :focus-visible { outline: 2px solid theme('colors.accent.600'); outline-offset: 2px; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
+  * { scrollbar-width: thin; scrollbar-color: theme('colors.line.strong') transparent; }
+  /* Hide number spinners: values are typed, never nudged */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+}
+
+@layer components {
+  .num { font-variant-numeric: tabular-nums; }
+
+  .panel { @apply bg-white border border-line rounded-md shadow-panel; }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-[13px] font-medium whitespace-nowrap
+           transition-colors duration-100 select-none disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-accent-600 text-white hover:bg-accent-700 active:bg-accent-800;
+    box-shadow: 0 1px 1px rgba(16, 24, 40, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  }
+  .btn-secondary {
+    @apply btn bg-white text-ink-2 border border-line-strong shadow-xs hover:bg-canvas hover:text-ink active:bg-line;
+  }
+  .btn-ghost { @apply btn text-ink-2 hover:bg-canvas hover:text-ink; }
+  .btn-lg { @apply h-10 px-4 text-sm; }
+  .icon-btn { @apply inline-flex items-center justify-center h-7 w-7 rounded-md text-ink-3 hover:bg-canvas hover:text-ink transition-colors; }
+
+  .label { @apply block text-[13px] font-medium text-ink-2 mb-1.5; }
+  .hint { @apply text-xs text-ink-3 mt-1.5 leading-snug; }
+
+  .input {
+    @apply block w-full h-9 px-2.5 rounded-md border border-line-strong bg-white text-sm text-ink shadow-xs
+           placeholder:text-ink-3/80 transition-[border-color,box-shadow] duration-100
+           focus:border-accent-600 focus:ring-[3px] focus:ring-accent-100 outline-none
+           disabled:bg-canvas disabled:text-ink-4 disabled:cursor-not-allowed;
+  }
+  .input-sm { @apply h-8 px-2 text-[13px]; }
+  .input-error { @apply border-red-500 focus:border-red-600 focus:ring-red-100; }
+  select.input {
+    @apply appearance-none pr-8 cursor-pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23626c7e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 6.5 8 9.5l3-3'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
   }
 
-  /* Hide interactive elements */
-  .print\:hidden,
-  button:not(.print-visible),
-  input[type="number"],
-  input[type="file"],
-  select,
-  textarea,
-  .print-hide {
-    display: none !important;
+  /* Segmented control */
+  .seg { @apply grid grid-flow-col auto-cols-fr gap-0.5 p-0.5 rounded-md bg-canvas border border-line; }
+  .seg-btn {
+    @apply h-8 px-2 rounded-[5px] text-[13px] text-ink-3 font-medium transition-colors duration-100 hover:text-ink;
   }
+  .seg-btn[aria-pressed="true"] { @apply bg-white text-ink shadow-xs ring-1 ring-line-strong/60; }
 
-  /* Show print-only elements */
-  .print\:block {
-    display: block !important;
+  /* Switch */
+  .switch {
+    @apply relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-line-strong transition-colors duration-150;
   }
+  .switch[aria-checked="true"] { @apply bg-accent-600; }
+  .switch > span {
+    @apply inline-block h-4 w-4 rounded-full bg-white shadow-xs transition-transform duration-150 translate-x-0.5;
+  }
+  .switch[aria-checked="true"] > span { @apply translate-x-[18px]; }
 
-  /* Override show for elements inside print-visible containers */
-  .print-show {
-    display: block !important;
-  }
+  .callout { @apply flex gap-2.5 rounded-md border px-3 py-2.5 text-[13px] leading-snug; }
+  .callout-warn { @apply callout border-amber-200 bg-amber-50 text-amber-900; }
+  .callout-danger { @apply callout border-red-200 bg-red-50 text-red-800; }
+  .callout-info { @apply callout border-line bg-canvas text-ink-2; }
 
-  /* Table styling for print */
-  table {
-    border-collapse: collapse !important;
-    width: 100% !important;
-    font-size: 10px !important;
-    page-break-inside: auto;
-  }
+  .badge { @apply inline-flex items-center gap-1 h-5 px-1.5 rounded text-xs font-medium; }
 
-  thead {
-    display: table-header-group;
-  }
+  /* Order table */
+  .order th { @apply px-2 sm:px-3 py-2 text-xs font-medium text-ink-3 text-right whitespace-nowrap bg-canvas border-b border-line; }
+  .order th:first-child, .order td:first-child { @apply text-left pl-4; }
+  .order th:last-child, .order td:last-child { @apply pr-4; }
+  .order tfoot td { @apply bg-white; }
+  .order td { @apply px-2 sm:px-3 py-2.5 align-top text-right border-b border-line; }
+  .order tbody tr:hover td { @apply bg-[#fafbfc]; }
+  .order .row-sub td { @apply bg-canvas/60 font-medium; }
+  .order .row-total td { @apply border-t border-line-strong border-b-0 pt-3 font-semibold text-ink; }
+  .order .row-meta td { @apply border-b-0 pt-1 pb-1.5 text-[13px] text-ink-3; }
+}
 
-  tr {
-    page-break-inside: avoid;
-    page-break-after: auto;
-  }
+@media print {
+  @page { size: letter; margin: 0.5in; }
+  body { background: #fff !important; font-size: 11px !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .panel { box-shadow: none !important; border-color: #c9d1da !important; }
+  .order th, .order td { padding: 4px 8px !important; }
+  .order tbody tr:hover td { background: transparent !important; }
+  .order input { display: none !important; }
+  .print-value { display: inline !important; }
+  .results-col { position: static !important; }
+  tr { page-break-inside: avoid; }
+  thead { display: table-header-group; }
+}
 
-  th, td {
-    border: 1px solid #d1d5db !important;
-    padding: 4px 8px !important;
-  }
-
-  /* Compact padding for print */
-  .p-6 {
-    padding: 0.5rem !important;
-  }
-
-  .p-4 {
-    padding: 0.375rem !important;
-  }
-
-  .mb-6, .mb-8 {
-    margin-bottom: 0.5rem !important;
-  }
-
-  .mt-6, .mt-8 {
-    margin-bottom: 0.5rem !important;
-  }
-
-  /* Remove shadows and make backgrounds white */
-  .shadow-lg, .shadow-sm {
-    box-shadow: none !important;
-  }
-
-  .rounded-xl, .rounded-lg {
-    border-radius: 4px !important;
-  }
-
-  /* Make the dark header light for print */
-  .bg-gray-900 {
-    background-color: #f3f4f6 !important;
-    color: #111827 !important;
-  }
-
-  .bg-gray-900 .text-white {
-    color: #111827 !important;
-  }
-
-  .bg-gray-900 .text-green-400 {
-    color: #047857 !important;
-  }
-
-  .bg-gray-900 .text-gray-400 {
-    color: #6b7280 !important;
-  }
-
-  .bg-gray-900 .text-gray-300 {
-    color: #6b7280 !important;
-  }
-
-  /* Ensure border visibility */
-  .border-gray-200 {
-    border-color: #d1d5db !important;
-  }
-
-  /* Force color printing on backgrounds */
-  .bg-green-100, .bg-blue-50, .bg-purple-50,
-  .bg-orange-50, .bg-red-50, .bg-yellow-50 {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  /* Show static values instead of inputs for price cells */
-  .print-price-value {
-    display: inline !important;
-    font-weight: 600;
-  }
-
-  /* Ensure the right column takes full width */
-  .lg\:col-span-8 {
-    grid-column: span 12 / span 12 !important;
-    width: 100% !important;
-  }
-
-  /* Remove sticky positioning */
-  .sticky {
-    position: static !important;
-  }
-
-  /* Page break control */
-  .print-page-break {
-    page-break-before: always;
-  }
-
-  /* Disclaimer styling */
-  .bg-gray-100 {
-    background-color: #f9fafb !important;
-  }
-
-  /* Compact the grid for print */
-  .grid {
-    display: block !important;
-  }
-
-  .lg\:col-span-4 {
-    display: none !important;
-  }
-
-  /* Override grid for the results section */
-  .lg\:col-span-8 .grid {
-    display: grid !important;
-  }
-
-  /* Footer */
-  .bg-gray-100.p-4.text-xs {
-    margin-top: 1rem !important;
-    padding: 0.5rem !important;
-    border-top: 2px solid #111827 !important;
-    font-size: 8px !important;
-  }
+@media print {
+  /* One left edge: the panel's screen padding drops so text aligns with the print header */
+  #order > div { padding-left: 0 !important; padding-right: 0 !important; }
+  .order th:first-child, .order td:first-child { padding-left: 0 !important; }
+  .order th:last-child, .order td:last-child { padding-right: 0 !important; }
 }
