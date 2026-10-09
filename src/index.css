@@ -24,7 +24,7 @@
 @layer components {
   .num { font-variant-numeric: tabular-nums; }
 
-  .panel { @apply bg-white border border-line rounded-lg shadow-panel; }
+  .panel { @apply bg-white border border-line rounded-md shadow-panel; }
 
   .btn {
     @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-[13px] font-medium whitespace-nowrap
@@ -87,10 +87,11 @@
   .order th { @apply px-2 sm:px-3 py-2 text-xs font-medium text-ink-3 text-right whitespace-nowrap bg-canvas border-b border-line; }
   .order th:first-child, .order td:first-child { @apply text-left pl-4; }
   .order th:last-child, .order td:last-child { @apply pr-4; }
+  .order tfoot td { @apply bg-white; }
   .order td { @apply px-2 sm:px-3 py-2.5 align-top text-right border-b border-line; }
   .order tbody tr:hover td { @apply bg-[#fafbfc]; }
   .order .row-sub td { @apply bg-canvas/60 font-medium; }
-  .order .row-total td { @apply border-t border-ink/15 border-b-0 pt-3 font-semibold text-ink; }
+  .order .row-total td { @apply border-t border-line-strong border-b-0 pt-3 font-semibold text-ink; }
   .order .row-meta td { @apply border-b-0 pt-1 pb-1.5 text-[13px] text-ink-3; }
 }
 
@@ -105,4 +106,11 @@
   .results-col { position: static !important; }
   tr { page-break-inside: avoid; }
   thead { display: table-header-group; }
+}
+
+@media print {
+  /* One left edge: the panel's screen padding drops so text aligns with the print header */
+  #order > div { padding-left: 0 !important; padding-right: 0 !important; }
+  .order th:first-child, .order td:first-child { padding-left: 0 !important; }
+  .order th:last-child, .order td:last-child { padding-right: 0 !important; }
 }

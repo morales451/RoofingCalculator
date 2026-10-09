@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer, X, MoreHorizontal } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import EnergySavingsEstimator from './EnergySavingsEstimator.jsx';
@@ -63,6 +63,22 @@ export default function App() {
   const [copySuccess, setCopySuccess] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const [mobileTier, setMobileTier] = useState('15');
+  const [showMore, setShowMore] = useState(false);
+
+  // Results column sticks by its bottom edge when taller than the viewport, so every
+  // order row stays reachable by page scroll while the totals stay in view during edits.
+  const resultsRef = useRef(null);
+  const [resultsTop, setResultsTop] = useState(72);
+  useEffect(() => {
+    const el = resultsRef.current;
+    if (!el) return;
+    const update = () => setResultsTop(Math.min(72, window.innerHeight - el.offsetHeight - 16));
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener('resize', update);
+    update();
+    return () => { ro.disconnect(); window.removeEventListener('resize', update); };
+  }, []);
   const [toast, setToast] = useState(null);
   const showToast = (message) => setToast(message);
 
@@ -2124,6 +2140,19 @@ export default function App() {
   const factorsLabel = useMultiSection && roofSections.length > 0
     ? 'Per-section waste and stretch'
     : `${Math.round(inputs.wasteFactor * 100)}% waste · ${Math.round(inputs.stretchFactor * 100)}% stretch`;
+  // Line items on screen that have a quantity but no price yet; totals exclude them
+  const lineItems = [
+    { key: 'basecoat', show: inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0 },
+    { key: 'rustPrimer', show: estimates['10']?.rustPrimerGal > 0 },
+    { key: 'adhesionPrimer', show: !inputs.passedAdhesion },
+    { key: 'topcoat', show: tiers.some(y => estimates[y]?.top1Gal > 0) },
+    { key: 'accessory', show: showAccessory && (commonResults.accessoryQty > 0 || commonResults.screwBuckets > 0 || commonResults.linearBuckets > 0) },
+    { key: 'fastenerCaulk', show: commonResults.fastenerCaulkTubes > 0 },
+    { key: 'membrane', show: isReinforced && commonResults.membraneRolls > 0 },
+  ];
+  const unpriced = hasPrices ? lineItems.filter(i => i.show && !(prices[i.key] > 0)) : [];
+  const isUnpriced = (key) => unpriced.some(i => i.key === key);
+  const unpricedNote = unpriced.length > 0 ? `Excludes ${unpriced.length} unpriced item${unpriced.length > 1 ? 's' : ''}` : null;
   const leadTier = tiers.includes(mobileTier) ? mobileTier : '10';
   // On phones only the selected warranty tier column is shown
   const tierCls = (y) => (y === leadTier ? '' : 'hidden sm:table-cell');
@@ -2149,12 +2178,12 @@ export default function App() {
           aria-label={`Price per ${unit}`}
           value={prices[key] || ''}
           onChange={(e) => handlePriceChange(key, e.target.value)}
-          className="input input-sm num w-[76px] sm:w-[92px] pl-5 text-right"
+          className={`input input-sm num w-[76px] sm:w-[92px] pl-5 text-right ${isUnpriced(key) ? '!border-amber-400 bg-amber-50/60' : ''}`}
         />
       </div>
       <span className="hidden print-value num">{prices[key] > 0 ? formatCurrency(prices[key]) : '—'}</span>
-      <div className="text-xs text-ink-3 mt-1 num">
-        {profitMargin > 0 && prices[key] > 0 ? `sells at ${formatCurrency(prices[key] * marginFactor)}` : `per ${unit}`}
+      <div className={`text-xs mt-1 num ${isUnpriced(key) ? 'text-amber-700' : 'text-ink-3'}`}>
+        {isUnpriced(key) ? 'No price' : profitMargin > 0 && prices[key] > 0 ? `sells at ${formatCurrency(prices[key] * marginFactor)}` : `per ${unit}`}
       </div>
     </td>
   );
@@ -2204,7 +2233,7 @@ export default function App() {
       <header className="sticky top-0 z-30 bg-white border-b border-line print:hidden">
         <div className="max-w-[1320px] mx-auto h-14 px-4 lg:px-8 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Layers size={18} className="hidden sm:block text-accent-600 shrink-0" aria-hidden="true" />
+            <Layers size={18} className="hidden sm:block text-ink shrink-0" aria-hidden="true" />
             <h1 className="text-sm sm:text-[15px] font-semibold tracking-[-0.01em] truncate">
               <span className="sm:hidden">Roofing Calculator</span>
               <span className="hidden sm:inline">Roofing Materials Calculator</span>
@@ -2221,7 +2250,7 @@ export default function App() {
             <div className="relative">
               <button onClick={() => setShowSaved(!showSaved)} className="btn-secondary" aria-expanded={showSaved} aria-label="Saved quotes">
                 <FileText size={15} />
-                <span className="hidden md:inline">Saved</span>
+                <span className="hidden sm:inline">Saved</span>
                 <span className="num text-ink-3">{savedQuotes.length}</span>
                 <ChevronDown size={14} className="text-ink-3" />
               </button>
@@ -2296,16 +2325,38 @@ export default function App() {
                 </>
               )}
             </div>
-            <label className="btn-secondary cursor-pointer" aria-label="Import quote file" title="Import quote file">
+            <div className="relative md:hidden">
+              <button onClick={() => setShowMore(!showMore)} className="btn-secondary px-2" aria-expanded={showMore} aria-label="More actions">
+                <MoreHorizontal size={16} />
+              </button>
+              {showMore && (
+                <>
+                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close menu" onClick={() => setShowMore(false)} />
+                  <div className="absolute right-0 top-10 z-50 w-48 panel shadow-pop py-1">
+                    <label className="flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas cursor-pointer">
+                      <Upload size={15} className="text-ink-3" /> Import quote file
+                      <input type="file" accept=".json" onChange={(e) => { importQuote(e); setShowMore(false); }} className="hidden" />
+                    </label>
+                    <button onClick={() => { exportQuote(); setShowMore(false); }} className="w-full flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas">
+                      <Download size={15} className="text-ink-3" /> Export quote file
+                    </button>
+                    <button onClick={() => { setShowMore(false); window.print(); }} className="w-full flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas">
+                      <Printer size={15} className="text-ink-3" /> Print
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <label className="btn-secondary cursor-pointer hidden md:inline-flex" aria-label="Import quote file" title="Import quote file">
               <Upload size={15} />
-              <span className="hidden md:inline">Import</span>
+              <span>Import</span>
               <input type="file" accept=".json" onChange={importQuote} className="hidden" />
             </label>
-            <button onClick={exportQuote} className="btn-secondary" aria-label="Export quote file" title="Export quote file">
+            <button onClick={exportQuote} className="btn-secondary hidden md:inline-flex" aria-label="Export quote file" title="Export quote file">
               <Download size={15} />
-              <span className="hidden md:inline">Export</span>
+              <span>Export</span>
             </button>
-            <button onClick={() => window.print()} className="btn-secondary hidden sm:inline-flex" aria-label="Print" title="Print">
+            <button onClick={() => window.print()} className="btn-secondary hidden md:inline-flex" aria-label="Print" title="Print">
               <Printer size={15} />
               <span className="hidden lg:inline">Print</span>
             </button>
@@ -2341,7 +2392,7 @@ export default function App() {
         </div>
         {(customerInfo.name || customerInfo.company) && (
           <div className="mb-4 text-sm">
-            <h3 className="font-bold mb-1">Customer information</h3>
+            <h3 className="font-semibold mb-1">Customer</h3>
             {customerInfo.name && <p>Name: {customerInfo.name}</p>}
             {customerInfo.company && <p>Company: {customerInfo.company}</p>}
             {customerInfo.email && <p>Email: {customerInfo.email}</p>}
@@ -2350,23 +2401,7 @@ export default function App() {
             {customerInfo.projectAddress && <p>Project Address: {customerInfo.projectAddress}</p>}
           </div>
         )}
-        <div className="grid grid-cols-3 gap-2 text-sm border border-line rounded p-3">
-          <div><span className="font-bold">System:</span> {inputs.coatingSystem}{inputs.coatingSystem === 'Acrylic' ? ` (${inputs.acrylicSystemType})` : ''}</div>
-          <div><span className="font-bold">Roof Type:</span> {roofTypeLabel}</div>
-          <div><span className="font-bold">Roof Size:</span> {inputs.roofSizeSqFt.toLocaleString()} sqft ({commonResults.squares.toFixed(1)} sq)</div>
-          {inputs.linearFeet > 0 && <div><span className="font-bold">Linear Feet:</span> {inputs.linearFeet.toLocaleString()}</div>}
-          {useMultiSection && roofSections.length > 0 ? (
-            <>
-              <div><span className="font-bold">Waste:</span> Per-Section</div>
-              <div><span className="font-bold">Stretch:</span> Per-Section</div>
-            </>
-          ) : (
-            <>
-              <div><span className="font-bold">Waste:</span> {Math.round(inputs.wasteFactor * 100)}%</div>
-              <div><span className="font-bold">Stretch:</span> {Math.round(inputs.stretchFactor * 100)}%</div>
-            </>
-          )}
-        </div>
+        {inputs.linearFeet > 0 && <p className="text-sm text-ink-2">Seams: <span className="num">{inputs.linearFeet.toLocaleString()}</span> linear ft</p>}
         {useMultiSection && roofSections.length > 0 && (
           <div className="mt-3 text-sm">
             <h3 className="font-bold mb-1">Roof sections</h3>
@@ -2389,14 +2424,14 @@ export default function App() {
         )}
       </div>
 
-      <main className="max-w-[1320px] mx-auto px-4 lg:px-8 py-5 lg:py-6 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:block print:p-0">
+      <main className="max-w-[1320px] mx-auto px-4 lg:px-8 py-5 lg:py-6 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:block print:p-0 print:max-w-none">
 
         {/* LEFT COLUMN: INPUTS */}
         <aside className="panel divide-y divide-line print:hidden">
 
           {/* PROJECT */}
           <section className="px-4 sm:px-5 py-5 space-y-4">
-            <h2 className="text-sm font-semibold">Project</h2>
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Project</h2>
             <div>
               <label htmlFor="projectName" className="label">Project name</label>
               <input
@@ -2463,7 +2498,7 @@ export default function App() {
 
           {/* SYSTEM */}
           <section className="px-4 sm:px-5 py-5 space-y-4">
-            <h2 className="text-sm font-semibold">Coating system</h2>
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Coating system</h2>
             <div className="seg" role="group" aria-label="Coating system">
               {['Silicone', 'Acrylic', 'Aluminum'].map(sys => segButton(sys, inputs.coatingSystem === sys, () => handleChange('coatingSystem', sys)))}
             </div>
@@ -2522,7 +2557,7 @@ export default function App() {
           {/* ROOF */}
           <section className="px-4 sm:px-5 py-5 space-y-4">
             <div className="flex items-center justify-between gap-4">
-              <h2 className="text-sm font-semibold">Roof</h2>
+              <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Roof</h2>
               <label className="flex items-center gap-2.5 text-[13px] text-ink-2 cursor-pointer">
                 Multiple sections
                 <button
@@ -2703,7 +2738,7 @@ export default function App() {
 
           {/* CONDITIONS */}
           <section className="px-4 sm:px-5 pt-5 pb-2">
-            <h2 className="text-sm font-semibold mb-1">Site conditions</h2>
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em] mb-1">Site conditions</h2>
             <div className="divide-y divide-line">
               {/* Adhesion test not needed for Aluminum */}
               {inputs.coatingSystem !== 'Aluminum' && (
@@ -2745,7 +2780,7 @@ export default function App() {
         </aside>
 
         {/* RIGHT COLUMN: RESULTS */}
-        <div className="results-col min-w-0 space-y-5 lg:space-y-6">
+        <div ref={resultsRef} className="results-col min-w-0 lg:sticky" style={{ top: resultsTop }}>
           <section id="order" className="panel overflow-hidden print:border-0 scroll-mt-20">
             <div className="flex items-start justify-between gap-4 px-4 sm:px-5 py-4 border-b border-line">
               <div className="min-w-0">
@@ -2824,8 +2859,8 @@ export default function App() {
                 </div>
               </div>
             )}
-            <div className="overflow-x-auto mt-3">
-              <table className="order w-full sm:min-w-[600px] text-sm">
+            <div className="overflow-x-auto mt-3 print:overflow-visible">
+              <table className="order w-full sm:min-w-[600px] text-sm border-separate border-spacing-0">
                 <thead>
                   <tr>
                     <th scope="col">Product</th>
@@ -2961,15 +2996,20 @@ export default function App() {
                   {/* Goldseal */}
                   {inputs.goldseal && (
                     <tr>
-                      {productCell('Goldseal warranty', 'Warranty cost')}
+                      {productCell('Goldseal warranty', 'Priced per warranty term')}
                       <td />
-                      {tiers.map(y => <td key={y} className={`num font-medium ${tierCls(y)}`}>{formatCurrency(estimates[y]?.goldsealCost || 0)}</td>)}
+                      {tiers.map(y => qtyCell(y, 1, 'warranty', estimates[y]?.goldsealCost || 0))}
                     </tr>
                   )}
 
+                </tbody>
+                <tfoot>
                   {/* GRAND TOTAL */}
                   <tr className="row-total">
-                    <td>{profitMargin > 0 ? 'Cost to distributor' : 'Total'}</td>
+                    <td>
+                      {profitMargin > 0 ? 'Cost to distributor' : 'Total'}
+                      {unpricedNote && <div className="text-xs font-normal text-amber-700 mt-0.5">{unpricedNote}</div>}
+                    </td>
                     <td className="!font-normal text-xs text-ink-3"><span className="print:hidden">{profitMargin > 0 ? 'Your cost' : 'All materials'}</span></td>
                     {tiers.map(y => (
                       <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>
@@ -3014,8 +3054,8 @@ export default function App() {
                       )}
                     </>
                   )}
-                  <tr className="row-meta"><td colSpan={colCount} className="!pb-3" /></tr>
-                </tbody>
+                  <tr className="row-meta"><td colSpan={colCount} className="!pb-1" /></tr>
+                </tfoot>
               </table>
             </div>
 
@@ -3035,14 +3075,12 @@ export default function App() {
               </div>
             </div>
 
-            <div className="px-4 sm:px-5 py-3 border-t border-line text-xs text-ink-3 leading-relaxed bg-canvas/50">
-              <p className="mb-1">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% waste and ${Math.round(inputs.stretchFactor * 100)}% stretch.`}</p>
-              <p>
-                Disclaimer: this quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements and waste factors. The end user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.
-              </p>
-            </div>
           </section>
 
+        </div>
+      </main>
+
+      <div className="max-w-[1320px] mx-auto px-4 lg:px-8 grid gap-5 lg:gap-6 lg:grid-cols-2 items-start print:hidden">
           {/* COPY TO EMAIL SECTION */}
           <section className="panel print:hidden">
             <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 pt-4 pb-3">
@@ -3105,13 +3143,23 @@ export default function App() {
               </div>
             )}
           </section>
+      </div>
+
+      <footer className="max-w-[1320px] mx-auto px-4 lg:px-8 text-xs text-ink-3 leading-relaxed print:max-w-none print:px-0">
+        <div className="border-t border-line mt-6 py-5 print:mt-3 print:pt-3">
+            <div className="max-w-[90ch]">
+              <p className="mb-1">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% waste and ${Math.round(inputs.stretchFactor * 100)}% stretch.`}</p>
+              <p>
+                Disclaimer: this quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements and waste factors. The end user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.
+              </p>
+            </div>
         </div>
-      </main>
+      </footer>
 
       {/* QUOTE COMPARISON VIEW */}
       {showComparison && selectedForCompare.length >= 2 && (
         <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pb-8 print:hidden">
-          <section className="panel overflow-hidden">
+          <section id="comparison" className="panel overflow-hidden">
             <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 py-3.5 border-b border-line">
               <h2 className="text-base font-semibold">Quote comparison</h2>
               <div className="flex items-center gap-2">
@@ -3312,10 +3360,13 @@ export default function App() {
       {/* MOBILE SUMMARY BAR */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-line px-4 py-2.5 flex items-center justify-between gap-3 print:hidden" style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))' }}>
         <div className="min-w-0 num">
-          <div className="text-xs text-ink-3">{leadTier}-year · {commonResults.squares.toFixed(1)} sq</div>
+          <div className="text-xs text-ink-3">
+            {leadTier}-year · {commonResults.squares.toFixed(1)} sq
+            {unpricedNote && <span className="text-amber-700"> · {unpriced.length} unpriced</span>}
+          </div>
           <div className="text-[15px] font-semibold truncate">
             {fmtQty(estimates[leadTier]?.totalGallons)} gal
-            {hasPrices && <span className="text-ink-3 font-normal"> · </span>}
+            {hasPrices && <span className="text-ink-3 font-normal"> · {profitMargin > 0 ? 'your cost ' : 'total '}</span>}
             {hasPrices && formatCurrency(grandTotals[leadTier] || 0)}
           </div>
         </div>
