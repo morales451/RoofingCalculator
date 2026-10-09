@@ -124,7 +124,6 @@ export default function App() {
   const [profitMargin, setProfitMargin] = useState(0);
   // Controls whether distributor cost / margin details are exposed in PDF + Copy Text.
   // Default off — quotes go to contractors and that info is sensitive.
-  const [showMarginInExports, setShowMarginInExports] = useState(false);
 
   // Energy savings estimator
   const [showEnergySavings, setShowEnergySavings] = useState(false);
@@ -470,7 +469,6 @@ export default function App() {
       inputs,
       prices,
       profitMargin,
-      showMarginInExports,
       customerInfo,
       estimates,
       commonResults,
@@ -491,7 +489,6 @@ export default function App() {
     setInputs(quote.inputs);
     setPrices(quote.prices);
     setProfitMargin(quote.profitMargin || 0);
-    setShowMarginInExports(quote.showMarginInExports || false);
     setCustomerInfo(quote.customerInfo || {
       name: '',
       company: '',
@@ -525,7 +522,6 @@ export default function App() {
       inputs,
       prices,
       profitMargin,
-      showMarginInExports,
       customerInfo,
       energyRegion,
       roofSections: useMultiSection ? roofSections : [],
@@ -987,7 +983,8 @@ export default function App() {
     const isContractor = mode === 'contractor';
     // In contractor mode, every displayed price is marked up to the contractor's price.
     const markup = (isContractor && profitMargin > 0) ? 1 / (1 - profitMargin / 100) : 1;
-    const adjP = (p) => p * markup;
+    // Unit prices round to cents first so quantity × unit price matches every printed line
+    const adjP = (p) => Math.round(p * markup * 100) / 100;
 
     let text = `${isContractor ? 'CONTRACTOR MATERIAL QUOTE' : 'PROJECT ESTIMATE'}: ${projectName || 'Untitled'}\n\n`;
     if (useMultiSection && roofSections.length > 0) {
@@ -1038,12 +1035,8 @@ export default function App() {
     }
     text += `Note: All quantities are rounded up to the nearest full pail where applicable.\n`;
 
-    // Distributor mode hides unit prices when showMarginInExports is off.
-    // Contractor mode always shows unit prices, but uses the marked-up value.
-    const hideAccessoryCosts = !isContractor && profitMargin > 0 && !showMarginInExports;
-
     if (linearFeet > 0 || commonResults.screwBuckets > 0) {
-        const perEach = (prices.accessory > 0 && !hideAccessoryCosts) ? ` @ $${adjP(prices.accessory).toFixed(2)} each` : '';
+        const perEach = (prices.accessory > 0) ? ` @ $${adjP(prices.accessory).toFixed(2)} each` : '';
         // On metal roofs the seam sealer covers both seams (by linear feet) and
         // fastener encapsulation (by roof area) — list them as separate line items.
         if (commonResults.screwBuckets > 0) {
@@ -1060,13 +1053,13 @@ export default function App() {
 
     if (commonResults.fastenerCaulkTubes > 0) {
         text += `Fastener Encapsulation: ${commonResults.fastenerCaulkTubes} Tubes of ${FASTENER_CAULK_NAME}`;
-        if (prices.fastenerCaulk > 0 && !hideAccessoryCosts) text += ` @ $${adjP(prices.fastenerCaulk).toFixed(2)}/tube`;
+        if (prices.fastenerCaulk > 0) text += ` @ $${adjP(prices.fastenerCaulk).toFixed(2)}/tube`;
         text += ` (covers ~${commonResults.screwCount} fasteners @ ${FASTENERS_PER_CAULK_TUBE}/tube)\n`;
     }
 
     if (coatingSystem === 'Acrylic' && commonResults.membraneRolls > 0) {
         text += `Reinforcement: ${commonResults.membraneRolls} Rolls of Reinforcement Membrane (40" x 324')`;
-        if (prices.membrane > 0 && !hideAccessoryCosts) text += ` @ $${adjP(prices.membrane).toFixed(2)}/roll`;
+        if (prices.membrane > 0) text += ` @ $${adjP(prices.membrane).toFixed(2)}/roll`;
         text += `\n`;
     }
 
@@ -1096,49 +1089,45 @@ export default function App() {
 
         text += `\n\n--- ${year}-YEAR OPTION ---\n\n`;
 
-        // Distributor mode hides per-line prices when showMarginInExports is off.
-        // Contractor mode always shows per-line prices, using marked-up values.
-        const hideLineCosts = !isContractor && profitMargin > 0 && !showMarginInExports;
-
         if (coatingSystem !== 'Aluminum' && est.baseGal > 0) {
             text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat})`;
             if (!useMultiSection && est.rates.base) text += ` @ ${est.rates.base} gal/sq`;
-            if (prices.basecoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.basecoat).toFixed(2)}/gal | Line Total: $${(est.baseGal * adjP(prices.basecoat)).toFixed(2)}`;
+            if (prices.basecoat > 0) text += `\n  Unit Price: $${adjP(prices.basecoat).toFixed(2)}/gal | Line Total: $${(est.baseGal * adjP(prices.basecoat)).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.rustPrimerGal > 0) {
             text += `Rust Primer: ${est.rustPrimerGal} gal (${primerSet.rust}) @ 0.5 gal/sq`;
-            if (prices.rustPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.rustPrimer).toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * adjP(prices.rustPrimer)).toFixed(2)}`;
+            if (prices.rustPrimer > 0) text += `\n  Unit Price: $${adjP(prices.rustPrimer).toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * adjP(prices.rustPrimer)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.adhesionPrimerGal > 0) {
             text += `Adhesion Primer: ${est.adhesionPrimerGal} gal (${primerSet.adhesion}) @ 0.2 gal/sq`;
-            if (prices.adhesionPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.adhesionPrimer).toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * adjP(prices.adhesionPrimer)).toFixed(2)}`;
+            if (prices.adhesionPrimer > 0) text += `\n  Unit Price: $${adjP(prices.adhesionPrimer).toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * adjP(prices.adhesionPrimer)).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.top1Gal > 0) {
             text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top1) text += ` @ ${est.rates.top1} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top1Gal * adjP(prices.topcoat)).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top1Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top2Gal > 0) {
             text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top2) text += ` @ ${est.rates.top2} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top2Gal * adjP(prices.topcoat)).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top2Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top3Gal > 0) {
             text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top3) text += ` @ ${est.rates.top3} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top3Gal * adjP(prices.topcoat)).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top3Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
 
         text += `\nTOTAL SYSTEM: ${est.totalGallons} Gallons`;
-        if (!hideLineCosts && (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0)) {
+        if ((prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0)) {
             const materialsTotal = (est.baseGal || 0) * adjP(prices.basecoat) +
                                    (est.top1Gal || 0) * adjP(prices.topcoat) +
                                    (est.top2Gal || 0) * adjP(prices.topcoat) +
@@ -1149,7 +1138,7 @@ export default function App() {
         }
         text += `\n`;
 
-        if (est.goldsealCost > 0 && !hideLineCosts) text += `Goldseal Warranty: $${adjP(est.goldsealCost).toLocaleString()}\n`;
+        if (est.goldsealCost > 0) text += `Goldseal Warranty: $${adjP(est.goldsealCost).toLocaleString()}\n`;
 
         // Add grand total if pricing is entered
         if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0 || prices.fastenerCaulk > 0) {
@@ -1167,26 +1156,20 @@ export default function App() {
             const warrantyLabel = inputs.goldseal ? ' + Warranty' : '';
 
             if (isContractor) {
-                const contractorPrice = grandTotal * markup;
+                const contractorPrice = pricedTotal(year, markup);
                 text += `\nTOTAL (Materials + Accessories${warrantyLabel}): $${contractorPrice.toFixed(2)}`;
                 if (roofSizeSqFt > 0) text += ` ($${(contractorPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
                 text += `\n`;
             } else if (profitMargin > 0) {
-                const sellPrice = grandTotal / (1 - profitMargin / 100);
-                if (showMarginInExports) {
-                    text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
-                    if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
-                    text += `\n`;
-                    const profit = sellPrice - grandTotal;
-                    text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}`;
-                    if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
-                    text += `\n`;
-                    text += `MARGIN: $${profit.toFixed(2)}\n`;
-                } else {
-                    text += `\nTOTAL (Materials + Accessories${warrantyLabel}): $${sellPrice.toFixed(2)}`;
-                    if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
-                    text += `\n`;
-                }
+                const sellPrice = pricedTotal(year, 1 / (1 - profitMargin / 100));
+                text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
+                if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
+                text += `\n`;
+                const profit = sellPrice - grandTotal;
+                text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}`;
+                if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
+                text += `\n`;
+                text += `MARGIN: $${profit.toFixed(2)}\n`;
             } else {
                 text += `\nGRAND TOTAL (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
                 if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
@@ -1231,7 +1214,7 @@ export default function App() {
 
   setEmailText(buildEmailText('distributor'));
   setContractorEmailText(buildEmailText('contractor'));
-  }, [inputs, estimates, commonResults, prices, profitMargin, showMarginInExports, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections, sectionResults]);
+  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections, sectionResults]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -1309,7 +1292,7 @@ export default function App() {
       line: [227, 232, 238],
       lineStrong: [201, 209, 218],
       canvas: [246, 248, 250],
-      amber: [146, 64, 14],
+      amber: [180, 83, 9],
     };
 
     const docTitle = isContractor ? 'Contractor quote' : 'Distributor estimate';
@@ -1373,7 +1356,7 @@ export default function App() {
 
     // Shared table look: plain rows, hairline separators, figures right-aligned.
     // `subs` holds a muted second line per cell, keyed "row:col".
-    const plainTable = ({ head, body, columnStyles, subs = {}, rowKinds = [], y }) => {
+    const plainTable = ({ head, body, columnStyles, subs = {}, rowKinds = [], widths, y }) => {
       autoTable(doc, {
         startY: y,
         head,
@@ -1422,20 +1405,21 @@ export default function App() {
             data.cell.styles.cellPadding = { ...pad, top: 2, bottom: 3 };
             data.cell.styles.lineWidth = { bottom: 0 };
           }
-          // Reserve height for the muted second line; it is drawn separately below.
+          // Reserve exact height for the muted second line (drawn in didDrawCell).
           const sub = subs[`${data.row.index}:${data.column.index}`];
-          if (sub) {
-            data.cell.mainText = data.cell.text.join(' ');
-            data.cell.text = [...data.cell.text, sub.text];
+          if (sub && widths) {
+            const p = data.cell.styles.cellPadding;
+            const span = data.cell.colSpan || 1;
+            const w = widths.slice(data.column.index, data.column.index + span).reduce((a, b) => a + b, 0) - p.left - p.right;
+            const fs = data.cell.styles.fontSize;
+            doc.setFont('helvetica', data.cell.styles.fontStyle);
+            doc.setFontSize(fs);
+            const mainLines = doc.splitTextToSize(data.cell.text.join(' '), w).length;
+            doc.setFontSize(7.5);
+            const subLines = doc.splitTextToSize(sub.text, w).length;
+            data.cell.mainLines = mainLines;
+            data.cell.styles.minCellHeight = p.top + p.bottom + mainLines * fs * 1.15 + 1.5 + subLines * 7.5 * 1.25;
           }
-        },
-        willDrawCell: (data) => {
-          if (data.section !== 'body' || data.cell.mainText === undefined) return;
-          doc.setFontSize(data.cell.styles.fontSize);
-          doc.setFont('helvetica', data.cell.styles.fontStyle);
-          const avail = data.cell.width - data.cell.padding('left') - data.cell.padding('right');
-          data.cell.text = doc.splitTextToSize(data.cell.mainText, avail);
-          data.cell.mainLines = data.cell.text.length;
         },
         didDrawCell: (data) => {
           if (data.section !== 'body') return;
@@ -1454,6 +1438,30 @@ export default function App() {
         didDrawPage: drawContinuationHeader,
       });
       return doc.lastAutoTable.finalY;
+    };
+
+    // Totals per tier, always the sum of the printed lines (see pricedTotal).
+    const sellFactor = profitMargin > 0 ? 1 / (1 - profitMargin / 100) : 1;
+    const pdfTotalRows = (perSqFt) => {
+      if (isContractor) {
+        return [
+          { label: 'Total', major: true, value: yr => formatCurrency(pricedTotal(yr, markupFactor)) },
+          { label: 'Per sq ft', value: yr => perSqFt(pricedTotal(yr, markupFactor)) },
+        ];
+      }
+      if (profitMargin > 0) {
+        return [
+          { label: 'Distributor cost', major: true, value: yr => formatCurrency(pricedTotal(yr)) },
+          { label: 'Cost per sq ft', value: yr => perSqFt(pricedTotal(yr)) },
+          { label: `Contractor price (${profitMargin}% margin)`, major: true, value: yr => formatCurrency(pricedTotal(yr, sellFactor)) },
+          { label: 'Contractor price per sq ft', value: yr => perSqFt(pricedTotal(yr, sellFactor)) },
+          { label: 'Margin', value: yr => formatCurrency(pricedTotal(yr, sellFactor) - pricedTotal(yr)) },
+        ];
+      }
+      return [
+        { label: 'Total', major: true, value: yr => formatCurrency(pricedTotal(yr)) },
+        { label: 'Per sq ft', value: yr => perSqFt(pricedTotal(yr)) },
+      ];
     };
 
     // === HEADER ===
@@ -1482,8 +1490,8 @@ export default function App() {
       y += 13;
     }
     y += 8;
-    rule(y);
-    y += 20;
+    rule(y, C.ink, 2);
+    y += 22;
 
     // === INFO COLUMNS: quote / prepared for / project ===
     const roofTypeText = useMultiSection && roofSections.length > 0
@@ -1504,6 +1512,11 @@ export default function App() {
       quotePairs.push(['Valid until', fmtDate(validUntil)]);
     }
     if (isDistributor) quotePairs.push(['For', 'Internal use']);
+    const summaryTiers = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
+    const summaryLabel = isContractor ? 'Total' : (profitMargin > 0 ? 'Distributor cost' : 'Total');
+    const summaryPairs = hasPrices
+      ? summaryTiers.map(yr => [`${yr}-year`, formatCurrency(isContractor ? pricedTotal(yr, markupFactor) : pricedTotal(yr))])
+      : [];
 
     const customerLines = [customerInfo.name, customerInfo.company, customerInfo.address, customerInfo.email, customerInfo.phone].filter(Boolean);
     const projectLines = [
@@ -1515,7 +1528,7 @@ export default function App() {
     ].filter(Boolean);
 
     const columns = [
-      { title: 'Quote', pairs: quotePairs },
+      { title: 'Quote', pairs: quotePairs, summaryTitle: summaryLabel, summary: summaryPairs },
       ...(customerLines.length > 0 ? [{ title: 'Prepared for', lines: customerLines }] : []),
       { title: 'Project', lines: projectLines },
     ];
@@ -1536,6 +1549,19 @@ export default function App() {
           doc.text(String(v), x + 58, cy);
           cy += 13;
         });
+        if (col.summary && col.summary.length > 0) {
+          cy += 7;
+          setText(8, 'bold', C.ink3);
+          doc.text(col.summaryTitle, x, cy);
+          cy += 13;
+          col.summary.forEach(([k, v]) => {
+            setText(9, 'normal', C.ink3);
+            doc.text(k, x, cy);
+            setText(9, 'bold', C.ink);
+            doc.text(v, x + 58, cy);
+            cy += 13;
+          });
+        }
       } else {
         col.lines.forEach((line, li) => {
           setText(9, li === 0 ? 'bold' : 'normal', C.ink);
@@ -1590,14 +1616,12 @@ export default function App() {
     // ============================================================
     const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
     const showRates = !useMultiSection;
-    // Distributor PDF respects showMarginInExports (so the distributor can hide
-    // their own cost basis if they want). Contractor PDF always shows the
-    // contractor-priced unit costs when there are prices entered.
-    const showPriceUnit = isContractor
-      ? hasPrices
-      : !(profitMargin > 0 && !showMarginInExports);
-    // Line costs follow the same rule as the old per-year pricing summary.
-    const hidePdfLineCosts = isDistributor && profitMargin > 0 && !showMarginInExports;
+    // The distributor estimate always shows cost; the contractor quote shows
+    // marked-up unit prices whenever prices are entered.
+    const showPriceUnit = isContractor ? hasPrices : true;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    // Line cost from a cents-rounded unit price, so qty × printed price = printed line.
+    const lineCost = (qty, price) => (qty > 0 && price > 0) ? r2(qty * r2(adj(price))) : 0;
 
     // A material row must be shown if ANY warranty year on the PDF calls for it.
     // Acrylic systems add coats at higher warranty tiers (e.g. Topcoat 2/3 only
@@ -1705,7 +1729,7 @@ export default function App() {
         const col = tierStart + i;
         if (c.text) { cells.push(c.text); return; }
         cells.push(c.qty > 0 ? `${fmtNum(c.qty)} ${c.unit}` : '—');
-        if (c.qty > 0 && it.price > 0 && !hidePdfLineCosts) rowSubs[col] = { text: formatCurrency(adj(c.qty * it.price)) };
+        if (c.qty > 0 && it.price > 0) rowSubs[col] = { text: formatCurrency(lineCost(c.qty, it.price)) };
       });
       pushRow(cells, 'item', rowSubs);
     };
@@ -1719,9 +1743,8 @@ export default function App() {
       yearsToShow.forEach((yr, i) => {
         const est = estimates[yr] || {};
         cells.push(`${fmtNum(est.totalGallons)} gal`);
-        const coatCost = (est.baseGal || 0) * prices.basecoat + (est.top1Gal || 0) * prices.topcoat + (est.top2Gal || 0) * prices.topcoat
-          + (est.top3Gal || 0) * prices.topcoat + (est.adhesionPrimerGal || 0) * prices.adhesionPrimer + (est.rustPrimerGal || 0) * prices.rustPrimer;
-        if (coatCost > 0 && !hidePdfLineCosts) rowSubs[tierStart + i] = { text: formatCurrency(adj(coatCost)) };
+        const coatCost = r2(items.slice(0, coatingItemCount).reduce((sum, it) => sum + lineCost(it.perYear[i]?.qty || 0, it.price), 0));
+        if (coatCost > 0) rowSubs[tierStart + i] = { text: formatCurrency(coatCost) };
       });
       pushRow(cells, 'subtotal', rowSubs);
     }
@@ -1731,47 +1754,21 @@ export default function App() {
     if (inputs.goldseal) {
       // The Goldseal warranty charge is derived from roof area, not from the
       // per-gallon material prices, so it is a known dollar amount even when no
-      // material prices have been entered. Only a distributor deliberately hiding
-      // their cost basis (margin hidden from exports) collapses it to "Included".
-      const hideGoldsealCost = isDistributor && profitMargin > 0 && !showMarginInExports;
+      // material prices have been entered.
       const cells = ['Goldseal warranty'];
       if (showRates) cells.push('');
       if (showPriceUnit) cells.push('');
       yearsToShow.forEach(yr => {
         const gc = estimates[yr]?.goldsealCost || 0;
-        cells.push((!hideGoldsealCost && gc > 0) ? formatCurrency(adj(gc)) : 'Included');
+        cells.push(gc > 0 ? formatCurrency(r2(adj(gc))) : 'Included');
       });
       pushRow(cells, 'item', { 0: { text: 'Manufacturer warranty, priced per term' } });
     }
 
     // Totals at the foot of the table
     if (hasPrices) {
-      const grandTotalFor = (yr) => {
-        const est = estimates[yr] || {};
-        return (est.baseGal || 0) * prices.basecoat + (est.top1Gal || 0) * prices.topcoat + (est.top2Gal || 0) * prices.topcoat
-          + (est.top3Gal || 0) * prices.topcoat + (est.adhesionPrimerGal || 0) * prices.adhesionPrimer + (est.rustPrimerGal || 0) * prices.rustPrimer
-          + (commonResults.accessoryQty || 0) * prices.accessory + (commonResults.membraneRolls || 0) * prices.membrane
-          + (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk + (est.goldsealCost || 0);
-      };
       const perSqFt = (v) => inputs.roofSizeSqFt > 0 ? formatCurrency(v / inputs.roofSizeSqFt) : null;
-      const sellOf = (gt) => gt / (1 - profitMargin / 100);
-      const totalRows = [];
-      if (isContractor) {
-        totalRows.push({ label: 'Total', major: true, value: yr => formatCurrency(grandTotalFor(yr) * markupFactor) });
-        totalRows.push({ label: 'Per sq ft', value: yr => perSqFt(grandTotalFor(yr) * markupFactor) });
-      } else if (profitMargin > 0 && showMarginInExports) {
-        totalRows.push({ label: 'Distributor cost', major: true, value: yr => formatCurrency(grandTotalFor(yr)) });
-        totalRows.push({ label: 'Cost per sq ft', value: yr => perSqFt(grandTotalFor(yr)) });
-        totalRows.push({ label: `Contractor price (${profitMargin}% margin)`, major: true, value: yr => formatCurrency(sellOf(grandTotalFor(yr))) });
-        totalRows.push({ label: 'Contractor price per sq ft', value: yr => perSqFt(sellOf(grandTotalFor(yr))) });
-        totalRows.push({ label: 'Margin', value: yr => formatCurrency(sellOf(grandTotalFor(yr)) - grandTotalFor(yr)) });
-      } else if (profitMargin > 0) {
-        totalRows.push({ label: 'Total', major: true, value: yr => formatCurrency(sellOf(grandTotalFor(yr))) });
-        totalRows.push({ label: 'Per sq ft', value: yr => perSqFt(sellOf(grandTotalFor(yr))) });
-      } else {
-        totalRows.push({ label: 'Total', major: true, value: yr => formatCurrency(grandTotalFor(yr)) });
-        totalRows.push({ label: 'Per sq ft', value: yr => perSqFt(grandTotalFor(yr)) });
-      }
+      const totalRows = pdfTotalRows(perSqFt);
       totalRows.filter(t => !(t.label.includes('sq ft') && !(inputs.roofSizeSqFt > 0))).forEach((t, i) => {
         const cells = [{ content: t.label, colSpan: nonTierCols }, ...yearsToShow.map(yr => t.value(yr) || '')];
         const kind = i === 0 ? 'total-first' : (t.major ? 'total' : 'total-minor');
@@ -1787,12 +1784,16 @@ export default function App() {
     if (showRates) head[0].push('Rate');
     if (showPriceUnit) head[0].push('Unit price');
     head[0].push(...yearsToShow.map(yr => `${yr}-year`));
-    const columnStyles = { 0: { cellWidth: 'auto' } };
-    let ci = 1;
-    if (showRates) { columnStyles[ci] = { cellWidth: 66, halign: 'right', textColor: C.ink2 }; ci++; }
-    if (showPriceUnit) { columnStyles[ci] = { cellWidth: 66, halign: 'right' }; ci++; }
-    yearsToShow.forEach(() => { columnStyles[ci] = { cellWidth: yearsToShow.length === 1 ? 110 : 80, halign: 'right' }; ci++; });
-    y = plainTable({ y, head, body, columnStyles, subs, rowKinds });
+    const fixedWidths = [
+      ...(showRates ? [62] : []),
+      ...(showPriceUnit ? [64] : []),
+      ...yearsToShow.map(() => (yearsToShow.length === 1 ? 110 : 74)),
+    ];
+    const widths = [contentWidth - fixedWidths.reduce((a, b) => a + b, 0), ...fixedWidths];
+    const columnStyles = {};
+    widths.forEach((w, i) => { columnStyles[i] = { cellWidth: w, halign: i === 0 ? 'left' : 'right' }; });
+    if (showRates) columnStyles[1].textColor = C.ink2;
+    y = plainTable({ y, head, body, columnStyles, subs, rowKinds, widths });
     y += 14;
     if (spotPrime) {
       setText(8.5, 'normal', C.ink3);
@@ -1808,27 +1809,22 @@ export default function App() {
       const e = energySavingsForPDF;
       y = ensureSpace(y + 10, 200);
       y = sectionTitle('Energy savings estimate', y, `${e.regionName} · climate zone ${e.climateZone}`);
-      y += 6;
-      const stats = [
-        ['Annual savings', `$${e.annualSavingsLow.toLocaleString()} – $${e.annualSavingsHigh.toLocaleString()}`],
-        ['Energy reduction', `${e.annualKwhSavings.toLocaleString()} kWh/yr`],
-        ['Peak cooling offset', `${e.tonsOfCooling} tons`],
-      ];
-      const statW = contentWidth / stats.length;
-      stats.forEach(([label, value], i) => {
-        const x = margin + i * statW;
-        setText(8, 'normal', C.ink3);
-        doc.text(label, x, y);
-        setText(12, 'bold');
-        doc.text(value, x, y + 16);
-      });
-      y += 30;
       y = plainTable({
         y,
-        head: [['Cumulative savings over the warranty', '10-year', '15-year', '20-year']],
-        body: [['With a 3% annual electricity rate increase', `$${e.roi10Year.toLocaleString()}`, `$${e.roi15Year.toLocaleString()}`, `$${e.roi20Year.toLocaleString()}`]],
-        columnStyles: { 1: { halign: 'right', cellWidth: 80 }, 2: { halign: 'right', cellWidth: 80 }, 3: { halign: 'right', cellWidth: 80 } },
-      }) + 16;
+        head: [['Estimate', '']],
+        body: [
+          ['Annual savings', `$${e.annualSavingsLow.toLocaleString()} – $${e.annualSavingsHigh.toLocaleString()}`],
+          ['Energy reduction', `${e.annualKwhSavings.toLocaleString()} kWh per year`],
+          ['Peak cooling offset', `${e.tonsOfCooling} tons of AC`],
+          ['Cumulative savings, 10-year', `$${e.roi10Year.toLocaleString()}`],
+          ['Cumulative savings, 15-year', `$${e.roi15Year.toLocaleString()}`],
+          ['Cumulative savings, 20-year', `$${e.roi20Year.toLocaleString()}`],
+        ],
+        columnStyles: { 1: { halign: 'right', cellWidth: 180 } },
+      }) + 8;
+      setText(8, 'normal', C.ink3);
+      doc.text('Cumulative savings assume a 3% annual electricity rate increase.', margin, y);
+      y += 20;
 
       y = ensureSpace(y, 130);
       setText(8, 'bold', C.ink3);
@@ -1915,6 +1911,19 @@ export default function App() {
       (est.goldsealCost || 0);
   });
 
+  // Sum of priced lines at a markup factor. Each line is quantity × a cents-rounded
+  // unit price, rounded to cents, so printed lines always add up to the printed total.
+  const pricedTotal = (year, factor = 1) => {
+    const est = estimates[year];
+    if (!est) return 0;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const line = (qty, price) => (qty > 0 && price > 0) ? r2(qty * r2(price * factor)) : 0;
+    return r2(line(est.baseGal, prices.basecoat) + line(est.top1Gal, prices.topcoat) + line(est.top2Gal, prices.topcoat)
+      + line(est.top3Gal, prices.topcoat) + line(est.adhesionPrimerGal, prices.adhesionPrimer) + line(est.rustPrimerGal, prices.rustPrimer)
+      + line(commonResults.accessoryQty, prices.accessory) + line(commonResults.membraneRolls, prices.membrane)
+      + line(commonResults.fastenerCaulkTubes, prices.fastenerCaulk) + r2((est.goldsealCost || 0) * factor));
+  };
+
   // Validation error display helper
   const ValidationError = ({ field }) => {
     const err = validationErrors[field];
@@ -1950,7 +1959,7 @@ export default function App() {
       if (yearData.every(d => d === null)) return;
       const hasPrices = yearData.some(d => d !== null && d.priceTotal > 0);
       if (hasPrices) {
-        rows.push({ label: `${year}-Year Total`, values: yearData.map(d => d === null ? 'N/A' : d.priceTotal === 0 ? 'No prices' : formatCurrency(d.priceTotal)) });
+        rows.push({ label: `${year}-Year Distributor Cost`, values: yearData.map(d => d === null ? 'N/A' : d.priceTotal === 0 ? 'No prices' : formatCurrency(d.priceTotal)) });
       }
       rows.push({ label: `${year}-Year Gallons`, values: yearData.map(d => d === null ? 'N/A' : d.gallons === 0 ? '-' : `${d.gallons} gal`) });
       if (hasPrices) {
@@ -1987,13 +1996,30 @@ export default function App() {
   };
 
   const downloadComparisonPDF = () => {
-    const { rows, headers } = getComparisonData();
+    const quotes = selectedForCompare.map(id => savedQuotes.find(sq => sq.id === id)).filter(Boolean);
     const doc = new jsPDF({ unit: 'pt', format: 'letter' });
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 48;
-    // Palette mirrors DESIGN.md (ink scale and hairlines), same as the quote PDFs
-    const ink = [26, 31, 54], ink3 = [98, 108, 126], line = [227, 232, 238], lineStrong = [201, 209, 218];
+    const contentWidth = pageWidth - 2 * margin;
+    // Palette mirrors DESIGN.md (ink scale, hairlines, success for best-value marks)
+    const ink = [26, 31, 54], ink3 = [98, 108, 126], line = [227, 232, 238], lineStrong = [201, 209, 218], canvas = [246, 248, 250], success = [21, 128, 61];
+    const fmtDate = (q) => {
+      const [y, m, d] = (q.date || '').split('-').map(Number);
+      const date = y ? new Date(y, m - 1, d) : new Date(q.savedAt);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+    // Raw distributor prices, no margin (same basis as the on-screen comparison)
+    const costOf = (q, year) => {
+      const est = q.estimates?.[year];
+      if (!est) return null;
+      const p = q.prices || {};
+      return (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0)
+        + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0)
+        + (q.commonResults?.accessoryQty || 0) * (p.accessory || 0) + (q.commonResults?.membraneRolls || 0) * (p.membrane || 0)
+        + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.goldsealCost || 0);
+    };
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
     doc.setTextColor(...ink);
@@ -2001,39 +2027,120 @@ export default function App() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(...ink3);
-    doc.text(`${headers.length} saved quotes · generated ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`, margin, margin + 34);
-    autoTable(doc, {
-      startY: margin + 58,
-      head: [['', ...headers]],
-      // Sentence-case labels and plain values for print; the copy-text format is unchanged
-      body: rows.map(row => [
-        row.label.replace(/-Year (\S+)/, (m, w) => `-year ${w.toLowerCase()}`).replace('$/sqft', 'per sq ft')
-          .replace('Roof Type', 'Roof type').replace('Roof Size', 'Roof area').replace('Goldseal Warranty', 'Goldseal warranty').replace('Quote Date', 'Quote date'),
-        ...row.values.map(v => v === '-' ? '—' : v.replace('/sqft', '').replace(' sqft', ' sq ft')),
-      ]),
+    doc.text(`${quotes.length} saved quotes · distributor cost, no margin · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`, margin, margin + 34);
+    doc.setDrawColor(...ink);
+    doc.setLineWidth(2);
+    doc.line(margin, margin + 46, pageWidth - margin, margin + 46);
+
+    const labelW = 150;
+    const valueW = (contentWidth - labelW) / quotes.length;
+    const head = [['', ...quotes.map(q => q.inputs.projectName || 'Untitled')]];
+    const columnStyles = { 0: { halign: 'left', cellWidth: labelW, textColor: ink3 } };
+    quotes.forEach((_, i) => { columnStyles[i + 1] = { cellWidth: valueW }; });
+    const base = {
       theme: 'plain',
       styles: { font: 'helvetica', fontSize: 9, textColor: ink, cellPadding: { top: 6, bottom: 6, left: 5, right: 5 }, halign: 'right', lineColor: line, lineWidth: { bottom: 0.5 } },
       headStyles: { fontStyle: 'bold', textColor: ink, lineColor: lineStrong, lineWidth: { bottom: 0.75 } },
-      columnStyles: { 0: { halign: 'left', textColor: ink3, cellWidth: 130 } },
+      columnStyles,
       margin: { left: margin, right: margin, bottom: 64 },
+    };
+    const edgePadding = (data) => {
+      if (data.column.index === 0) data.cell.styles.cellPadding = { ...data.cell.styles.cellPadding, left: 0 };
+      if (data.column.index === data.table.columns.length - 1) data.cell.styles.cellPadding = { ...data.cell.styles.cellPadding, right: 0 };
+    };
+
+    // Facts per quote
+    autoTable(doc, {
+      ...base,
+      startY: margin + 70,
+      head,
+      body: [
+        ['System', ...quotes.map(q => q.inputs.coatingSystem + (q.inputs.coatingSystem === 'Acrylic' ? ` (${q.inputs.acrylicSystemType.toLowerCase()})` : ''))],
+        ['Roof', ...quotes.map(q => `${q.inputs.roofType} · ${(q.inputs.roofSizeSqFt || 0).toLocaleString()} sq ft`)],
+        ['Customer', ...quotes.map(q => q.customerInfo?.name || q.customerInfo?.company || '—')],
+        ['Goldseal warranty', ...quotes.map(q => q.inputs.goldseal ? 'Yes' : 'No')],
+        ['Quote date', ...quotes.map(fmtDate)],
+      ],
+      didParseCell: edgePadding,
+    });
+
+    // Tiers: cost, per sq ft, gallons; best values marked
+    const body = [];
+    const kinds = [];
+    const marks = {};
+    ['10', '15', '20'].forEach(year => {
+      const data = quotes.map(q => {
+        const est = q.estimates?.[year];
+        if (!est) return null;
+        const cost = costOf(q, year);
+        const sqft = q.inputs.roofSizeSqFt || 0;
+        return { cost, perSqFt: cost > 0 && sqft > 0 ? cost / sqft : null, gallons: est.totalGallons || 0 };
+      });
+      if (data.every(d => d === null)) return;
+      // A mark goes to a single winner only; ties carry no mark
+      const minOf = (key) => {
+        const vals = data.filter(d => d && d[key] > 0).map(d => d[key]);
+        if (vals.length < 2) return null;
+        const min = Math.min(...vals);
+        return vals.filter(v => v === min).length === 1 ? min : null;
+      };
+      const minCost = minOf('cost'), minSq = minOf('perSqFt'), minGal = minOf('gallons');
+      body.push([{ content: `${year}-year`, colSpan: quotes.length + 1 }]); kinds.push('group');
+      const priced = data.some(d => d && d.cost > 0);
+      if (priced) {
+        data.forEach((d, i) => { if (d && d.cost === minCost) marks[`${body.length}:${i + 1}`] = 'Best value'; });
+        body.push(['Distributor cost', ...data.map(d => d === null ? 'N/A' : d.cost > 0 ? formatCurrency(d.cost) : 'No prices')]); kinds.push('total');
+        data.forEach((d, i) => { if (d && d.perSqFt === minSq && minSq !== null) marks[`${body.length}:${i + 1}`] = 'Lowest'; });
+        body.push(['Per sq ft', ...data.map(d => d === null || d.perSqFt === null ? '—' : formatCurrency(d.perSqFt))]); kinds.push('item');
+      }
+      data.forEach((d, i) => { if (d && d.gallons === minGal && minGal !== null) marks[`${body.length}:${i + 1}`] = 'Least material'; });
+      body.push(['Coating gallons', ...data.map(d => d === null ? 'N/A' : d.gallons > 0 ? `${d.gallons.toLocaleString()} gal` : '—')]); kinds.push('item');
+    });
+
+    autoTable(doc, {
+      ...base,
+      startY: doc.lastAutoTable.finalY + 26,
+      head: [['', ...quotes.map(() => '')]],
+      showHead: 'never',
+      body,
       didParseCell: (data) => {
-        if (data.column.index === 0) data.cell.styles.cellPadding = { ...data.cell.styles.cellPadding, left: 0 };
-        if (data.column.index === data.table.columns.length - 1) data.cell.styles.cellPadding = { ...data.cell.styles.cellPadding, right: 0 };
-        if (data.section === 'body' && /-year total$/i.test(String(data.row.raw[0]))) {
+        edgePadding(data);
+        const kind = kinds[data.row.index];
+        if (kind === 'group') {
+          data.cell.styles.fillColor = canvas;
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.textColor = ink;
+          data.cell.styles.halign = 'left';
+          data.cell.styles.cellPadding = { ...data.cell.styles.cellPadding, left: 6 };
+        } else if (kind === 'total') {
           data.cell.styles.fontStyle = 'bold';
           if (data.column.index === 0) data.cell.styles.textColor = ink;
         }
+        if (Object.keys(marks).some(k => k.startsWith(`${data.row.index}:`))) {
+          data.cell.styles.minCellHeight = 12 + 9 * 1.15 + 1.5 + 7.5 * 1.25;
+        }
+      },
+      didDrawCell: (data) => {
+        const mark = marks[`${data.row.index}:${data.column.index}`];
+        if (!mark) return;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...success);
+        const x = data.cell.x + data.cell.width - data.cell.padding('right');
+        doc.text(mark, x, data.cell.y + data.cell.padding('top') + 9 * 1.15 + 1.5, { align: 'right', baseline: 'top' });
       },
     });
+
     const totalPages = doc.getNumberOfPages();
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
       doc.setDrawColor(...line);
       doc.setLineWidth(0.75);
       doc.line(margin, pageHeight - 48, pageWidth - margin, pageHeight - 48);
+      doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(...ink3);
-      doc.text('Quote comparison', margin, pageHeight - 36);
+      doc.text('Quote comparison · internal, distributor cost', margin, pageHeight - 36);
       doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 36, { align: 'right' });
     }
     doc.save('quote-comparison.pdf');
@@ -2737,26 +2844,13 @@ export default function App() {
                   <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">%</span>
                 </span>
               </label>
-              {profitMargin > 0 && (
-                <label className="flex items-center gap-2 text-[13px] text-ink-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showMarginInExports}
-                    onChange={(e) => setShowMarginInExports(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Show cost and margin in distributor estimate and email
-                </label>
-              )}
               <div className="basis-full -mt-1 empty:hidden">
                 <ValidationError field="profitMargin" />
-                {profitMargin > 0 && (
-                  <p className="text-xs text-ink-3">
-                    {showMarginInExports
-                      ? 'Distributor estimate PDF and email text show distributor cost, margin % and per-line unit prices.'
-                      : 'Distributor estimate PDF and email text show only the final price. The contractor quote never shows cost basis or margin.'}
-                  </p>
-                )}
+                <p className="text-xs text-ink-3">
+                  {profitMargin > 0
+                    ? `The distributor estimate shows your cost and the ${profitMargin}% margin. The contractor quote shows marked-up prices only.`
+                    : 'Set a margin to mark up prices on the contractor quote.'}
+                </p>
               </div>
             </div>
 
@@ -2961,19 +3055,19 @@ export default function App() {
                         </td>
                         <td />
                         {tiers.map(y => (
-                          <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor)}</td>
+                          <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor))}</td>
                         ))}
                       </tr>
                       <tr className="row-meta print:hidden">
                         <td>Your profit</td>
                         <td />
-                        {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor - (grandTotals[y] || 0))}</td>)}
+                        {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) - (grandTotals[y] || 0))}</td>)}
                       </tr>
                       {inputs.roofSizeSqFt > 0 && (
                         <tr className="row-meta">
                           <td>Contractor price per sq ft</td>
                           <td />
-                          {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor / inputs.roofSizeSqFt)}</td>)}
+                          {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) / inputs.roofSizeSqFt)}</td>)}
                         </tr>
                       )}
                     </>
@@ -2989,13 +3083,16 @@ export default function App() {
                 <button onClick={() => generatePDF('distributor')} className="btn-primary btn-lg w-full">
                   <FileDown size={16} /> Distributor estimate
                 </button>
-                <p className="hint">PDF with cost basis, margin and sell price, for the distributor.</p>
+                <p className="hint">For the distributor: your cost, margin and the contractor price.</p>
               </div>
               <div>
                 <button onClick={() => generatePDF('contractor')} className="btn-secondary btn-lg w-full">
                   <FileText size={16} /> Contractor quote
                 </button>
-                <p className="hint">PDF with materials, rates and contractor pricing. No cost basis or margin.</p>
+                <p className="hint">
+                  For the contractor: marked-up prices only, never cost or margin.
+                  {!(profitMargin > 0) && <span className="block text-amber-700">No margin set, so prices equal your cost.</span>}
+                </p>
               </div>
             </div>
 
@@ -3025,7 +3122,7 @@ export default function App() {
                   ? profitMargin > 0
                     ? `Prices marked up to contractor price (${profitMargin}% margin). No distributor cost or margin included.`
                     : 'No margin set, so prices match the values entered above.'
-                  : 'Distributor version. Includes cost basis and margin if that option is on.'}
+                  : 'Distributor version. Includes your cost and margin.'}
               </p>
               <textarea
                 readOnly
@@ -3175,7 +3272,7 @@ export default function App() {
                         {/* Price total row - show if any quote has prices */}
                         {hasPrices && (
                           <tr>
-                            <td className="font-semibold">{year}-year total</td>
+                            <td className="font-semibold">{year}-year distributor cost</td>
                             {quoteData.map((d, i) => (
                               <td key={selectedForCompare[i]} className="num">
                                 {d === null ? (

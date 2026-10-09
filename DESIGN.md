@@ -374,6 +374,15 @@ The center of the product. Product and detail sit on the left; price per unit an
 - **Meta row:** Borderless, 13px muted (cost per sq ft, profit, contractor per sq ft).
 The table's first and last cells pad to 16px so they align with the panel's edge.
 
+### PDF documents
+The distributor estimate, contractor quote and quote comparison are generated with jsPDF on US letter, in points, with 48pt margins. They use base-14 Helvetica, the PDF member of the system stack, so bold renders at 700 there. The palette is the ink scale and hairlines only. Amber marks unpriced or incomplete states, success green marks the single best value in a comparison, and the accent never appears.
+- **Header:** a 22pt bold title (the document type), the project in 12pt slate, the project address in muted 9pt, then the 2pt ink rule. Logo files in `public/logos/` sit top right when present.
+- **Info columns:** Quote (date; "Valid until" on the contractor quote; per-tier totals under it when prices exist), Prepared for, Project. Muted 8pt bold column titles.
+- **Materials table:** one plain table. Product (name with the product line beneath), rate, unit price, then one column per warranty tier. Each tier cell is the quantity with its line cost beneath in muted 7.5pt. Accessories show under every tier. A canvas "Total coatings" row, then totals at the foot behind a strong hairline: major rows 10pt bold, minor rows muted 8.5pt.
+- **Arithmetic:** every line is quantity × a cents-rounded unit price, and every total is the sum of its printed lines (`pricedTotal`), so a reader can check the quote with a calculator.
+- **Audiences:** the distributor estimate always shows cost, contractor price and margin, and is marked internal. The contractor quote shows marked-up prices only, never cost or margin.
+- **Continuation pages:** a running header (title left, project right, hairline) and a footer hairline with the document name and "Page n of N".
+
 ### Navigation and floating layers
 - **Top bar:** Covered in Layout. The actions are all secondary buttons, with one primary.
 - **Popover:** A panel with the pop shadow, 340px wide (capped at the viewport minus 32px), opening 40px below its trigger and right-aligned. It has a 13px semibold header over a hairline and hairline-divided list rows with canvas hover. A full-screen invisible scrim closes it.
