@@ -524,6 +524,7 @@ export default function App() {
   // In-app confirmation for the two moments that can lose work or send a flawed quote
   // { title, body, confirmLabel, onConfirm, secondary?: { label, onClick } }
   const [confirmState, setConfirmState] = useState(null);
+  useEffect(() => { if (confirmState) setToast(null); }, [confirmState]);
 
   // Loading over unsaved work asks first; everything else is undoable
   const withDiscardCheck = (proceed) => {
@@ -3296,7 +3297,8 @@ export default function App() {
                     min="0"
                     max="99"
                     value={profitMargin}
-                    onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
+                    // A margin outside 0–99% has no meaning (100% divides by zero), so it can't be entered
+                    onChange={(e) => setProfitMargin(Math.min(99, Math.max(0, parseFloat(e.target.value) || 0)))}
                     className={`input input-sm num w-[76px] pr-7 text-right ${validationErrors.profitMargin ? 'input-error' : ''}`}
                     {...fieldProps('profitMargin')}
                     placeholder="0"
@@ -3694,7 +3696,7 @@ export default function App() {
 
       {/* TOAST */}
       {toast && (
-        <div key={toast.key} role={toast.tone === 'error' ? 'alert' : 'status'} className="fixed z-50 top-[64px] inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 lg:left-auto lg:translate-x-0 lg:right-8 max-w-[440px] flex items-center gap-2.5 rounded-md bg-ink text-white text-[13px] pl-3.5 pr-2 py-2 shadow-pop print:hidden">
+        <div key={toast.key} role={toast.tone === 'error' ? 'alert' : 'status'} className="fixed z-50 top-[64px] inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:max-w-[440px] lg:top-auto lg:bottom-6 lg:translate-x-0 lg:left-[max(2rem,calc((100vw-1320px)/2+2rem))] lg:max-w-[400px] flex items-center gap-2.5 rounded-md bg-ink text-white text-[13px] pl-3.5 pr-2 py-2 shadow-pop print:hidden">
           {toast.tone === 'error'
             ? <AlertTriangle size={15} className="text-amber-300 shrink-0" />
             : <CheckCircle size={15} className="text-green-400 shrink-0" />}
@@ -3741,12 +3743,18 @@ function ConfirmDialog({ state, onClose }) {
           <h2 id="confirmTitle" className="text-[15px] font-semibold">{state.title}</h2>
           <p id="confirmBody" className="text-[13px] text-ink-2 mt-1.5 leading-relaxed">{state.body}</p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 px-5 py-3 border-t border-line bg-canvas rounded-b-md">
-          <button onClick={onClose} className="btn-ghost mr-auto">Cancel</button>
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-2 px-5 py-3 border-t border-line bg-canvas rounded-b-md [&>button]:w-full sm:[&>button]:w-auto">
+          <button onClick={onClose} className="btn-ghost sm:mr-auto focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-accent-600">Cancel</button>
+          <button
+            {...(state.secondary ? {} : { 'data-autofocus': true })}
+            onClick={() => run(state.onConfirm)}
+            className={`${state.secondary ? 'btn-secondary' : 'btn-primary'} focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-accent-600`}
+          >
+            {state.confirmLabel}
+          </button>
           {state.secondary && (
-            <button data-autofocus onClick={() => run(state.secondary.onClick)} className="btn-secondary">{state.secondary.label}</button>
+            <button data-autofocus onClick={() => run(state.secondary.onClick)} className="btn-primary focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-accent-600">{state.secondary.label}</button>
           )}
-          <button {...(state.secondary ? {} : { 'data-autofocus': true })} onClick={() => run(state.onConfirm)} className="btn-primary">{state.confirmLabel}</button>
         </div>
       </div>
     </div>
