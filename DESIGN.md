@@ -386,7 +386,7 @@ The table's first and last cells pad to 16px so they align with the panel's edge
 
 ### PDF documents
 The distributor estimate, contractor quote and quote comparison are generated with jsPDF on US letter, in points, with 48pt margins. They use base-14 Helvetica, the PDF member of the system stack, so bold renders at 700 there. The palette is the ink scale and hairlines only. Amber marks unpriced or incomplete states, success green marks the single best value in a comparison, and the accent never appears.
-- **Header:** a 22pt bold title (the document type), the project in 12pt slate, the project address in muted 9pt, then the 2pt ink rule. Logo files in `public/logos/` sit top right when present.
+- **Header:** a 22pt bold title (the document type), the project in 12pt slate, the project address in muted 9pt, then the 2pt ink rule. Logo files in `public/logos/` (`henry-logo.png`, `enduraroof-logo.png`) sit top right at 40pt tall when present, on the quotes and the comparison PDF; the browser print view shows them too.
 - **Info columns:** Quote (date; "Valid until" on the contractor quote; per-tier totals under it when prices exist), Prepared for, Project. Muted 8pt bold column titles.
 - **Materials table:** one plain table. Product (name with the product line beneath), rate, unit price, then one column per warranty tier. Each tier cell is the quantity with its line cost beneath in muted 7.5pt. Accessories show under every tier. A canvas "Total coatings" row, then totals at the foot behind a strong hairline: major rows 10pt bold, minor rows muted 8.5pt.
 - **Arithmetic:** every line is quantity × a cents-rounded unit price, and every total is the sum of its printed lines (`pricedTotal`), so a reader can check the quote with a calculator.

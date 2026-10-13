@@ -1433,6 +1433,29 @@ export default function App() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
 
+  // Optional logos in public/logos. A missing file resolves to null and is skipped.
+  const LOGO_FILES = ['/logos/henry-logo.png', '/logos/enduraroof-logo.png'];
+  const loadLogos = async () => {
+    const loadImage = (src) => new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img.naturalWidth > 0 ? img : null);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+    return (await Promise.all(LOGO_FILES.map(loadImage))).filter(Boolean);
+  };
+  // Logos sit right-aligned on the title line, 40pt tall (keeps a logo's small print legible), 16pt apart
+  const drawLogos = (doc, logos, right, top) => {
+    const logoH = 40;
+    let x = right;
+    [...logos].reverse().forEach(img => {
+      const w = (img.naturalWidth / img.naturalHeight) * logoH;
+      x -= w;
+      doc.addImage(img, 'PNG', x, top - 8, w, logoH);
+      x -= 16;
+    });
+  };
+
   const generatePDF = async (mode = 'distributor', { force = false } = {}) => {
     if (hasErrors && !force) {
       const count = Object.keys(validationErrors).length;
@@ -1499,14 +1522,7 @@ export default function App() {
       doc.line(margin, y, pageWidth - margin, y);
     };
 
-    // Optional logos (public/logos). A missing file resolves to null and is skipped.
-    const loadImage = (src) => new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => resolve(img.naturalWidth > 0 ? img : null);
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-    const logos = (await Promise.all(['/logos/henry-logo.png', '/logos/enduraroof-logo.png'].map(loadImage))).filter(Boolean);
+    const logos = await loadLogos();
 
     // Continuation pages get a compact running header.
     const headedPages = new Set([1]);
@@ -1653,16 +1669,7 @@ export default function App() {
 
     // === HEADER ===
     let y = margin;
-    if (logos.length > 0) {
-      const logoH = 26;
-      let x = pageWidth - margin;
-      [...logos].reverse().forEach(img => {
-        const w = (img.naturalWidth / img.naturalHeight) * logoH;
-        x -= w;
-        doc.addImage(img, 'PNG', x, y - 4, w, logoH);
-        x -= 14;
-      });
-    }
+    drawLogos(doc, logos, pageWidth - margin, y);
     setText(22, 'bold');
     doc.text(docTitle, margin, y + 16);
     y += 38;
@@ -2202,7 +2209,8 @@ export default function App() {
     doCopy(text);
   };
 
-  const downloadComparisonPDF = () => {
+  const downloadComparisonPDF = async () => {
+    const logos = await loadLogos();
     const quotes = selectedForCompare.map(id => savedQuotes.find(sq => sq.id === id)).filter(Boolean);
     const doc = new jsPDF({ unit: 'pt', format: 'letter' });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -2227,6 +2235,7 @@ export default function App() {
         + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.seamBuckets || 0) * (p.accessory || 0) + (est.goldsealCost || 0);
     };
 
+    drawLogos(doc, logos, pageWidth - margin, margin);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
     doc.setTextColor(...ink);
@@ -2740,7 +2749,12 @@ export default function App() {
 
       {/* Print Header (only visible when printing) */}
       <div className="hidden print:block mb-6">
-        <div className="border-b-2 border-ink pb-3 mb-4">
+        <div className="border-b-2 border-ink pb-3 mb-4 relative">
+          <div className="absolute right-0 top-0 flex items-center gap-4">
+            {LOGO_FILES.map(src => (
+              <img key={src} src={src} alt="" className="h-9 w-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            ))}
+          </div>
           <h1 className="text-xl font-bold">Roofing System Estimate</h1>
           {inputs.projectName && <p className="text-base font-semibold mt-1">{inputs.projectName}</p>}
           <p className="text-sm text-ink-3 mt-1">Date: {quoteDate}</p>
