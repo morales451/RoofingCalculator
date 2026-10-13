@@ -19,7 +19,8 @@ export default function App() {
     selectedFabric: '',
 
     roofSizeSqFt: 0,
-    linearFeet: 0,
+    linearFeet: 0, // seams
+    penetrationsLF: 0, // penetration detailing, always butter grade
     roofType: 'Capsheet',
     wasteFactor: 0,
     stretchFactor: 0,
@@ -30,6 +31,10 @@ export default function App() {
     // 'spot' = no calculation; quote just notes "spot prime rusted areas 2 layers before topcoats".
     rustPrimeMethod: 'field',
     accessoryType: 'Butter Grade',
+    // Silicone on single-ply, 10 and 15-year: seams may be striped with topcoat
+    // instead of butter grade. 'topcoat' | 'butter'. Quotes saved before this
+    // option existed have no value and keep butter grade.
+    seamTreatment: 'topcoat',
     // When true, fasteners are encapsulated with self-leveling caulk (~125 fasteners
     // per tube) instead of being rolled into the butter grade bucket count.
     // Butter grade still handles seams and penetrations.
@@ -150,6 +155,7 @@ export default function App() {
       name: `Section ${prev.length + 1}`,
       sqFt: 0,
       linearFeet: 0,
+      penetrationsLF: 0,
       roofType: inputs.roofType,
       wasteFactor: 0,
       stretchFactor: 0
@@ -169,7 +175,8 @@ export default function App() {
     if (useMultiSection && roofSections.length > 0) {
       const totalSqFt = roofSections.reduce((sum, s) => sum + (parseFloat(s.sqFt) || 0), 0);
       const totalLF = roofSections.reduce((sum, s) => sum + (parseFloat(s.linearFeet) || 0), 0);
-      setInputs(prev => ({ ...prev, roofSizeSqFt: totalSqFt, linearFeet: totalLF }));
+      const totalPen = roofSections.reduce((sum, s) => sum + (parseFloat(s.penetrationsLF) || 0), 0);
+      setInputs(prev => ({ ...prev, roofSizeSqFt: totalSqFt, linearFeet: totalLF, penetrationsLF: totalPen }));
     }
   }, [roofSections, useMultiSection]);
 
@@ -420,19 +427,24 @@ export default function App() {
             '20': null  // Not available
         },
         'Sprayfoam': null, // Not supported
-        'Single-Ply': null // Not supported
+        'Single-Ply': null, // Not supported
+        'Previously Coated': null // Not supported
     }
   };
+  // Previously coated roofs use the single-ply application rates
+  SYSTEM_DATA.Silicone['Previously Coated'] = SYSTEM_DATA.Silicone['Single-Ply'];
+  SYSTEM_DATA.Acrylic.Reinforced['Previously Coated'] = SYSTEM_DATA.Acrylic.Reinforced['Single-Ply'];
+  SYSTEM_DATA.Acrylic.Standard['Previously Coated'] = SYSTEM_DATA.Acrylic.Standard['Single-Ply'];
 
   // --- HANDLERS ---
   const handleChange = (field, value) => {
-    if ((field === 'roofSizeSqFt' || field === 'linearFeet') && typeof value === 'number') value = Math.max(0, value);
+    if ((field === 'roofSizeSqFt' || field === 'linearFeet' || field === 'penetrationsLF') && typeof value === 'number') value = Math.max(0, value);
     if (field === 'coatingSystem') {
         let newRoofType = inputs.roofType;
 
         // Aluminum only supports Metal and Capsheet
         if (value === 'Aluminum') {
-            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply') {
+            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply' || inputs.roofType === 'Previously Coated') {
                 newRoofType = 'Metal';
             }
         }
@@ -677,12 +689,24 @@ export default function App() {
       return Math.ceil(val / 5) * 5;
   };
 
+  // Seam stripe with topcoat: one layer at 1.5 gal/sq (24 wet mils), 2" each side
+  // of the seam. A 4" band is 1/3 sq ft per LF = 1/300 square, so 1.5/300 =
+  // 0.005 gal per LF, i.e. 200 LF of seam per gallon. Offered on silicone over
+  // single-ply and capsheet for the 10 and 15-year systems; 20-year seams stay butter grade.
+  const SEAM_STRIPE_LF_PER_GAL = 200;
+  const SEAM_STRIPE_TIERS = ['10', '15'];
+  const usesSeamStripe = (coatingSystem, roofType, accessoryType, seamTreatment) =>
+    coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet') && accessoryType === 'Butter Grade' && seamTreatment === 'topcoat';
+
   // --- PER-SECTION CALCULATION HELPER ---
   const calculateForSection = (section, globalInputs) => {
     const { sqFt, linearFeet, roofType, wasteFactor, stretchFactor } = section;
+    const penetrationsLF = parseFloat(section.penetrationsLF) || 0;
     const { coatingSystem, acrylicSystemType, passedAdhesion, hasRust, rustPrimeMethod,
             goldseal, accessoryType, selectedButterGrade, selectedFabric,
-            useFastenerCaulk } = globalInputs;
+            useFastenerCaulk, seamTreatment } = globalInputs;
+    const seamStripe = usesSeamStripe(coatingSystem, roofType, accessoryType, seamTreatment);
+    let seamBuckets20 = 0;
 
     const squares = sqFt > 0 ? sqFt / 100 : 0;
     const totalFactor = 1 + parseFloat(wasteFactor) + parseFloat(stretchFactor);
@@ -693,7 +717,14 @@ export default function App() {
 
     if (accessoryType === 'Butter Grade') {
       const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
-      bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
+      const detailLF = (linearFeet || 0) + penetrationsLF;
+      if (seamStripe) {
+        // Penetrations on every tier; seams only on the 20-year (the rest is striped)
+        bucketsForLinear = penetrationsLF > 0 ? Math.ceil(penetrationsLF / lfPerBucket) : 0;
+        seamBuckets20 = detailLF > 0 ? Math.ceil(detailLF / lfPerBucket) - bucketsForLinear : 0;
+      } else {
+        bucketsForLinear = detailLF > 0 ? Math.ceil(detailLF / lfPerBucket) : 0;
+      }
       accQty = bucketsForLinear;
       accUnit = 'Buckets';
       const bucketSizeLabel = coatingSystem === 'Acrylic' ? '3.5-gal' : '2-gal';
@@ -712,7 +743,8 @@ export default function App() {
         }
       }
     } else {
-      accQty = linearFeet > 0 ? Math.ceil(linearFeet / 300) : 0;
+      const detailLF = (linearFeet || 0) + penetrationsLF;
+      accQty = detailLF > 0 ? Math.ceil(detailLF / 300) : 0;
       accUnit = 'Rolls';
       accDisplayName = selectedFabric;
     }
@@ -743,8 +775,11 @@ export default function App() {
       }
 
       const rates = systemSpec[year];
+      const seamStripeGal = seamStripe && SEAM_STRIPE_TIERS.includes(year) && linearFeet > 0 ? linearFeet / SEAM_STRIPE_LF_PER_GAL : 0;
+      const seamBuckets = seamStripe && year === '20' ? seamBuckets20 : 0;
       const baseGal = roundToFive(squares * (rates.base || 0) * totalFactor);
-      const top1Gal = roundToFive(squares * (rates.top1 || 0) * totalFactor);
+      // Stripe gallons join coat 1 before rounding, so the order isn't padded by a separate pail
+      const top1Gal = roundToFive(squares * (rates.top1 || 0) * totalFactor + seamStripeGal);
       const top2Gal = roundToFive(squares * (rates.top2 || 0) * totalFactor);
       const top3Gal = roundToFive(squares * (rates.top3 || 0) * totalFactor);
 
@@ -770,7 +805,7 @@ export default function App() {
 
       const totalGallons = baseGal + top1Gal + top2Gal + top3Gal + adhesionPrimerGal + rustPrimerGal;
 
-      sectionEstimates[year] = { baseGal, top1Gal, top2Gal, top3Gal, adhesionPrimerGal, rustPrimerGal, goldsealCost, totalGallons, rates };
+      sectionEstimates[year] = { baseGal, top1Gal, top2Gal, top3Gal, adhesionPrimerGal, rustPrimerGal, goldsealCost, totalGallons, rates, seamStripeGal, seamBuckets };
     });
 
     return {
@@ -786,8 +821,10 @@ export default function App() {
         roofSizeSqFt, linearFeet, roofType, wasteFactor, stretchFactor,
         goldseal, passedAdhesion, hasRust, rustPrimeMethod, accessoryType, coatingSystem, acrylicSystemType,
         selectedTopcoat, selectedBasecoat, selectedButterGrade, selectedFabric,
-        useFastenerCaulk
+        useFastenerCaulk, seamTreatment
     } = inputs;
+    const penetrationsLF = parseFloat(inputs.penetrationsLF) || 0;
+    const seamStripe = usesSeamStripe(coatingSystem, roofType, accessoryType, seamTreatment);
 
     if (useMultiSection && roofSections.length > 0) {
       // --- MULTI-SECTION PATH: calculate each section independently, then aggregate ---
@@ -807,7 +844,11 @@ export default function App() {
           summed.rustPrimerGal += est.rustPrimerGal;
           summed.goldsealCost += est.goldsealCost;
           summed.totalGallons += est.totalGallons;
+          summed.seamStripeGal = (summed.seamStripeGal || 0) + (est.seamStripeGal || 0);
+          summed.seamBuckets = (summed.seamBuckets || 0) + (est.seamBuckets || 0);
         });
+        // Rates are uniform across sections for a system; carry the first section's for display
+        summed.rates = perSectionResults[0]?.estimates[year]?.rates || summed.rates;
         // Apply goldseal minimum on the total roof, not per-section
         if (goldseal && roofSizeSqFt > 0) {
           let min = 900;
@@ -846,7 +887,8 @@ export default function App() {
         linearBuckets: totalLinearBuckets,
         screwCount: totalScrews,
         screwBuckets: totalScrewBuckets,
-        fastenerCaulkTubes: totalCaulkTubes
+        fastenerCaulkTubes: totalCaulkTubes,
+        seamStripe: roofSections.some(sec => usesSeamStripe(coatingSystem, sec.roofType, accessoryType, inputs.seamTreatment)),
       });
 
       setEstimates(aggregatedEstimates);
@@ -876,9 +918,17 @@ export default function App() {
       let bucketsForScrews = 0;
       let fastenerCaulkTubes = 0;
 
+      let seamBuckets20 = 0;
       if (accessoryType === 'Butter Grade') {
           const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
-          bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
+          const detailLF = (linearFeet || 0) + penetrationsLF;
+          if (seamStripe) {
+              // Penetrations on every tier; seams only on the 20-year (the rest is striped)
+              bucketsForLinear = penetrationsLF > 0 ? Math.ceil(penetrationsLF / lfPerBucket) : 0;
+              seamBuckets20 = detailLF > 0 ? Math.ceil(detailLF / lfPerBucket) - bucketsForLinear : 0;
+          } else {
+              bucketsForLinear = detailLF > 0 ? Math.ceil(detailLF / lfPerBucket) : 0;
+          }
           accQty = bucketsForLinear;
           accUnit = 'Buckets';
 
@@ -900,7 +950,8 @@ export default function App() {
               }
           }
       } else {
-          accQty = linearFeet > 0 ? Math.ceil(linearFeet / 300) : 0;
+          const detailLF = (linearFeet || 0) + penetrationsLF;
+          accQty = detailLF > 0 ? Math.ceil(detailLF / 300) : 0;
           accUnit = 'Rolls';
           accDesc = 'Reinforcement Fabric (300 LF/ea)';
           accDisplayName = selectedFabric;
@@ -921,7 +972,8 @@ export default function App() {
           linearBuckets: bucketsForLinear,
           screwCount: estimatedScrews,
           screwBuckets: bucketsForScrews,
-          fastenerCaulkTubes
+          fastenerCaulkTubes,
+          seamStripe,
       });
 
       const defaultEstimate = { baseGal: 0, top1Gal: 0, top2Gal: 0, top3Gal: 0, adhesionPrimerGal: 0, rustPrimerGal: 0, goldsealCost: 0, totalGallons: 0, rates: { base: 0, top1: 0, top2: 0, top3: 0 } };
@@ -945,8 +997,12 @@ export default function App() {
           const rawBase = squares * (rates.base || 0);
           const baseGal = roundToFive(rawBase * totalFactor);
 
+          const seamStripeGal = seamStripe && SEAM_STRIPE_TIERS.includes(year) && linearFeet > 0 ? linearFeet / SEAM_STRIPE_LF_PER_GAL : 0;
+          const seamBuckets = seamStripe && year === '20' ? seamBuckets20 : 0;
+
           const rawTop1 = squares * (rates.top1 || 0);
-          const top1Gal = roundToFive(rawTop1 * totalFactor);
+          // Stripe gallons join coat 1 before rounding, so the order isn't padded by a separate pail
+          const top1Gal = roundToFive(rawTop1 * totalFactor + seamStripeGal);
 
           const rawTop2 = squares * (rates.top2 || 0);
           const top2Gal = roundToFive(rawTop2 * totalFactor);
@@ -987,7 +1043,9 @@ export default function App() {
               rustPrimerGal,
               goldsealCost,
               totalGallons,
-              rates
+              rates,
+              seamStripeGal,
+              seamBuckets
           };
       });
 
@@ -1139,13 +1197,24 @@ export default function App() {
     }
     text += `Note: All quantities are rounded up to the nearest full pail where applicable.\n`;
 
-    if (linearFeet > 0 || commonResults.screwBuckets > 0) {
+    const emailPenLF = inputs.penetrationsLF || 0;
+    if (commonResults.seamStripe && (linearFeet > 0 || emailPenLF > 0)) {
+        // Seams striped with topcoat on 10/15-year; penetrations and 20-year seams use butter grade
+        const perEach = (prices.accessory > 0) ? ` @ $${adjP(prices.accessory).toFixed(2)} each` : '';
+        const stripeGal = Math.ceil(estimates['10']?.seamStripeGal || estimates['15']?.seamStripeGal || 0);
+        text += `\n`;
+        if (commonResults.accessoryQty > 0) text += `Seam Sealer (Penetrations, all warranties): ${commonResults.accessoryQty} Buckets of ${commonResults.accessoryName}${perEach}\n`;
+        if (linearFeet > 0) {
+            text += `Seams, 10 & 15-Year: striped with topcoat, 1.5 gal/sq, 2" each side (~${stripeGal} gal, included in Topcoat 1)\n`;
+            if ((estimates['20']?.seamBuckets || 0) > 0) text += `Seams, 20-Year: ${estimates['20'].seamBuckets} Buckets of ${commonResults.accessoryName}${perEach}\n`;
+        }
+    } else if (linearFeet > 0 || emailPenLF > 0 || commonResults.screwBuckets > 0) {
         const perEach = (prices.accessory > 0) ? ` @ $${adjP(prices.accessory).toFixed(2)} each` : '';
         // On metal roofs the seam sealer covers both seams (by linear feet) and
         // fastener encapsulation (by roof area) — list them as separate line items.
         if (commonResults.screwBuckets > 0) {
             if (commonResults.linearBuckets > 0) {
-                text += `\nSeam Sealer (Seams): ${commonResults.linearBuckets} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}${perEach}\n`;
+                text += `\nSeam Sealer (${emailPenLF > 0 ? 'Seams & Penetrations' : 'Seams'}): ${commonResults.linearBuckets} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}${perEach}\n`;
             } else {
                 text += `\n`;
             }
@@ -1256,6 +1325,7 @@ export default function App() {
                               (commonResults.accessoryQty || 0) * prices.accessory +
                               (commonResults.membraneRolls || 0) * prices.membrane +
                               (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk +
+                              (est.seamBuckets || 0) * prices.accessory +
                               (est.goldsealCost || 0);
             const warrantyLabel = inputs.goldseal ? ' + Warranty' : '';
 
@@ -1634,6 +1704,8 @@ export default function App() {
       `${inputs.coatingSystem}${inputs.coatingSystem === 'Acrylic' ? ` (${inputs.acrylicSystemType.toLowerCase()})` : ''} coating system`,
       `${roofTypeText} · ${inputs.roofSizeSqFt.toLocaleString()} sq ft (${fmtNum(commonResults.squares)} sq)`,
       inputs.linearFeet > 0 ? `${inputs.linearFeet.toLocaleString()} linear ft of seams` : null,
+      inputs.penetrationsLF > 0 ? `${inputs.penetrationsLF.toLocaleString()} linear ft of penetrations` : null,
+      commonResults.seamStripe ? 'Seams striped with topcoat (10 & 15-yr)' : null,
       factorsText,
       inputs.goldseal ? 'Goldseal manufacturer warranty' : null,
     ].filter(Boolean);
@@ -1765,7 +1837,9 @@ export default function App() {
     }
     ['top1Gal', 'top2Gal', 'top3Gal'].forEach((field, i) => {
       if (anyYearHas(field)) {
-        addItem({ name: `Topcoat, coat ${i + 1}`, product: inputs.selectedTopcoat, rate: coatRate(`top${i + 1}`), price: prices.topcoat, unit: 'gal', perYear: tierQty(field, 'gal'), sharedPrice: i > 0 });
+        const stripeGal = Math.ceil(estimates['10']?.seamStripeGal || estimates['15']?.seamStripeGal || 0);
+        const stripeNote = i === 0 && commonResults.seamStripe && stripeGal > 0 ? ` · incl. ~${stripeGal} gal seam stripe on 10 & 15-yr` : '';
+        addItem({ name: `Topcoat, coat ${i + 1}`, product: `${inputs.selectedTopcoat}${stripeNote}`, rate: coatRate(`top${i + 1}`), price: prices.topcoat, unit: 'gal', perYear: tierQty(field, 'gal'), sharedPrice: i > 0 });
       }
     });
     let spotPrime = false;
@@ -1783,14 +1857,27 @@ export default function App() {
     }
     const coatingItemCount = items.length;
 
-    if (commonResults.accessoryQty > 0) {
+    const pdfSeamBuckets = yearsToShow.some(yr => (estimates[yr]?.seamBuckets || 0) > 0);
+    if (commonResults.seamStripe && (commonResults.accessoryQty > 0 || pdfSeamBuckets)) {
+      // Seams striped with topcoat on 10/15-year: penetrations on every tier, seams on 20-year
+      if (commonResults.accessoryQty > 0) {
+        addItem({ name: 'Seam sealer, penetrations', product: `${commonResults.accessoryName} · ${commonResults.accessoryDesc}`, price: prices.accessory, unit: 'buckets', perYear: sameQty(commonResults.accessoryQty, 'buckets') });
+      }
+      if (pdfSeamBuckets) {
+        addItem({
+          name: 'Seam sealer, seams', product: `${commonResults.accessoryName} · 20-year only; 10 & 15-yr seams striped with topcoat`,
+          price: prices.accessory, unit: 'buckets', sharedPrice: commonResults.accessoryQty > 0,
+          perYear: yearsToShow.map(yr => SEAM_STRIPE_TIERS.includes(yr) ? { text: 'Topcoat stripe' } : { qty: estimates[yr]?.seamBuckets || 0, unit: 'buckets' }),
+        });
+      }
+    } else if (commonResults.accessoryQty > 0) {
       const accUnit = (commonResults.accessoryUnit || '').toLowerCase();
       // On metal roofs the seam sealer (butter grade) does double duty: sealing
       // seams (by linear feet) and encapsulating fasteners (by roof area). Show
       // those as separate line items so the split is explicit.
       if (commonResults.screwBuckets > 0) {
         if (commonResults.linearBuckets > 0) {
-          addItem({ name: 'Seam sealer, seams', product: `${commonResults.accessoryName} · by linear feet`, price: prices.accessory, unit: accUnit, perYear: sameQty(commonResults.linearBuckets, accUnit) });
+          addItem({ name: inputs.penetrationsLF > 0 ? 'Seam sealer, seams & penetrations' : 'Seam sealer, seams', product: `${commonResults.accessoryName} · by linear feet`, price: prices.accessory, unit: accUnit, perYear: sameQty(commonResults.linearBuckets, accUnit) });
         }
         addItem({ name: 'Seam sealer, fasteners', product: `${commonResults.accessoryName} · ~${(commonResults.screwCount || 0).toLocaleString()} fasteners`, price: prices.accessory, unit: accUnit, perYear: sameQty(commonResults.screwBuckets, accUnit), sharedPrice: commonResults.linearBuckets > 0 });
       } else {
@@ -2020,6 +2107,7 @@ export default function App() {
       (commonResults.accessoryQty || 0) * prices.accessory +
       (commonResults.membraneRolls || 0) * prices.membrane +
       (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk +
+      (est.seamBuckets || 0) * prices.accessory +
       (est.goldsealCost || 0);
   });
 
@@ -2033,7 +2121,8 @@ export default function App() {
     return r2(line(est.baseGal, prices.basecoat) + line(est.top1Gal, prices.topcoat) + line(est.top2Gal, prices.topcoat)
       + line(est.top3Gal, prices.topcoat) + line(est.adhesionPrimerGal, prices.adhesionPrimer) + line(est.rustPrimerGal, prices.rustPrimer)
       + line(commonResults.accessoryQty, prices.accessory) + line(commonResults.membraneRolls, prices.membrane)
-      + line(commonResults.fastenerCaulkTubes, prices.fastenerCaulk) + r2((est.goldsealCost || 0) * factor));
+      + line(commonResults.fastenerCaulkTubes, prices.fastenerCaulk) + line(est.seamBuckets || 0, prices.accessory)
+      + r2((est.goldsealCost || 0) * factor));
   };
 
   // Validation error display helper
@@ -2047,7 +2136,7 @@ export default function App() {
   // Available roof types for current coating system (used in multi-section)
   const getAvailableRoofTypes = () => {
     const types = ['Capsheet'];
-    if (inputs.coatingSystem !== 'Aluminum') types.push('Single-Ply');
+    if (inputs.coatingSystem !== 'Aluminum') types.push('Single-Ply', 'Previously Coated');
     if (inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard')) types.push('Sprayfoam');
     if (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') types.push('Metal');
     return types;
@@ -2065,7 +2154,7 @@ export default function App() {
         if (!q.estimates?.[year]) return null;
         const est = q.estimates[year];
         const p = q.prices || {};
-        const priceTotal = (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0) + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0) + ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) + ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) + ((q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0)) + (est.goldsealCost || 0);
+        const priceTotal = (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0) + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0) + ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) + ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) + ((q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0)) + (est.seamBuckets || 0) * (p.accessory || 0) + (est.goldsealCost || 0);
         return { priceTotal, gallons: est.totalGallons || 0, sqft: q.inputs.roofSizeSqFt || 0 };
       });
       if (yearData.every(d => d === null)) return;
@@ -2129,7 +2218,7 @@ export default function App() {
       return (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0)
         + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0)
         + (q.commonResults?.accessoryQty || 0) * (p.accessory || 0) + (q.commonResults?.membraneRolls || 0) * (p.membrane || 0)
-        + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.goldsealCost || 0);
+        + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.seamBuckets || 0) * (p.accessory || 0) + (est.goldsealCost || 0);
     };
 
     doc.setFont('helvetica', 'bold');
@@ -2304,7 +2393,7 @@ export default function App() {
     const cost = est ? (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0)
       + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0)
       + (q.commonResults?.accessoryQty || 0) * (p.accessory || 0) + (q.commonResults?.membraneRolls || 0) * (p.membrane || 0)
-      + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.goldsealCost || 0) : 0;
+      + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.seamBuckets || 0) * (p.accessory || 0) + (est.goldsealCost || 0) : 0;
     return [
       `${(q.inputs.roofSizeSqFt || 0).toLocaleString()} sq ft`,
       cost > 0 ? `${formatCurrency(cost)} ${tier}-yr` : q.inputs.coatingSystem,
@@ -2346,7 +2435,13 @@ export default function App() {
       (e.rustPrimerGal || 0) * prices.rustPrimer;
   };
   const isReinforced = inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Reinforced';
-  const showAccessory = inputs.linearFeet > 0 || (inputs.roofType === 'Metal' && (commonResults.screwBuckets > 0 || commonResults.fastenerCaulkTubes > 0));
+  const detailLF = (inputs.linearFeet || 0) + (inputs.penetrationsLF || 0);
+  const showAccessory = detailLF > 0 || (inputs.roofType === 'Metal' && (commonResults.screwBuckets > 0 || commonResults.fastenerCaulkTubes > 0));
+  // Topcoat-striped seams: penetrations stay a common butter-grade line; seams are butter grade on 20-year only
+  const seamStripeOn = !!commonResults.seamStripe;
+  const stripeGallons = Math.ceil(estimates['10']?.seamStripeGal || estimates['15']?.seamStripeGal || 0);
+  const hasSeamBuckets = tiers.some(y => (estimates[y]?.seamBuckets || 0) > 0);
+  const linearLabel = inputs.penetrationsLF > 0 ? (inputs.linearFeet > 0 ? 'seams and penetrations' : 'penetrations') : 'seams';
   const hasAccessoryRows = showAccessory || commonResults.fastenerCaulkTubes > 0 || isReinforced;
   const accUnitSingular = commonResults.accessoryUnit === 'Buckets' ? 'bucket' : 'roll';
   const roofTypeLabel = useMultiSection && roofSections.length > 0 ? [...new Set(roofSections.map(s => s.roofType))].join(' / ') : inputs.roofType;
@@ -2360,7 +2455,7 @@ export default function App() {
     { key: 'rustPrimer', show: estimates['10']?.rustPrimerGal > 0 },
     { key: 'adhesionPrimer', show: !inputs.passedAdhesion },
     { key: 'topcoat', show: tiers.some(y => estimates[y]?.top1Gal > 0) },
-    { key: 'accessory', show: showAccessory && (commonResults.accessoryQty > 0 || commonResults.screwBuckets > 0 || commonResults.linearBuckets > 0) },
+    { key: 'accessory', show: (showAccessory && (commonResults.accessoryQty > 0 || commonResults.screwBuckets > 0 || commonResults.linearBuckets > 0)) || hasSeamBuckets },
     { key: 'fastenerCaulk', show: commonResults.fastenerCaulkTubes > 0 },
     { key: 'membrane', show: isReinforced && commonResults.membraneRolls > 0 },
   ];
@@ -2376,6 +2471,12 @@ export default function App() {
     const r = tiers.map(y => estimates[y]?.rates?.[key] || 0);
     return `${r.every(v => v === r[0]) ? r[0] : r.join(' / ')} gal/sq`;
   };
+
+  // Seam treatment choice shows when any roof (or roof section) is silicone over single-ply or capsheet
+  const qualifiesForStripe = (roofType) => inputs.coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet');
+  const seamTreatmentApplies = inputs.accessoryType === 'Butter Grade' && (useMultiSection && roofSections.length > 0
+    ? roofSections.some(sec => qualifiesForStripe(sec.roofType))
+    : qualifiesForStripe(inputs.roofType));
 
   const productCell = (name, detail, extra) => (
     <td className="sm:min-w-[190px]">
@@ -2755,6 +2856,7 @@ export default function App() {
                         ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) +
                         ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) +
                         ((q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0)) +
+                        (est.seamBuckets || 0) * (p.accessory || 0) +
                         (est.goldsealCost || 0);
                       const gallons = est.totalGallons || 0;
                       const sqft = q.inputs.roofSizeSqFt || 0;
@@ -2832,6 +2934,7 @@ export default function App() {
                         ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) +
                         ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) +
                         ((q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0)) +
+                        (est.seamBuckets || 0) * (p.accessory || 0) +
                         (est.goldsealCost || 0);
                       if (total === 0) return null;
                       return total / q.inputs.roofSizeSqFt;
@@ -3013,7 +3116,7 @@ export default function App() {
                     </div>
                   </div>
                   <div>
-                    <label htmlFor="butterGrade" className="label">Seam treatment product</label>
+                    <label htmlFor="butterGrade" className="label">Butter grade product</label>
                     <select id="butterGrade" className="input" value={inputs.selectedButterGrade} onChange={(e) => handleChange('selectedButterGrade', e.target.value)}>
                       {currentOptions.butterGrades.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
@@ -3085,6 +3188,21 @@ export default function App() {
                   />
                   <ValidationError field="linearFeet" />
                 </div>
+                <div>
+                  <label htmlFor="penetrationsLF" className="label">Penetrations <span className="font-normal text-ink-3">linear ft</span></label>
+                  <input
+                    id="penetrationsLF"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="100000"
+                    value={inputs.penetrationsLF || ''}
+                    onChange={(e) => handleChange('penetrationsLF', parseFloat(e.target.value) || 0)}
+                    className="input num"
+                    placeholder="0"
+                  />
+                  <p className="hint">Detailed with butter grade.</p>
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -3144,7 +3262,21 @@ export default function App() {
                           </select>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label htmlFor={`sec-${section.id}-pen`} className="label text-xs mb-1">Penetr. ft</label>
+                          <input
+                            id={`sec-${section.id}-pen`}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            value={section.penetrationsLF || ''}
+                            onChange={(e) => updateRoofSection(section.id, 'penetrationsLF', Math.max(0, parseFloat(e.target.value) || 0))}
+                            className="input input-sm num"
+                            placeholder="0"
+                            aria-label="Penetrations, linear feet"
+                          />
+                        </div>
                         <div>
                           <label htmlFor={`sec-${section.id}-waste`} className="label text-xs mb-1">Waste</label>
                           <select id={`sec-${section.id}-waste`} value={section.wasteFactor} onChange={(e) => updateRoofSection(section.id, 'wasteFactor', e.target.value)} className="input input-sm num">
@@ -3167,6 +3299,7 @@ export default function App() {
                 <dl className="text-[13px] space-y-1 num">
                   <div className="flex justify-between"><dt className="text-ink-3">Total area</dt><dd className="font-medium">{inputs.roofSizeSqFt.toLocaleString()} sq ft · {commonResults.squares.toFixed(2)} sq</dd></div>
                   <div className="flex justify-between"><dt className="text-ink-3">Total seams</dt><dd className="font-medium">{inputs.linearFeet.toLocaleString()} LF</dd></div>
+                  <div className="flex justify-between"><dt className="text-ink-3">Total penetrations</dt><dd className="font-medium">{(inputs.penetrationsLF || 0).toLocaleString()} LF</dd></div>
                 </dl>
               </div>
             )}
@@ -3180,12 +3313,15 @@ export default function App() {
                     <option value="Capsheet">Capsheet</option>
                     {/* Single-Ply not available for Aluminum */}
                     {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
+                    {/* Previously coated: same application rates as single-ply */}
+                    {inputs.coatingSystem !== 'Aluminum' && <option value="Previously Coated">Previously coated</option>}
                     {/* Sprayfoam for Silicone or Acrylic Standard only, NOT Aluminum */}
                     {inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
                     {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
                     {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
                   </select>
-                  {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet and single-ply only.</p>}
+                  {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet, single-ply and previously coated roofs only.</p>}
+                  {inputs.roofType === 'Previously Coated' && <p className="hint">Uses the single-ply application rates.</p>}
                   {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and capsheet only.</p>}
                 </div>
 
@@ -3225,6 +3361,22 @@ export default function App() {
                 </div>
               </div>
             )}
+
+                {/* Seam treatment: silicone over single-ply or capsheet can stripe seams with topcoat on 10/15-year */}
+                {seamTreatmentApplies && (
+                  <div>
+                    <span className="label" id="seamTreatmentLabel">Seam treatment</span>
+                    <div className="seg" role="group" aria-labelledby="seamTreatmentLabel">
+                      {segButton('Topcoat stripe', inputs.seamTreatment === 'topcoat', () => handleChange('seamTreatment', 'topcoat'))}
+                      {segButton('Butter grade', inputs.seamTreatment !== 'topcoat', () => handleChange('seamTreatment', 'butter'))}
+                    </div>
+                    <p className="hint">
+                      {inputs.seamTreatment === 'topcoat'
+                        ? '10 and 15-year: one layer of topcoat at 1.5 gal/sq, 2" each side of the seam (about 200 LF per gallon). 20-year seams use butter grade. Penetrations always use butter grade.'
+                        : 'Seams and penetrations use butter grade on every warranty.'}
+                    </p>
+                  </div>
+                )}
           </section>
 
           {/* CONDITIONS */}
@@ -3412,7 +3564,10 @@ export default function App() {
                   {['top1Gal', 'top2Gal', 'top3Gal'].map((field, i) => (
                     (estimates['10']?.[field] > 0 || estimates['15']?.[field] > 0 || estimates['20']?.[field] > 0) && (
                       <tr key={field}>
-                        {productCell(`Topcoat, coat ${i + 1}`, `${inputs.selectedTopcoat} · ${rateText(`top${i + 1}`)}`)}
+                        {productCell(`Topcoat, coat ${i + 1}`, `${inputs.selectedTopcoat} · ${rateText(`top${i + 1}`)}`,
+                          i === 0 && seamStripeOn && stripeGallons > 0 && (
+                            <div className="text-xs text-ink-3 mt-0.5 leading-snug">Includes ~{stripeGallons} gal seam stripe on 10 and 15-year ({inputs.linearFeet.toLocaleString()} LF at 200 LF/gal)</div>
+                          ))}
                         {i === 0 ? priceCell('topcoat', 'gal') : sameAsCell('Same as topcoat 1')}
                         {tierQtyCells(field, 'gal', prices.topcoat)}
                       </tr>
@@ -3439,14 +3594,35 @@ export default function App() {
                   )}
 
                   {showAccessory && (
-                    commonResults.screwBuckets > 0 ? (
+                    seamStripeOn ? (
+                      /* Seams striped with topcoat on 10/15-year: penetrations are a butter-grade
+                         line on every tier; seams take butter grade on the 20-year only. */
+                      <>
+                        {commonResults.accessoryQty > 0 && (
+                          <tr>
+                            {productCell(`${commonResults.accessoryName} — penetrations`, commonResults.accessoryDesc)}
+                            {priceCell('accessory', accUnitSingular)}
+                            {commonQtyCells(commonResults.accessoryQty, 'buckets', prices.accessory)}
+                          </tr>
+                        )}
+                        {hasSeamBuckets && (
+                          <tr>
+                            {productCell(`${commonResults.accessoryName} — seams`, '20-year only. 10 and 15-year seams are striped with topcoat.')}
+                            {commonResults.accessoryQty > 0 ? sameAsCell('Same as penetrations') : priceCell('accessory', accUnitSingular)}
+                            {tiers.map(y => (SEAM_STRIPE_TIERS.includes(y)
+                              ? <td key={y} className={`text-xs text-ink-3 pt-3 whitespace-nowrap ${tierCls(y)}`}>Topcoat stripe</td>
+                              : qtyCell(y, estimates[y]?.seamBuckets || 0, 'buckets', prices.accessory)))}
+                          </tr>
+                        )}
+                      </>
+                    ) : commonResults.screwBuckets > 0 ? (
                       /* Metal roof: the seam sealer does double duty — sealing seams (by
                          linear feet) and encapsulating fasteners (by roof area). Show them
                          as separate line items sharing one per-bucket price. */
                       <>
                         {commonResults.linearBuckets > 0 && (
                           <tr>
-                            {productCell(`${commonResults.accessoryName || 'Seam sealer'} — seams`, 'By linear feet')}
+                            {productCell(`${commonResults.accessoryName || 'Seam sealer'} — ${linearLabel}`, 'By linear feet')}
                             {priceCell('accessory', 'bucket')}
                             {commonQtyCells(commonResults.linearBuckets, 'buckets', prices.accessory)}
                           </tr>
@@ -3460,8 +3636,8 @@ export default function App() {
                     ) : (
                       <tr>
                         {productCell(
-                          inputs.linearFeet > 0 ? commonResults.accessoryName : 'Fastener encapsulation',
-                          inputs.linearFeet > 0 ? commonResults.accessoryDesc : 'Metal roof screw encapsulation'
+                          detailLF > 0 ? commonResults.accessoryName : 'Fastener encapsulation',
+                          detailLF > 0 ? `${commonResults.accessoryDesc}${inputs.penetrationsLF > 0 ? ` · ${linearLabel}` : ''}` : 'Metal roof screw encapsulation'
                         )}
                         {priceCell('accessory', accUnitSingular)}
                         {commonQtyCells(commonResults.accessoryQty, (commonResults.accessoryUnit || '').toLowerCase(), prices.accessory)}
@@ -3563,7 +3739,8 @@ export default function App() {
                   <li>Each coat: squares × the application rate shown under the product (gal per square) × (1 + waste + stretch), rounded up to full 5-gal pails.</li>
                   <li>Topcoat coats 1–3 are separate passes of the same topcoat. Longer warranties add passes or heavier rates, so a coat can be absent at one tier.</li>
                   <li>Rust primer: 0.5 gal per square, the same way. Adhesion primer: 0.2 gal per square, rounded up to whole gallons.</li>
-                  <li>Seam sealer and fabric come from seam linear feet; fastener encapsulation on metal comes from roof area.</li>
+                  <li>Seam sealer and fabric come from seam and penetration linear feet; fastener encapsulation on metal comes from roof area.</li>
+                  <li>Silicone over single-ply or capsheet can stripe seams with topcoat on 10 and 15-year: one layer at 1.5 gal/sq, 2" each side (200 LF per gallon), added to coat 1 before rounding. Penetrations and 20-year seams use butter grade.</li>
                   <li>Line cost = quantity × unit price. Totals add the printed lines, so the math can be checked with a calculator.</li>
                 </ul>
               )}
