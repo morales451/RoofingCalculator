@@ -31,3 +31,4 @@ dist-ssr
 
 # Impeccable review captures (regenerated each review)
 .impeccable/review/
+.impeccable/live/

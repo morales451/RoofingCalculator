@@ -21,12 +21,14 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
   const regionCode = selectedRegion || DEFAULT_STATE;
   const climateInfo = CLIMATE_DATA[regionCode];
 
-  const [electricityRate, setElectricityRate] = useState(climateInfo.electricityRate);
+  // The field may be blank while typing; calculations fall back to the regional average
+  const [rateInput, setRateInput] = useState(String(climateInfo.electricityRate));
+  const electricityRate = parseFloat(rateInput) > 0 ? parseFloat(rateInput) : climateInfo.electricityRate;
 
   // Auto-fill electricity rate when region changes (unless user manually edited it)
   useEffect(() => {
     if (!rateManuallySet) {
-      setElectricityRate(CLIMATE_DATA[regionCode].electricityRate);
+      setRateInput(String(CLIMATE_DATA[regionCode].electricityRate));
     }
   }, [regionCode, rateManuallySet]);
 
@@ -260,10 +262,10 @@ const EnergySavingsEstimator = ({ roofSize, roofType, coatingSystem, onResultsCh
             type="number"
             inputMode="decimal"
             step="0.01"
-            value={electricityRate}
+            value={rateInput}
             onChange={(e) => {
               setRateManuallySet(true);
-              setElectricityRate(parseFloat(e.target.value) || 0.12);
+              setRateInput(e.target.value);
             }}
             className="input num"
           />

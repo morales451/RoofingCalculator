@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer, X, MoreHorizontal } from 'lucide-react';
+import { Calculator, CheckCircle, Copy, FileText, AlertTriangle, Layers, Ruler, Mail, Info, Hammer, Package, Droplet, Grid, Save, Upload, Download, ChevronDown, ChevronUp, User, DollarSign, Calendar, Eye, EyeOff, FileDown, Zap, Plus, Trash2, Printer, X, MoreHorizontal, Pencil } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import EnergySavingsEstimator from './EnergySavingsEstimator.jsx';
@@ -19,7 +19,8 @@ export default function App() {
     selectedFabric: '',
 
     roofSizeSqFt: 0,
-    linearFeet: 0,
+    linearFeet: 0, // seams
+    penetrationsLF: 0, // penetration detailing, always butter grade
     roofType: 'Capsheet',
     wasteFactor: 0,
     stretchFactor: 0,
@@ -30,6 +31,10 @@ export default function App() {
     // 'spot' = no calculation; quote just notes "spot prime rusted areas 2 layers before topcoats".
     rustPrimeMethod: 'field',
     accessoryType: 'Butter Grade',
+    // Silicone on single-ply, 10 and 15-year: seams may be striped with topcoat
+    // instead of butter grade. 'topcoat' | 'butter'. Quotes saved before this
+    // option existed have no value and keep butter grade.
+    seamTreatment: 'topcoat',
     // When true, fasteners are encapsulated with self-leveling caulk (~125 fasteners
     // per tube) instead of being rolled into the butter grade bucket count.
     // Butter grade still handles seams and penetrations.
@@ -64,6 +69,9 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false);
   const [mobileTier, setMobileTier] = useState('15');
   const [showMore, setShowMore] = useState(false);
+  const [showMethod, setShowMethod] = useState(false);
+  // Product picks start open at desk width and collapsed on phones
+  const [showProducts, setShowProducts] = useState(() => typeof window === 'undefined' || window.matchMedia('(min-width: 1024px)').matches);
 
   // Results column sticks by its bottom edge when taller than the viewport, so every
   // order row stays reachable by page scroll while the totals stay in view during edits.
@@ -79,12 +87,13 @@ export default function App() {
     update();
     return () => { ro.disconnect(); window.removeEventListener('resize', update); };
   }, []);
+  // Toast: { message, tone: 'success' | 'error', action?: { label, onClick } }
   const [toast, setToast] = useState(null);
-  const showToast = (message) => setToast(message);
+  const showToast = (message, options = {}) => setToast({ message, tone: 'success', ...options, key: Date.now() });
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2600);
+    const t = setTimeout(() => setToast(null), toast.action ? 6000 : 2600);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -115,6 +124,10 @@ export default function App() {
     email: '',
     projectAddress: ''
   });
+  // First-render values, used by "New quote" to reset the form
+  const initialState = useRef(null);
+  if (!initialState.current) initialState.current = { inputs, prices, customerInfo };
+
   const [showCustomerInfo, setShowCustomerInfo] = useState(false);
 
   // Quote metadata
@@ -124,7 +137,6 @@ export default function App() {
   const [profitMargin, setProfitMargin] = useState(0);
   // Controls whether distributor cost / margin details are exposed in PDF + Copy Text.
   // Default off — quotes go to contractors and that info is sensitive.
-  const [showMarginInExports, setShowMarginInExports] = useState(false);
 
   // Energy savings estimator
   const [showEnergySavings, setShowEnergySavings] = useState(false);
@@ -143,6 +155,7 @@ export default function App() {
       name: `Section ${prev.length + 1}`,
       sqFt: 0,
       linearFeet: 0,
+      penetrationsLF: 0,
       roofType: inputs.roofType,
       wasteFactor: 0,
       stretchFactor: 0
@@ -162,7 +175,8 @@ export default function App() {
     if (useMultiSection && roofSections.length > 0) {
       const totalSqFt = roofSections.reduce((sum, s) => sum + (parseFloat(s.sqFt) || 0), 0);
       const totalLF = roofSections.reduce((sum, s) => sum + (parseFloat(s.linearFeet) || 0), 0);
-      setInputs(prev => ({ ...prev, roofSizeSqFt: totalSqFt, linearFeet: totalLF }));
+      const totalPen = roofSections.reduce((sum, s) => sum + (parseFloat(s.penetrationsLF) || 0), 0);
+      setInputs(prev => ({ ...prev, roofSizeSqFt: totalSqFt, linearFeet: totalLF, penetrationsLF: totalPen }));
     }
   }, [roofSections, useMultiSection]);
 
@@ -177,21 +191,21 @@ export default function App() {
     if (inputs.roofSizeSqFt < 0) {
       errors.roofSizeSqFt = 'Roof size cannot be negative';
     } else if (inputs.roofSizeSqFt > 1000000) {
-      errors.roofSizeSqFt = 'Roof size exceeds 1,000,000 sq ft maximum';
+      errors.roofSizeSqFt = 'Roof area can be at most 1,000,000 sq ft';
     }
 
     // Linear feet validation
     if (inputs.linearFeet < 0) {
       errors.linearFeet = 'Linear feet cannot be negative';
     } else if (inputs.linearFeet > 100000) {
-      errors.linearFeet = 'Linear feet exceeds 100,000 maximum';
+      errors.linearFeet = 'Seams can be at most 100,000 linear ft';
     }
 
     // Profit margin validation
     if (profitMargin < 0) {
       errors.profitMargin = 'Margin cannot be negative';
     } else if (profitMargin >= 100) {
-      errors.profitMargin = 'Margin must be less than 100%';
+      errors.profitMargin = 'Margin must be below 100%';
     }
 
     // Price validation
@@ -199,25 +213,25 @@ export default function App() {
       if (val < 0) {
         errors[`price_${key}`] = `${key} price cannot be negative`;
       } else if (val > 10000) {
-        errors[`price_${key}`] = `${key} price exceeds $10,000 maximum`;
+        errors[`price_${key}`] = 'Unit price can be at most $10,000';
       }
     });
 
     // Customer email validation
     if (customerInfo.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerInfo.email)) {
-      errors.email = 'Invalid email format';
+      errors.email = 'Email should look like name@company.com';
     }
 
     // Customer phone validation
     if (customerInfo.phone && !/^[\d\s()+-]{7,20}$/.test(customerInfo.phone)) {
-      errors.phone = 'Invalid phone format';
+      errors.phone = 'Phone should be 7–20 digits, e.g. (555) 123-4567';
     }
 
     // Multi-section validation
     if (useMultiSection) {
       roofSections.forEach((section, i) => {
         if (section.sqFt < 0) errors[`section_${section.id}_sqFt`] = `Section ${i + 1}: sq ft cannot be negative`;
-        if (section.sqFt > 500000) errors[`section_${section.id}_sqFt`] = `Section ${i + 1}: sq ft exceeds 500,000 max`;
+        if (section.sqFt > 500000) errors[`section_${section.id}_sqFt`] = `Section ${i + 1}: area can be at most 500,000 sq ft`;
         if (section.linearFeet < 0) errors[`section_${section.id}_lf`] = `Section ${i + 1}: linear feet cannot be negative`;
       });
     }
@@ -413,18 +427,24 @@ export default function App() {
             '20': null  // Not available
         },
         'Sprayfoam': null, // Not supported
-        'Single-Ply': null // Not supported
+        'Single-Ply': null, // Not supported
+        'Previously Coated': null // Not supported
     }
   };
+  // Previously coated roofs use the single-ply application rates
+  SYSTEM_DATA.Silicone['Previously Coated'] = SYSTEM_DATA.Silicone['Single-Ply'];
+  SYSTEM_DATA.Acrylic.Reinforced['Previously Coated'] = SYSTEM_DATA.Acrylic.Reinforced['Single-Ply'];
+  SYSTEM_DATA.Acrylic.Standard['Previously Coated'] = SYSTEM_DATA.Acrylic.Standard['Single-Ply'];
 
   // --- HANDLERS ---
   const handleChange = (field, value) => {
+    if ((field === 'roofSizeSqFt' || field === 'linearFeet' || field === 'penetrationsLF') && typeof value === 'number') value = Math.max(0, value);
     if (field === 'coatingSystem') {
         let newRoofType = inputs.roofType;
 
         // Aluminum only supports Metal and Capsheet
         if (value === 'Aluminum') {
-            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply') {
+            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply' || inputs.roofType === 'Previously Coated') {
                 newRoofType = 'Metal';
             }
         }
@@ -459,18 +479,41 @@ export default function App() {
   };
 
   // Save/Load/Export/Import functions
-  const saveQuote = () => {
-    if (hasErrors) {
-      const proceed = window.confirm(`There are ${Object.keys(validationErrors).length} validation issue(s). Save quote anyway?`);
-      if (!proceed) return;
+  // The quote currently being edited, and the saved snapshot it is compared to
+  const [currentQuoteId, setCurrentQuoteId] = useState(null);
+  const [savedSnapshot, setSavedSnapshot] = useState(null);
+  const quoteSnapshot = JSON.stringify({
+    date: quoteDate, inputs, prices, profitMargin, customerInfo, energyRegion,
+    roofSections: useMultiSection ? roofSections : [], useMultiSection,
+  });
+  const hasContent = inputs.roofSizeSqFt > 0 || !!inputs.projectName || Object.values(prices).some(v => v > 0) || !!customerInfo.name || !!customerInfo.company;
+  const isDirty = savedSnapshot ? quoteSnapshot !== savedSnapshot : hasContent;
+
+  const writeQuotes = (quotes) => {
+    localStorage.setItem('savedQuotes', JSON.stringify(quotes));
+    setSavedQuotes(quotes);
+  };
+
+  const saveQuote = ({ asNew = false } = {}) => {
+    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+    const updating = !asNew && currentQuoteId && existingQuotes.some(q => q.id === currentQuoteId);
+    // A new copy never shares a name with an existing quote: "Name (2)", "Name (3)"…
+    let name = inputs.projectName;
+    if (asNew && name) {
+      const base = name.replace(/ \(\d+\)$/, '');
+      const taken = new Set(existingQuotes.map(q => q.inputs?.projectName));
+      let n = 2;
+      while (taken.has(`${base} (${n})`)) n++;
+      if (taken.has(name)) name = `${base} (${n})`;
     }
+    const savedInputs = name === inputs.projectName ? inputs : { ...inputs, projectName: name };
+    if (savedInputs !== inputs) setInputs(savedInputs);
     const quote = {
-      id: Date.now(),
+      id: updating ? currentQuoteId : Date.now(),
       date: quoteDate,
-      inputs,
+      inputs: savedInputs,
       prices,
       profitMargin,
-      showMarginInExports,
       customerInfo,
       estimates,
       commonResults,
@@ -480,18 +523,58 @@ export default function App() {
       savedAt: new Date().toISOString()
     };
 
-    const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
-    const updatedQuotes = [quote, ...existingQuotes];
-    localStorage.setItem('savedQuotes', JSON.stringify(updatedQuotes));
-    setSavedQuotes(updatedQuotes);
-    showToast(`Saved ${inputs.projectName || 'untitled quote'}`);
+    const updatedQuotes = updating
+      ? [quote, ...existingQuotes.filter(q => q.id !== currentQuoteId)]
+      : [quote, ...existingQuotes];
+    writeQuotes(updatedQuotes);
+    setCurrentQuoteId(quote.id);
+    // A renamed copy settles one render later, so take the clean snapshot then
+    if (savedInputs !== inputs) setSnapshotPending(true); else setSavedSnapshot(quoteSnapshot);
+    showToast(updating ? `Saved changes to ${name || 'untitled quote'}` : `Saved ${name || 'untitled quote'}${asNew ? ' as a new quote' : ''}`);
   };
 
-  const loadQuote = (quote) => {
+  // In-app confirmation for the two moments that can lose work or send a flawed quote
+  // { title, body, confirmLabel, onConfirm, secondary?: { label, onClick } }
+  const [confirmState, setConfirmState] = useState(null);
+  useEffect(() => { if (confirmState) setToast(null); }, [confirmState]);
+
+  // Loading over unsaved work asks first; everything else is undoable
+  const withDiscardCheck = (proceed) => {
+    if (!isDirty) { proceed(); return; }
+    setConfirmState({
+      title: 'Replace the open quote?',
+      body: `${inputs.projectName || 'This quote'} has unsaved changes. Save it first, or replace it and lose those changes.`,
+      confirmLabel: 'Replace',
+      onConfirm: proceed,
+      secondary: { label: 'Save first', onClick: () => { saveQuote(); proceed(); } },
+    });
+  };
+
+  const startNewQuote = () => withDiscardCheck(resetToNewQuote);
+  const resetToNewQuote = () => {
+    const defaults = PRODUCT_OPTIONS[initialState.current.inputs.coatingSystem];
+    setInputs({
+      ...initialState.current.inputs,
+      selectedTopcoat: defaults.topcoats[0],
+      selectedBasecoat: defaults.basecoats[0] || '',
+      selectedButterGrade: defaults.butterGrades[0],
+      selectedFabric: defaults.fabrics[0],
+    });
+    setPrices(initialState.current.prices);
+    setCustomerInfo(initialState.current.customerInfo);
+    setProfitMargin(0);
+    setQuoteDate(new Date().toISOString().split('T')[0]);
+    setRoofSections([]);
+    setUseMultiSection(false);
+    setCurrentQuoteId(null);
+    setSavedSnapshot(null);
+    showToast('Started a new quote');
+  };
+
+  const loadQuote = (quote, { fromSaved = true } = {}) => {
     setInputs(quote.inputs);
     setPrices(quote.prices);
     setProfitMargin(quote.profitMargin || 0);
-    setShowMarginInExports(quote.showMarginInExports || false);
     setCustomerInfo(quote.customerInfo || {
       name: '',
       company: '',
@@ -510,13 +593,39 @@ export default function App() {
     }));
     setRoofSections(migratedSections);
     setUseMultiSection(quote.useMultiSection || false);
+    setCurrentQuoteId(fromSaved ? quote.id : null);
+    // The saved snapshot is taken after the loaded state settles (see effect below)
+    setSnapshotPending(fromSaved);
+    if (!fromSaved) setSavedSnapshot(null);
   };
+
+  // After loading a saved quote, record its settled state as the clean baseline
+  const [snapshotPending, setSnapshotPending] = useState(false);
+  useEffect(() => {
+    if (!snapshotPending) return;
+    const t = setTimeout(() => { setSavedSnapshot(quoteSnapshotRef.current); setSnapshotPending(false); }, 0);
+    return () => clearTimeout(t);
+  }, [snapshotPending]);
+  const quoteSnapshotRef = useRef(quoteSnapshot);
+  quoteSnapshotRef.current = quoteSnapshot;
 
   const deleteQuote = (quoteId) => {
     const existingQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
-    const updatedQuotes = existingQuotes.filter(q => q.id !== quoteId);
-    localStorage.setItem('savedQuotes', JSON.stringify(updatedQuotes));
-    setSavedQuotes(updatedQuotes);
+    const index = existingQuotes.findIndex(q => q.id === quoteId);
+    const removed = existingQuotes[index];
+    if (!removed) return;
+    writeQuotes(existingQuotes.filter(q => q.id !== quoteId));
+    if (quoteId === currentQuoteId) { setCurrentQuoteId(null); setSavedSnapshot(null); }
+    showToast(`Deleted ${removed.inputs?.projectName || 'untitled quote'}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          const now = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
+          writeQuotes([...now.slice(0, index), removed, ...now.slice(index)]);
+          setToast(null);
+        },
+      },
+    });
   };
 
   const exportQuote = () => {
@@ -525,7 +634,6 @@ export default function App() {
       inputs,
       prices,
       profitMargin,
-      showMarginInExports,
       customerInfo,
       energyRegion,
       roofSections: useMultiSection ? roofSections : [],
@@ -541,6 +649,7 @@ export default function App() {
     link.download = `quote-${inputs.projectName || 'untitled'}-${new Date().toISOString().split('T')[0]}.json`;
     link.click();
     URL.revokeObjectURL(url);
+    showToast('Quote file downloaded');
   };
 
   const importQuote = (event) => {
@@ -551,10 +660,13 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const quote = JSON.parse(e.target.result);
-        loadQuote(quote);
-        showToast('Quote imported');
+        if (!quote || typeof quote !== 'object' || !quote.inputs) throw new Error('Not a quote file');
+        withDiscardCheck(() => {
+          loadQuote(quote, { fromSaved: false });
+          showToast('Quote imported. Save it to keep it in Saved.');
+        });
       } catch (error) {
-        alert('Error importing quote. Please check the file format.');
+        showToast("That file isn't a quote exported from this calculator. Choose a .json file made with Export.", { tone: 'error' });
       }
     };
     reader.readAsText(file);
@@ -577,12 +689,24 @@ export default function App() {
       return Math.ceil(val / 5) * 5;
   };
 
+  // Seam stripe with topcoat: one layer at 1.5 gal/sq (24 wet mils), 2" each side
+  // of the seam. A 4" band is 1/3 sq ft per LF = 1/300 square, so 1.5/300 =
+  // 0.005 gal per LF, i.e. 200 LF of seam per gallon. Offered on silicone over
+  // single-ply and capsheet for the 10 and 15-year systems; 20-year seams stay butter grade.
+  const SEAM_STRIPE_LF_PER_GAL = 200;
+  const SEAM_STRIPE_TIERS = ['10', '15'];
+  const usesSeamStripe = (coatingSystem, roofType, accessoryType, seamTreatment) =>
+    coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet') && accessoryType === 'Butter Grade' && seamTreatment === 'topcoat';
+
   // --- PER-SECTION CALCULATION HELPER ---
   const calculateForSection = (section, globalInputs) => {
     const { sqFt, linearFeet, roofType, wasteFactor, stretchFactor } = section;
+    const penetrationsLF = parseFloat(section.penetrationsLF) || 0;
     const { coatingSystem, acrylicSystemType, passedAdhesion, hasRust, rustPrimeMethod,
             goldseal, accessoryType, selectedButterGrade, selectedFabric,
-            useFastenerCaulk } = globalInputs;
+            useFastenerCaulk, seamTreatment } = globalInputs;
+    const seamStripe = usesSeamStripe(coatingSystem, roofType, accessoryType, seamTreatment);
+    let seamBuckets20 = 0;
 
     const squares = sqFt > 0 ? sqFt / 100 : 0;
     const totalFactor = 1 + parseFloat(wasteFactor) + parseFloat(stretchFactor);
@@ -593,7 +717,14 @@ export default function App() {
 
     if (accessoryType === 'Butter Grade') {
       const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
-      bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
+      const detailLF = (linearFeet || 0) + penetrationsLF;
+      if (seamStripe) {
+        // Penetrations on every tier; seams only on the 20-year (the rest is striped)
+        bucketsForLinear = penetrationsLF > 0 ? Math.ceil(penetrationsLF / lfPerBucket) : 0;
+        seamBuckets20 = detailLF > 0 ? Math.ceil(detailLF / lfPerBucket) - bucketsForLinear : 0;
+      } else {
+        bucketsForLinear = detailLF > 0 ? Math.ceil(detailLF / lfPerBucket) : 0;
+      }
       accQty = bucketsForLinear;
       accUnit = 'Buckets';
       const bucketSizeLabel = coatingSystem === 'Acrylic' ? '3.5-gal' : '2-gal';
@@ -612,7 +743,8 @@ export default function App() {
         }
       }
     } else {
-      accQty = linearFeet > 0 ? Math.ceil(linearFeet / 300) : 0;
+      const detailLF = (linearFeet || 0) + penetrationsLF;
+      accQty = detailLF > 0 ? Math.ceil(detailLF / 300) : 0;
       accUnit = 'Rolls';
       accDisplayName = selectedFabric;
     }
@@ -643,8 +775,11 @@ export default function App() {
       }
 
       const rates = systemSpec[year];
+      const seamStripeGal = seamStripe && SEAM_STRIPE_TIERS.includes(year) && linearFeet > 0 ? linearFeet / SEAM_STRIPE_LF_PER_GAL : 0;
+      const seamBuckets = seamStripe && year === '20' ? seamBuckets20 : 0;
       const baseGal = roundToFive(squares * (rates.base || 0) * totalFactor);
-      const top1Gal = roundToFive(squares * (rates.top1 || 0) * totalFactor);
+      // Stripe gallons join coat 1 before rounding, so the order isn't padded by a separate pail
+      const top1Gal = roundToFive(squares * (rates.top1 || 0) * totalFactor + seamStripeGal);
       const top2Gal = roundToFive(squares * (rates.top2 || 0) * totalFactor);
       const top3Gal = roundToFive(squares * (rates.top3 || 0) * totalFactor);
 
@@ -670,7 +805,7 @@ export default function App() {
 
       const totalGallons = baseGal + top1Gal + top2Gal + top3Gal + adhesionPrimerGal + rustPrimerGal;
 
-      sectionEstimates[year] = { baseGal, top1Gal, top2Gal, top3Gal, adhesionPrimerGal, rustPrimerGal, goldsealCost, totalGallons, rates };
+      sectionEstimates[year] = { baseGal, top1Gal, top2Gal, top3Gal, adhesionPrimerGal, rustPrimerGal, goldsealCost, totalGallons, rates, seamStripeGal, seamBuckets };
     });
 
     return {
@@ -686,8 +821,10 @@ export default function App() {
         roofSizeSqFt, linearFeet, roofType, wasteFactor, stretchFactor,
         goldseal, passedAdhesion, hasRust, rustPrimeMethod, accessoryType, coatingSystem, acrylicSystemType,
         selectedTopcoat, selectedBasecoat, selectedButterGrade, selectedFabric,
-        useFastenerCaulk
+        useFastenerCaulk, seamTreatment
     } = inputs;
+    const penetrationsLF = parseFloat(inputs.penetrationsLF) || 0;
+    const seamStripe = usesSeamStripe(coatingSystem, roofType, accessoryType, seamTreatment);
 
     if (useMultiSection && roofSections.length > 0) {
       // --- MULTI-SECTION PATH: calculate each section independently, then aggregate ---
@@ -707,7 +844,11 @@ export default function App() {
           summed.rustPrimerGal += est.rustPrimerGal;
           summed.goldsealCost += est.goldsealCost;
           summed.totalGallons += est.totalGallons;
+          summed.seamStripeGal = (summed.seamStripeGal || 0) + (est.seamStripeGal || 0);
+          summed.seamBuckets = (summed.seamBuckets || 0) + (est.seamBuckets || 0);
         });
+        // Rates are uniform across sections for a system; carry the first section's for display
+        summed.rates = perSectionResults[0]?.estimates[year]?.rates || summed.rates;
         // Apply goldseal minimum on the total roof, not per-section
         if (goldseal && roofSizeSqFt > 0) {
           let min = 900;
@@ -746,7 +887,8 @@ export default function App() {
         linearBuckets: totalLinearBuckets,
         screwCount: totalScrews,
         screwBuckets: totalScrewBuckets,
-        fastenerCaulkTubes: totalCaulkTubes
+        fastenerCaulkTubes: totalCaulkTubes,
+        seamStripe: roofSections.some(sec => usesSeamStripe(coatingSystem, sec.roofType, accessoryType, inputs.seamTreatment)),
       });
 
       setEstimates(aggregatedEstimates);
@@ -776,9 +918,17 @@ export default function App() {
       let bucketsForScrews = 0;
       let fastenerCaulkTubes = 0;
 
+      let seamBuckets20 = 0;
       if (accessoryType === 'Butter Grade') {
           const lfPerBucket = coatingSystem === 'Acrylic' ? 150 : 80;
-          bucketsForLinear = linearFeet > 0 ? Math.ceil(linearFeet / lfPerBucket) : 0;
+          const detailLF = (linearFeet || 0) + penetrationsLF;
+          if (seamStripe) {
+              // Penetrations on every tier; seams only on the 20-year (the rest is striped)
+              bucketsForLinear = penetrationsLF > 0 ? Math.ceil(penetrationsLF / lfPerBucket) : 0;
+              seamBuckets20 = detailLF > 0 ? Math.ceil(detailLF / lfPerBucket) - bucketsForLinear : 0;
+          } else {
+              bucketsForLinear = detailLF > 0 ? Math.ceil(detailLF / lfPerBucket) : 0;
+          }
           accQty = bucketsForLinear;
           accUnit = 'Buckets';
 
@@ -800,7 +950,8 @@ export default function App() {
               }
           }
       } else {
-          accQty = linearFeet > 0 ? Math.ceil(linearFeet / 300) : 0;
+          const detailLF = (linearFeet || 0) + penetrationsLF;
+          accQty = detailLF > 0 ? Math.ceil(detailLF / 300) : 0;
           accUnit = 'Rolls';
           accDesc = 'Reinforcement Fabric (300 LF/ea)';
           accDisplayName = selectedFabric;
@@ -821,7 +972,8 @@ export default function App() {
           linearBuckets: bucketsForLinear,
           screwCount: estimatedScrews,
           screwBuckets: bucketsForScrews,
-          fastenerCaulkTubes
+          fastenerCaulkTubes,
+          seamStripe,
       });
 
       const defaultEstimate = { baseGal: 0, top1Gal: 0, top2Gal: 0, top3Gal: 0, adhesionPrimerGal: 0, rustPrimerGal: 0, goldsealCost: 0, totalGallons: 0, rates: { base: 0, top1: 0, top2: 0, top3: 0 } };
@@ -845,8 +997,12 @@ export default function App() {
           const rawBase = squares * (rates.base || 0);
           const baseGal = roundToFive(rawBase * totalFactor);
 
+          const seamStripeGal = seamStripe && SEAM_STRIPE_TIERS.includes(year) && linearFeet > 0 ? linearFeet / SEAM_STRIPE_LF_PER_GAL : 0;
+          const seamBuckets = seamStripe && year === '20' ? seamBuckets20 : 0;
+
           const rawTop1 = squares * (rates.top1 || 0);
-          const top1Gal = roundToFive(rawTop1 * totalFactor);
+          // Stripe gallons join coat 1 before rounding, so the order isn't padded by a separate pail
+          const top1Gal = roundToFive(rawTop1 * totalFactor + seamStripeGal);
 
           const rawTop2 = squares * (rates.top2 || 0);
           const top2Gal = roundToFive(rawTop2 * totalFactor);
@@ -887,7 +1043,9 @@ export default function App() {
               rustPrimerGal,
               goldsealCost,
               totalGallons,
-              rates
+              rates,
+              seamStripeGal,
+              seamBuckets
           };
       });
 
@@ -987,7 +1145,8 @@ export default function App() {
     const isContractor = mode === 'contractor';
     // In contractor mode, every displayed price is marked up to the contractor's price.
     const markup = (isContractor && profitMargin > 0) ? 1 / (1 - profitMargin / 100) : 1;
-    const adjP = (p) => p * markup;
+    // Unit prices round to cents first so quantity × unit price matches every printed line
+    const adjP = (p) => Math.round(p * markup * 100) / 100;
 
     let text = `${isContractor ? 'CONTRACTOR MATERIAL QUOTE' : 'PROJECT ESTIMATE'}: ${projectName || 'Untitled'}\n\n`;
     if (useMultiSection && roofSections.length > 0) {
@@ -1038,17 +1197,24 @@ export default function App() {
     }
     text += `Note: All quantities are rounded up to the nearest full pail where applicable.\n`;
 
-    // Distributor mode hides unit prices when showMarginInExports is off.
-    // Contractor mode always shows unit prices, but uses the marked-up value.
-    const hideAccessoryCosts = !isContractor && profitMargin > 0 && !showMarginInExports;
-
-    if (linearFeet > 0 || commonResults.screwBuckets > 0) {
-        const perEach = (prices.accessory > 0 && !hideAccessoryCosts) ? ` @ $${adjP(prices.accessory).toFixed(2)} each` : '';
+    const emailPenLF = inputs.penetrationsLF || 0;
+    if (commonResults.seamStripe && (linearFeet > 0 || emailPenLF > 0)) {
+        // Seams striped with topcoat on 10/15-year; penetrations and 20-year seams use butter grade
+        const perEach = (prices.accessory > 0) ? ` @ $${adjP(prices.accessory).toFixed(2)} each` : '';
+        const stripeGal = Math.ceil(estimates['10']?.seamStripeGal || estimates['15']?.seamStripeGal || 0);
+        text += `\n`;
+        if (commonResults.accessoryQty > 0) text += `Seam Sealer (Penetrations, all warranties): ${commonResults.accessoryQty} Buckets of ${commonResults.accessoryName}${perEach}\n`;
+        if (linearFeet > 0) {
+            text += `Seams, 10 & 15-Year: striped with topcoat, 1.5 gal/sq, 2" each side (~${stripeGal} gal, included in Topcoat 1)\n`;
+            if ((estimates['20']?.seamBuckets || 0) > 0) text += `Seams, 20-Year: ${estimates['20'].seamBuckets} Buckets of ${commonResults.accessoryName}${perEach}\n`;
+        }
+    } else if (linearFeet > 0 || emailPenLF > 0 || commonResults.screwBuckets > 0) {
+        const perEach = (prices.accessory > 0) ? ` @ $${adjP(prices.accessory).toFixed(2)} each` : '';
         // On metal roofs the seam sealer covers both seams (by linear feet) and
         // fastener encapsulation (by roof area) — list them as separate line items.
         if (commonResults.screwBuckets > 0) {
             if (commonResults.linearBuckets > 0) {
-                text += `\nSeam Sealer (Seams): ${commonResults.linearBuckets} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}${perEach}\n`;
+                text += `\nSeam Sealer (${emailPenLF > 0 ? 'Seams & Penetrations' : 'Seams'}): ${commonResults.linearBuckets} ${commonResults.accessoryUnit} of ${commonResults.accessoryName}${perEach}\n`;
             } else {
                 text += `\n`;
             }
@@ -1060,13 +1226,13 @@ export default function App() {
 
     if (commonResults.fastenerCaulkTubes > 0) {
         text += `Fastener Encapsulation: ${commonResults.fastenerCaulkTubes} Tubes of ${FASTENER_CAULK_NAME}`;
-        if (prices.fastenerCaulk > 0 && !hideAccessoryCosts) text += ` @ $${adjP(prices.fastenerCaulk).toFixed(2)}/tube`;
+        if (prices.fastenerCaulk > 0) text += ` @ $${adjP(prices.fastenerCaulk).toFixed(2)}/tube`;
         text += ` (covers ~${commonResults.screwCount} fasteners @ ${FASTENERS_PER_CAULK_TUBE}/tube)\n`;
     }
 
     if (coatingSystem === 'Acrylic' && commonResults.membraneRolls > 0) {
         text += `Reinforcement: ${commonResults.membraneRolls} Rolls of Reinforcement Membrane (40" x 324')`;
-        if (prices.membrane > 0 && !hideAccessoryCosts) text += ` @ $${adjP(prices.membrane).toFixed(2)}/roll`;
+        if (prices.membrane > 0) text += ` @ $${adjP(prices.membrane).toFixed(2)}/roll`;
         text += `\n`;
     }
 
@@ -1096,49 +1262,45 @@ export default function App() {
 
         text += `\n\n--- ${year}-YEAR OPTION ---\n\n`;
 
-        // Distributor mode hides per-line prices when showMarginInExports is off.
-        // Contractor mode always shows per-line prices, using marked-up values.
-        const hideLineCosts = !isContractor && profitMargin > 0 && !showMarginInExports;
-
         if (coatingSystem !== 'Aluminum' && est.baseGal > 0) {
             text += `Basecoat: ${est.baseGal} gal (${selectedBasecoat})`;
             if (!useMultiSection && est.rates.base) text += ` @ ${est.rates.base} gal/sq`;
-            if (prices.basecoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.basecoat).toFixed(2)}/gal | Line Total: $${(est.baseGal * adjP(prices.basecoat)).toFixed(2)}`;
+            if (prices.basecoat > 0) text += `\n  Unit Price: $${adjP(prices.basecoat).toFixed(2)}/gal | Line Total: $${(est.baseGal * adjP(prices.basecoat)).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.rustPrimerGal > 0) {
             text += `Rust Primer: ${est.rustPrimerGal} gal (${primerSet.rust}) @ 0.5 gal/sq`;
-            if (prices.rustPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.rustPrimer).toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * adjP(prices.rustPrimer)).toFixed(2)}`;
+            if (prices.rustPrimer > 0) text += `\n  Unit Price: $${adjP(prices.rustPrimer).toFixed(2)}/gal | Line Total: $${(est.rustPrimerGal * adjP(prices.rustPrimer)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.adhesionPrimerGal > 0) {
             text += `Adhesion Primer: ${est.adhesionPrimerGal} gal (${primerSet.adhesion}) @ 0.2 gal/sq`;
-            if (prices.adhesionPrimer > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.adhesionPrimer).toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * adjP(prices.adhesionPrimer)).toFixed(2)}`;
+            if (prices.adhesionPrimer > 0) text += `\n  Unit Price: $${adjP(prices.adhesionPrimer).toFixed(2)}/gal | Line Total: $${(est.adhesionPrimerGal * adjP(prices.adhesionPrimer)).toFixed(2)}`;
             text += `\n`;
         }
 
         if (est.top1Gal > 0) {
             text += `Topcoat 1: ${est.top1Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top1) text += ` @ ${est.rates.top1} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top1Gal * adjP(prices.topcoat)).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top1Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top2Gal > 0) {
             text += `Topcoat 2: ${est.top2Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top2) text += ` @ ${est.rates.top2} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top2Gal * adjP(prices.topcoat)).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top2Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
         if (est.top3Gal > 0) {
             text += `Topcoat 3: ${est.top3Gal} gal (${selectedTopcoat})`;
             if (!useMultiSection && est.rates.top3) text += ` @ ${est.rates.top3} gal/sq`;
-            if (prices.topcoat > 0 && !hideLineCosts) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top3Gal * adjP(prices.topcoat)).toFixed(2)}`;
+            if (prices.topcoat > 0) text += `\n  Unit Price: $${adjP(prices.topcoat).toFixed(2)}/gal | Line Total: $${(est.top3Gal * adjP(prices.topcoat)).toFixed(2)}`;
             text += `\n`;
         }
 
         text += `\nTOTAL SYSTEM: ${est.totalGallons} Gallons`;
-        if (!hideLineCosts && (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0)) {
+        if ((prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0)) {
             const materialsTotal = (est.baseGal || 0) * adjP(prices.basecoat) +
                                    (est.top1Gal || 0) * adjP(prices.topcoat) +
                                    (est.top2Gal || 0) * adjP(prices.topcoat) +
@@ -1149,7 +1311,7 @@ export default function App() {
         }
         text += `\n`;
 
-        if (est.goldsealCost > 0 && !hideLineCosts) text += `Goldseal Warranty: $${adjP(est.goldsealCost).toLocaleString()}\n`;
+        if (est.goldsealCost > 0) text += `Goldseal Warranty: $${adjP(est.goldsealCost).toLocaleString()}\n`;
 
         // Add grand total if pricing is entered
         if (prices.basecoat > 0 || prices.topcoat > 0 || prices.adhesionPrimer > 0 || prices.rustPrimer > 0 || prices.accessory > 0 || prices.membrane > 0 || prices.fastenerCaulk > 0) {
@@ -1163,30 +1325,25 @@ export default function App() {
                               (commonResults.accessoryQty || 0) * prices.accessory +
                               (commonResults.membraneRolls || 0) * prices.membrane +
                               (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk +
+                              (est.seamBuckets || 0) * prices.accessory +
                               (est.goldsealCost || 0);
             const warrantyLabel = inputs.goldseal ? ' + Warranty' : '';
 
             if (isContractor) {
-                const contractorPrice = grandTotal * markup;
+                const contractorPrice = pricedTotal(year, markup);
                 text += `\nTOTAL (Materials + Accessories${warrantyLabel}): $${contractorPrice.toFixed(2)}`;
                 if (roofSizeSqFt > 0) text += ` ($${(contractorPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
                 text += `\n`;
             } else if (profitMargin > 0) {
-                const sellPrice = grandTotal / (1 - profitMargin / 100);
-                if (showMarginInExports) {
-                    text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
-                    if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
-                    text += `\n`;
-                    const profit = sellPrice - grandTotal;
-                    text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}`;
-                    if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
-                    text += `\n`;
-                    text += `MARGIN: $${profit.toFixed(2)}\n`;
-                } else {
-                    text += `\nTOTAL (Materials + Accessories${warrantyLabel}): $${sellPrice.toFixed(2)}`;
-                    if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
-                    text += `\n`;
-                }
+                const sellPrice = pricedTotal(year, 1 / (1 - profitMargin / 100));
+                text += `\nDISTRIBUTOR COST (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
+                if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
+                text += `\n`;
+                const profit = sellPrice - grandTotal;
+                text += `CONTRACTOR PRICE (${profitMargin}% margin): $${sellPrice.toFixed(2)}`;
+                if (roofSizeSqFt > 0) text += ` ($${(sellPrice / roofSizeSqFt).toFixed(2)}/sqft)`;
+                text += `\n`;
+                text += `MARGIN: $${profit.toFixed(2)}\n`;
             } else {
                 text += `\nGRAND TOTAL (Materials + Accessories${warrantyLabel}): $${grandTotal.toFixed(2)}`;
                 if (roofSizeSqFt > 0) text += ` ($${(grandTotal / roofSizeSqFt).toFixed(2)}/sqft)`;
@@ -1231,7 +1388,7 @@ export default function App() {
 
   setEmailText(buildEmailText('distributor'));
   setContractorEmailText(buildEmailText('contractor'));
-  }, [inputs, estimates, commonResults, prices, profitMargin, showMarginInExports, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections, sectionResults]);
+  }, [inputs, estimates, commonResults, prices, profitMargin, showEnergySavings, energyElectricityRate, energyRegion, useMultiSection, roofSections, sectionResults]);
 
   const copyToClipboard = () => {
     const copyText = (text) => {
@@ -1276,19 +1433,51 @@ export default function App() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
 
-  const generatePDF = (mode = 'distributor') => {
-    if (hasErrors) {
-      const proceed = window.confirm(`There are ${Object.keys(validationErrors).length} validation issue(s). Generate PDF anyway?`);
-      if (!proceed) return;
+  // Optional logos in public/logos. A missing file resolves to null and is skipped.
+  const LOGO_FILES = ['/logos/henry-logo.png', '/logos/enduraroof-logo.png'];
+  const loadLogos = async () => {
+    const loadImage = (src) => new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img.naturalWidth > 0 ? img : null);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+    return (await Promise.all(LOGO_FILES.map(loadImage))).filter(Boolean);
+  };
+  // Logos sit right-aligned on the title line, 40pt tall (keeps a logo's small print legible), 16pt apart
+  const drawLogos = (doc, logos, right, top) => {
+    const logoH = 40;
+    let x = right;
+    [...logos].reverse().forEach(img => {
+      const w = (img.naturalWidth / img.naturalHeight) * logoH;
+      x -= w;
+      doc.addImage(img, 'PNG', x, top - 8, w, logoH);
+      x -= 16;
+    });
+  };
+
+  const generatePDF = async (mode = 'distributor', { force = false } = {}) => {
+    if (hasErrors && !force) {
+      const count = Object.keys(validationErrors).length;
+      setConfirmState({
+        title: `${count} issue${count > 1 ? 's' : ''} in this quote`,
+        body: 'The PDF may show wrong quantities or prices. Review the issues, or download it as it is.',
+        confirmLabel: 'Download anyway',
+        onConfirm: () => generatePDF(mode, { force: true }),
+        secondary: { label: 'Review issues', onClick: () => { window.scrollTo({ top: 0, behavior: 'smooth' }); setShowValidationSummary(true); } },
+      });
+      return;
     }
 
     const isContractor = mode === 'contractor';
     const isDistributor = mode === 'distributor';
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-    const pageHeight = doc.internal.pageSize.height;
-    const margin = 15;
+    const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 48;
     const contentWidth = pageWidth - 2 * margin;
+    const contentTop = margin + 44;
+    const contentBottom = 64;
 
     // Contractor PDF marks distributor prices up to the contractor sell price.
     // adj(price) returns the price the contractor sees on the quote.
@@ -1299,541 +1488,528 @@ export default function App() {
     const pdfBrand = getBrandFromTopcoat(inputs.selectedTopcoat);
     const pdfPrimers = PRIMER_LOOKUP[pdfBrand];
 
-    // === BRAND PALETTE ===
-    const colors = {
-      primary: [30, 64, 175],       // blue-800
-      primaryLight: [59, 130, 246], // blue-500
-      accent: [220, 38, 38],        // red-600
-      success: [16, 185, 129],      // emerald-500
-      warning: [234, 88, 12],       // orange-600
-      text: [31, 41, 55],           // gray-800
-      muted: [107, 114, 128],       // gray-500
-      light: [243, 244, 246],       // gray-100
-      border: [209, 213, 219],      // gray-300
-      bgSoft: [248, 250, 252],      // slate-50
-      bgHero: [239, 246, 255],      // blue-50
+    // === PALETTE (mirrors DESIGN.md: ink scale and hairlines; amber only for warnings) ===
+    const C = {
+      ink: [26, 31, 54],
+      ink2: [60, 66, 87],
+      ink3: [98, 108, 126],
+      line: [227, 232, 238],
+      lineStrong: [201, 209, 218],
+      canvas: [246, 248, 250],
+      amber: [180, 83, 9],
+      sell: [11, 107, 98], // contractor-facing money (DESIGN.md: Sell)
+      sellTint: [239, 250, 248],
+      gain: [21, 128, 61], // distributor margin
     };
 
-    // === HELPERS ===
+    const docTitle = isContractor ? 'Contractor quote' : 'Distributor estimate';
+    const fmtNum = (n) => (n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const parseISODate = (iso) => {
+      const [y, m, d] = (iso || '').split('-').map(Number);
+      return y ? new Date(y, m - 1, d) : null;
+    };
+    const fmtDate = (date) => date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    const quoteDay = parseISODate(quoteDate);
 
-    const drawHeader = () => {
-      // Top color band
-      doc.setFillColor(...colors.primary);
-      doc.rect(0, 0, pageWidth, 26, 'F');
-      doc.setFillColor(...colors.primaryLight);
-      doc.rect(0, 26, pageWidth, 2, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(17);
-      doc.setFont('helvetica', 'bold');
-      doc.text(isContractor ? 'CONTRACTOR MATERIAL QUOTE' : 'DISTRIBUTOR ESTIMATE', margin, 14);
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.text(isContractor ? 'Materials, rates, and pricing' : 'Internal estimate with margin breakdown', margin, 20);
-
-      // Right-aligned project info
-      doc.setFontSize(9);
-      doc.text(`Date: ${quoteDate}`, pageWidth - margin, 14, { align: 'right' });
-      if (inputs.projectName) {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.text(inputs.projectName, pageWidth - margin, 20, { align: 'right' });
-      }
-
-      doc.setTextColor(...colors.text);
+    const setText = (size, style = 'normal', color = C.ink) => {
+      doc.setFontSize(size);
+      doc.setFont('helvetica', style);
+      doc.setTextColor(...color);
+    };
+    const rule = (y, color = C.line, width = 0.75) => {
+      doc.setDrawColor(...color);
+      doc.setLineWidth(width);
+      doc.line(margin, y, pageWidth - margin, y);
     };
 
-    const drawSectionHeader = (title, y) => {
-      // Colored accent bar + title
-      doc.setFillColor(...colors.primary);
-      doc.rect(margin, y, 3, 7, 'F');
-      doc.setTextColor(...colors.primary);
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.text(title.toUpperCase(), margin + 6, y + 5);
-      // Thin underline across the rest of the row
-      doc.setDrawColor(...colors.border);
-      doc.setLineWidth(0.3);
-      const titleEnd = margin + 6 + doc.getTextWidth(title.toUpperCase()) + 4;
-      doc.line(titleEnd, y + 5.5, pageWidth - margin, y + 5.5);
-      doc.setTextColor(...colors.text);
-      doc.setDrawColor(0, 0, 0);
-      return y + 11;
+    const logos = await loadLogos();
+
+    // Continuation pages get a compact running header.
+    const headedPages = new Set([1]);
+    const drawContinuationHeader = () => {
+      const page = doc.getCurrentPageInfo().pageNumber;
+      if (headedPages.has(page)) return;
+      headedPages.add(page);
+      setText(9, 'bold');
+      doc.text(docTitle, margin, margin + 6);
+      setText(9, 'normal', C.ink3);
+      if (inputs.projectName) doc.text(inputs.projectName, pageWidth - margin, margin + 6, { align: 'right' });
+      rule(margin + 14);
     };
-
-    // Draws side-by-side info cards. boxes = [{ title, lines: [[label, value], ...] }]
-    const drawInfoBoxes = (boxes, y) => {
-      const cols = boxes.length;
-      if (cols === 0) return y;
-      const gap = 5;
-      const boxWidth = (contentWidth - gap * (cols - 1)) / cols;
-      const heights = boxes.map(b => 12 + b.lines.length * 5 + 3);
-      const maxHeight = Math.max(...heights);
-
-      boxes.forEach((box, i) => {
-        const x = margin + i * (boxWidth + gap);
-        // Card background
-        doc.setFillColor(...colors.bgSoft);
-        doc.roundedRect(x, y, boxWidth, maxHeight, 2, 2, 'F');
-        // Left accent stripe
-        doc.setFillColor(...colors.primaryLight);
-        doc.rect(x, y, 2, maxHeight, 'F');
-
-        // Title
-        doc.setTextColor(...colors.primary);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'bold');
-        doc.text(box.title.toUpperCase(), x + 6, y + 7);
-
-        // Lines
-        let lineY = y + 13;
-        doc.setFontSize(9);
-        box.lines.forEach(([label, value]) => {
-          if (value === undefined || value === null || value === '') return;
-          doc.setTextColor(...colors.muted);
-          doc.setFont('helvetica', 'normal');
-          doc.text(label, x + 6, lineY);
-          const labelWidth = doc.getTextWidth(label) + 2;
-          doc.setTextColor(...colors.text);
-          doc.setFont('helvetica', 'bold');
-          const valStr = String(value);
-          const maxValWidth = boxWidth - 8 - labelWidth;
-          const splitVal = doc.splitTextToSize(valStr, maxValWidth);
-          doc.text(splitVal[0] || '', x + 6 + labelWidth, lineY);
-          lineY += 5;
-        });
-      });
-
-      doc.setTextColor(...colors.text);
-      return y + maxHeight + 6;
-    };
-
-    // Page-break helper: if the next block doesn't fit, start a new page.
     const ensureSpace = (y, needed) => {
-      if (y + needed > pageHeight - 22) {
+      if (y + needed > pageHeight - contentBottom) {
         doc.addPage();
-        drawHeader();
-        return 36;
+        drawContinuationHeader();
+        return contentTop;
       }
       return y;
     };
+    const sectionTitle = (title, y, note) => {
+      setText(11, 'bold');
+      doc.text(title, margin, y);
+      if (note) {
+        setText(8, 'normal', C.ink3);
+        doc.text(note, pageWidth - margin, y, { align: 'right' });
+      }
+      return y + 10;
+    };
 
-    // === START RENDERING ===
-    drawHeader();
-    let yPos = 36;
+    // Shared table look: plain rows, hairline separators, figures right-aligned.
+    // `subs` holds a muted second line per cell, keyed "row:col".
+    const plainTable = ({ head, body, columnStyles, subs = {}, rowKinds = [], widths, y }) => {
+      autoTable(doc, {
+        startY: y,
+        head,
+        body,
+        theme: 'plain',
+        styles: {
+          font: 'helvetica', fontSize: 9, textColor: C.ink, valign: 'top',
+          cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
+          lineColor: C.line, lineWidth: { bottom: 0.5 },
+        },
+        headStyles: {
+          fontSize: 7.5, fontStyle: 'normal', textColor: C.ink3,
+          cellPadding: { top: 0, bottom: 5, left: 5, right: 5 },
+          lineColor: C.lineStrong, lineWidth: { bottom: 0.75 },
+        },
+        columnStyles,
+        margin: { left: margin, right: margin, top: contentTop, bottom: contentBottom },
+        didParseCell: (data) => {
+          const last = data.table.columns.length - 1;
+          const pad = { ...data.cell.styles.cellPadding };
+          if (data.column.index === 0) pad.left = 0;
+          if (data.column.index + (data.cell.colSpan || 1) - 1 === last) pad.right = 0;
+          data.cell.styles.cellPadding = pad;
+          if (data.section === 'head' && columnStyles?.[data.column.index]?.halign) {
+            data.cell.styles.halign = columnStyles[data.column.index].halign;
+          }
+          if (data.section !== 'body') return;
+          const [kind, tone] = String(rowKinds[data.row.index] || '').split(':');
+          if (kind === 'subtotal') {
+            data.cell.styles.fillColor = C.canvas;
+            data.cell.styles.fontStyle = 'bold';
+          } else if (kind === 'total') {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fontSize = 10;
+            data.cell.styles.cellPadding = { ...pad, top: 9 };
+            data.cell.styles.lineWidth = { bottom: 0 };
+          } else if (kind === 'total-first') {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fontSize = 10;
+            data.cell.styles.cellPadding = { ...pad, top: 10 };
+            data.cell.styles.lineColor = C.lineStrong;
+            data.cell.styles.lineWidth = { top: 0.75, bottom: 0 };
+          } else if (kind === 'total-minor') {
+            data.cell.styles.fontSize = 8.5;
+            data.cell.styles.textColor = C.ink3;
+            data.cell.styles.cellPadding = { ...pad, top: 2, bottom: 3 };
+            data.cell.styles.lineWidth = { bottom: 0 };
+          }
+          // Distributor estimate: contractor-facing rows carry the sell tint, margin the gain color
+          if (tone === 'sell') { data.cell.styles.textColor = C.sell; data.cell.styles.fillColor = C.sellTint; }
+          if (tone === 'gain') data.cell.styles.textColor = C.gain;
+          // Reserve exact height for the muted second line (drawn in didDrawCell).
+          const sub = subs[`${data.row.index}:${data.column.index}`];
+          if (sub && widths) {
+            const p = data.cell.styles.cellPadding;
+            const span = data.cell.colSpan || 1;
+            const w = widths.slice(data.column.index, data.column.index + span).reduce((a, b) => a + b, 0) - p.left - p.right;
+            const fs = data.cell.styles.fontSize;
+            doc.setFont('helvetica', data.cell.styles.fontStyle);
+            doc.setFontSize(fs);
+            const mainLines = doc.splitTextToSize(data.cell.text.join(' '), w).length;
+            doc.setFontSize(7.5);
+            const subLines = doc.splitTextToSize(sub.text, w).length;
+            data.cell.mainLines = mainLines;
+            data.cell.styles.minCellHeight = p.top + p.bottom + mainLines * fs * 1.15 + 1.5 + subLines * 7.5 * 1.25;
+          }
+        },
+        didDrawCell: (data) => {
+          if (data.section !== 'body') return;
+          const sub = subs[`${data.row.index}:${data.column.index}`];
+          if (!sub) return;
+          const mainSize = data.cell.styles.fontSize;
+          setText(7.5, 'normal', sub.tone === 'warn' ? C.amber : C.ink3);
+          const right = data.cell.styles.halign === 'right';
+          const avail = data.cell.width - data.cell.padding('left') - data.cell.padding('right');
+          const x = right
+            ? data.cell.x + data.cell.width - data.cell.padding('right')
+            : data.cell.x + data.cell.padding('left');
+          const top = data.cell.y + data.cell.padding('top') + (data.cell.mainLines || 1) * mainSize * 1.15 + 1.5;
+          doc.text(doc.splitTextToSize(sub.text, avail), x, top, { align: right ? 'right' : 'left', baseline: 'top', lineHeightFactor: 1.25 });
+        },
+        didDrawPage: drawContinuationHeader,
+      });
+      return doc.lastAutoTable.finalY;
+    };
 
-    // --- Customer + Project info cards ---
-    const customerLines = [];
-    if (customerInfo.name) customerLines.push(['Name:', customerInfo.name]);
-    if (customerInfo.company) customerLines.push(['Company:', customerInfo.company]);
-    if (customerInfo.email) customerLines.push(['Email:', customerInfo.email]);
-    if (customerInfo.phone) customerLines.push(['Phone:', customerInfo.phone]);
-    if (customerInfo.address) customerLines.push(['Address:', customerInfo.address]);
-    if (customerInfo.projectAddress) customerLines.push(['Project:', customerInfo.projectAddress]);
+    // Totals per tier, always the sum of the printed lines (see pricedTotal).
+    const sellFactor = profitMargin > 0 ? 1 / (1 - profitMargin / 100) : 1;
+    const pdfTotalRows = (perSqFt) => {
+      if (isContractor) {
+        return [
+          { label: 'Total', major: true, value: yr => formatCurrency(pricedTotal(yr, markupFactor)) },
+          { label: 'Per sq ft', value: yr => perSqFt(pricedTotal(yr, markupFactor)) },
+        ];
+      }
+      if (profitMargin > 0) {
+        return [
+          { label: 'Distributor cost', major: true, value: yr => formatCurrency(pricedTotal(yr)) },
+          { label: 'Cost per sq ft', value: yr => perSqFt(pricedTotal(yr)) },
+          { label: `Contractor price (${profitMargin}% margin)`, major: true, tone: 'sell', value: yr => formatCurrency(pricedTotal(yr, sellFactor)) },
+          { label: 'Contractor price per sq ft', tone: 'sell', value: yr => perSqFt(pricedTotal(yr, sellFactor)) },
+          { label: 'Margin', tone: 'gain', value: yr => formatCurrency(pricedTotal(yr, sellFactor) - pricedTotal(yr)) },
+        ];
+      }
+      return [
+        { label: 'Total', major: true, value: yr => formatCurrency(pricedTotal(yr)) },
+        { label: 'Per sq ft', value: yr => perSqFt(pricedTotal(yr)) },
+      ];
+    };
 
+    // === HEADER ===
+    let y = margin;
+    drawLogos(doc, logos, pageWidth - margin, y);
+    setText(22, 'bold');
+    doc.text(docTitle, margin, y + 16);
+    y += 38;
+    if (inputs.projectName) {
+      setText(12, 'normal', C.ink2);
+      doc.text(inputs.projectName, margin, y);
+      y += 15;
+    }
+    if (customerInfo.projectAddress) {
+      setText(9, 'normal', C.ink3);
+      doc.text(customerInfo.projectAddress, margin, y);
+      y += 13;
+    }
+    y += 8;
+    rule(y, C.ink, 2);
+    y += 22;
+
+    // === INFO COLUMNS: quote / prepared for / project ===
+    const roofTypeText = useMultiSection && roofSections.length > 0
+      ? `${[...new Set(roofSections.map(s => s.roofType))].join(' / ')} (${roofSections.length} sections)`
+      : inputs.roofType;
+    const factorsText = useMultiSection && roofSections.length > 0
+      ? 'Per-section waste and stretch'
+      : (() => {
+        const wf = Math.round((parseFloat(inputs.wasteFactor) || 0) * 100);
+        const sf = Math.round((parseFloat(inputs.stretchFactor) || 0) * 100);
+        return `${wf}% waste · ${sf}% stretch`;
+      })();
+
+    const quotePairs = [['Date', fmtDate(quoteDay) || quoteDate]];
+    if (isContractor && quoteDay) {
+      const validUntil = new Date(quoteDay);
+      validUntil.setDate(validUntil.getDate() + 30);
+      quotePairs.push(['Valid until', fmtDate(validUntil)]);
+    }
+    if (isDistributor) quotePairs.push(['For', 'Internal use']);
+    const summaryTiers = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
+    const summaryLabel = isContractor ? 'Total' : (profitMargin > 0 ? 'Distributor cost' : 'Total');
+    const summaryPairs = hasPrices
+      ? summaryTiers.map(yr => [`${yr}-year`, formatCurrency(isContractor ? pricedTotal(yr, markupFactor) : pricedTotal(yr))])
+      : [];
+
+    const customerLines = [customerInfo.name, customerInfo.company, customerInfo.address, customerInfo.email, customerInfo.phone].filter(Boolean);
     const projectLines = [
-      ['System:', `${inputs.coatingSystem}${inputs.coatingSystem === 'Acrylic' ? ` (${inputs.acrylicSystemType})` : ''}`],
-      ['Roof Type:', useMultiSection && roofSections.length > 0
-        ? [...new Set(roofSections.map(s => s.roofType))].join(' / ') + ' (Multi-Section)'
-        : inputs.roofType],
-      ['Roof Size:', `${inputs.roofSizeSqFt.toLocaleString()} sq ft (${commonResults.squares} sq)`],
-    ];
-    if (inputs.linearFeet > 0) projectLines.push(['Linear Ft:', inputs.linearFeet.toLocaleString()]);
-    if (inputs.goldseal) projectLines.push(['Warranty:', 'Goldseal Manufacturer Warranty']);
+      `${inputs.coatingSystem}${inputs.coatingSystem === 'Acrylic' ? ` (${inputs.acrylicSystemType.toLowerCase()})` : ''} coating system`,
+      `${roofTypeText} · ${inputs.roofSizeSqFt.toLocaleString()} sq ft (${fmtNum(commonResults.squares)} sq)`,
+      inputs.linearFeet > 0 ? `${inputs.linearFeet.toLocaleString()} linear ft of seams` : null,
+      inputs.penetrationsLF > 0 ? `${inputs.penetrationsLF.toLocaleString()} linear ft of penetrations` : null,
+      commonResults.seamStripe ? 'Seams striped with topcoat (10 & 15-yr)' : null,
+      factorsText,
+      inputs.goldseal ? 'Goldseal manufacturer warranty' : null,
+    ].filter(Boolean);
 
-    const infoBoxes = [];
-    if (customerLines.length > 0) infoBoxes.push({ title: 'Prepared For', lines: customerLines });
-    infoBoxes.push({ title: 'Project Details', lines: projectLines });
-    yPos = drawInfoBoxes(infoBoxes, yPos);
+    const columns = [
+      { title: 'Quote', pairs: quotePairs, summaryTitle: summaryLabel, summary: summaryPairs },
+      ...(customerLines.length > 0 ? [{ title: 'Prepared for', lines: customerLines }] : []),
+      { title: 'Project', lines: projectLines },
+    ];
+    const colGap = 20;
+    const colW = (contentWidth - colGap * (columns.length - 1)) / columns.length;
+    let infoBottom = y;
+    columns.forEach((col, i) => {
+      const x = margin + i * (colW + colGap);
+      let cy = y;
+      setText(8, 'bold', C.ink3);
+      doc.text(col.title, x, cy);
+      cy += 14;
+      if (col.pairs) {
+        col.pairs.forEach(([k, v]) => {
+          setText(9, 'normal', C.ink3);
+          doc.text(k, x, cy);
+          setText(9, 'normal', C.ink);
+          doc.text(String(v), x + 58, cy);
+          cy += 13;
+        });
+        if (col.summary && col.summary.length > 0) {
+          cy += 7;
+          setText(8, 'bold', C.ink3);
+          doc.text(col.summaryTitle, x, cy);
+          cy += 13;
+          col.summary.forEach(([k, v]) => {
+            setText(9, 'normal', C.ink3);
+            doc.text(k, x, cy);
+            setText(9, 'bold', C.ink);
+            doc.text(v, x + 58, cy);
+            cy += 13;
+          });
+        }
+      } else {
+        col.lines.forEach((line, li) => {
+          setText(9, li === 0 ? 'bold' : 'normal', C.ink);
+          doc.splitTextToSize(String(line), colW).forEach(part => {
+            doc.text(part, x, cy);
+            cy += 13;
+          });
+        });
+      }
+      infoBottom = Math.max(infoBottom, cy);
+    });
+    y = infoBottom + 14;
+
+    // Warning for missing linear feet
+    if (inputs.linearFeet <= 0) {
+      y = ensureSpace(y, 40);
+      setText(9, 'bold', C.amber);
+      doc.text('Quote incomplete.', margin, y);
+      const lead = doc.getTextWidth('Quote incomplete.  ');
+      setText(9, 'normal', C.ink2);
+      doc.text('Seam linear feet are missing, so butter grade (seam sealant) is not calculated.', margin + lead, y);
+      y += 13;
+      if (inputs.roofType === 'Metal' && commonResults.screwBuckets > 0) {
+        setText(8.5, 'normal', C.ink3);
+        doc.text(`Fastener encapsulation for ~${(commonResults.screwCount || 0).toLocaleString()} screws is included, based on roof area.`, margin, y);
+        y += 13;
+      }
+      y += 8;
+    }
 
     // --- Multi-section table (both modes) ---
     if (useMultiSection && roofSections.length > 0) {
-      yPos = ensureSpace(yPos, 30);
-      yPos = drawSectionHeader('Roof Sections', yPos);
-      autoTable(doc, {
-        startY: yPos,
-        head: [['Section', 'Sq Ft', 'Linear Ft', 'Roof Type', 'Waste %', 'Stretch %']],
+      y = ensureSpace(y, 70);
+      y = sectionTitle('Roof sections', y + 6);
+      y = plainTable({
+        y,
+        head: [['Section', 'Roof type', 'Area', 'Seams', 'Waste', 'Stretch']],
         body: roofSections.map(s => [
           s.name,
-          (s.sqFt || 0).toLocaleString(),
-          (s.linearFeet || 0).toLocaleString(),
           s.roofType,
+          `${(s.sqFt || 0).toLocaleString()} sq ft`,
+          `${(s.linearFeet || 0).toLocaleString()} ft`,
           `${Math.round((s.wasteFactor || 0) * 100)}%`,
           `${Math.round((s.stretchFactor || 0) * 100)}%`,
         ]),
-        theme: 'striped',
-        headStyles: { fillColor: colors.primary, textColor: 255, fontStyle: 'bold', fontSize: 9 },
-        styles: { fontSize: 9, cellPadding: 3 },
-        alternateRowStyles: { fillColor: colors.bgSoft },
-        margin: { left: margin, right: margin },
-      });
-      yPos = doc.lastAutoTable.finalY + 6;
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+      }) + 24;
     }
 
-    // Years available (10/15/20 — fewer for Aluminum)
+    // ============================================================
+    // MATERIALS: one table, quantity with its line cost beneath, totals at the foot
+    // ============================================================
     const yearsToShow = inputs.coatingSystem === 'Aluminum' ? ['10'] : ['10', '15', '20'];
     const showRates = !useMultiSection;
-    // Distributor PDF respects showMarginInExports (so the distributor can hide
-    // their own cost basis if they want). Contractor PDF always shows the
-    // contractor-priced unit costs when there are prices entered.
-    const showPriceUnit = isContractor
-      ? hasPrices
-      : !(profitMargin > 0 && !showMarginInExports);
+    // The distributor estimate always shows cost; the contractor quote shows
+    // marked-up unit prices whenever prices are entered.
+    const showPriceUnit = isContractor ? hasPrices : true;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    // Line cost from a cents-rounded unit price, so qty × printed price = printed line.
+    const lineCost = (qty, price) => (qty > 0 && price > 0) ? r2(qty * r2(adj(price))) : 0;
 
-    {
-      // ============================================================
-      // SHARED FLOW (distributor + contractor): materials + pricing
-      // ============================================================
+    // A material row must be shown if ANY warranty year on the PDF calls for it.
+    // Acrylic systems add coats at higher warranty tiers (e.g. Topcoat 2/3 only
+    // appear at 15/20-yr), so gating on the 10-yr option alone would silently drop
+    // those coats from the PDF. Check across every displayed year instead.
+    const anyYearHas = (key) => yearsToShow.some(year => (estimates[year]?.[key] || 0) > 0);
+    // Rate for a coat across the displayed years: one value when uniform,
+    // otherwise "1.5 / 2 / 2.5" in tier order (0 means not applied at that tier).
+    const coatRate = (rateKey) => {
+      const ratesByYear = yearsToShow.map(yr => estimates[yr]?.rates?.[rateKey] || 0);
+      if (!ratesByYear.some(r => r > 0)) return '';
+      const allSame = ratesByYear.every(r => r === ratesByYear[0]);
+      return allSame ? `${ratesByYear[0]}` : ratesByYear.join(' / ');
+    };
 
-      // Adjustment factors (single-section)
-      if (!useMultiSection) {
-        const wf = parseFloat(inputs.wasteFactor) || 0;
-        const sf = parseFloat(inputs.stretchFactor) || 0;
-        if (wf > 0 || sf > 0) {
-          const factors = [];
-          if (wf > 0) factors.push(`Waste: ${Math.round(wf * 100)}%`);
-          if (sf > 0) factors.push(`Stretch: ${Math.round(sf * 100)}%`);
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'italic');
-          doc.setTextColor(...colors.muted);
-          doc.text(`Adjustment factors applied: ${factors.join(', ')}`, margin, yPos);
-          doc.setTextColor(...colors.text);
-          yPos += 6;
-        }
-      }
+    const items = [];
+    let unpricedCount = 0;
+    // perYear: [{ qty, unit }] per displayed year; price is the distributor's input price.
+    const addItem = ({ name, product, rate = '', price = 0, unit, perYear, priced = true, sharedPrice = false }) => {
+      const hasQty = perYear.some(c => c.qty > 0);
+      const missingPrice = priced && hasPrices && hasQty && !(price > 0) && !sharedPrice;
+      if (missingPrice) unpricedCount++;
+      items.push({ name, product, rate, price, unit, perYear, priced, missingPrice });
+    };
+    const tierQty = (field, unit) => yearsToShow.map(yr => ({ qty: estimates[yr]?.[field] || 0, unit }));
+    const sameQty = (qty, unit) => yearsToShow.map(() => ({ qty, unit }));
 
-      // Warning for missing linear feet
-      if (inputs.linearFeet <= 0) {
-        const warnHeight = (inputs.roofType === 'Metal' && commonResults.screwBuckets > 0) ? 24 : 18;
-        yPos = ensureSpace(yPos, warnHeight + 4);
-        doc.setFillColor(255, 247, 237);
-        doc.setDrawColor(...colors.warning);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(margin, yPos, contentWidth, warnHeight, 2, 2, 'FD');
-        doc.setTextColor(...colors.warning);
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.text('WARNING: INCOMPLETE QUOTE', margin + 4, yPos + 7);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...colors.text);
-        doc.text('Missing Linear Feet — required to calculate butter grade (seam sealant) quantity.', margin + 4, yPos + 13);
-        if (inputs.roofType === 'Metal' && commonResults.screwBuckets > 0) {
-          doc.setFontSize(8);
-          doc.text(`(Fastener encapsulation for ~${commonResults.screwCount} screws IS included based on roof area.)`, margin + 4, yPos + 19);
-        }
-        doc.setLineWidth(0.2);
-        yPos += warnHeight + 4;
+    if (inputs.coatingSystem !== 'Aluminum' && anyYearHas('baseGal')) {
+      addItem({ name: 'Basecoat', product: inputs.selectedBasecoat, rate: coatRate('base'), price: prices.basecoat, unit: 'gal', perYear: tierQty('baseGal', 'gal') });
+    }
+    ['top1Gal', 'top2Gal', 'top3Gal'].forEach((field, i) => {
+      if (anyYearHas(field)) {
+        const stripeGal = Math.ceil(estimates['10']?.seamStripeGal || estimates['15']?.seamStripeGal || 0);
+        const stripeNote = i === 0 && commonResults.seamStripe && stripeGal > 0 ? ` · incl. ~${stripeGal} gal seam stripe on 10 & 15-yr` : '';
+        addItem({ name: `Topcoat, coat ${i + 1}`, product: `${inputs.selectedTopcoat}${stripeNote}`, rate: coatRate(`top${i + 1}`), price: prices.topcoat, unit: 'gal', perYear: tierQty(field, 'gal'), sharedPrice: i > 0 });
       }
+    });
+    let spotPrime = false;
+    if (anyYearHas('rustPrimerGal')) {
+      addItem({ name: 'Rust primer', product: `${pdfPrimers.rust} · 5-gal pails`, rate: '0.5', price: prices.rustPrimer, unit: 'gal', perYear: tierQty('rustPrimerGal', 'gal') });
+    } else if (inputs.hasRust && inputs.rustPrimeMethod === 'spot'
+               && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
+               && inputs.roofType === 'Metal') {
+      // Spot-prime: no field calculation, but the contractor still needs the instruction.
+      spotPrime = true;
+      items.push({ name: 'Rust primer', product: `${pdfPrimers.rust} · ${SPOT_PRIME_NOTE}`, rate: 'Spot prime', price: 0, unit: '', perYear: yearsToShow.map(() => ({ text: 'As needed' })), priced: false });
+    }
+    if (anyYearHas('adhesionPrimerGal')) {
+      addItem({ name: 'Adhesion primer', product: `${pdfPrimers.adhesion} · 1-gal containers`, rate: '0.2', price: prices.adhesionPrimer, unit: 'gal', perYear: tierQty('adhesionPrimerGal', 'gal') });
+    }
+    const coatingItemCount = items.length;
 
-      // Materials Breakdown
-      yPos = ensureSpace(yPos, 40);
-      yPos = drawSectionHeader('Materials Breakdown', yPos);
-
-      const tableData = [];
-      const TOTAL_GALLONS_LABEL = 'Total System Gallons';
-      const buildRow = (product, description, priceUnit, rateText, galsByYear) => {
-        const row = [product, description];
-        if (showPriceUnit) row.push(priceUnit);
-        if (showRates) row.push(rateText);
-        galsByYear.forEach(g => row.push(g));
-        return row;
-      };
-
-      // A material row must be shown if ANY warranty year on the PDF calls for it.
-      // Acrylic systems add coats at higher warranty tiers (e.g. Topcoat 2/3 only
-      // appear at 15/20-yr), so gating on the 10-yr option alone would silently drop
-      // those coats from the PDF — even though their gallons are shown in the
-      // clipboard/on-screen exports. Check across every displayed year instead.
-      const anyYearHas = (key) => yearsToShow.some(year => (estimates[year]?.[key] || 0) > 0);
-      // Build the rate cell for a coat across the displayed years. When the rate is
-      // uniform we show a single value; otherwise we list it per-year (a 0 indicates
-      // the coat isn't applied at that tier), matching the gallon columns.
-      const coatRate = (rateKey) => {
-        const ratesByYear = yearsToShow.map(y => estimates[y]?.rates?.[rateKey] || 0);
-        if (!ratesByYear.some(r => r > 0)) return '';
-        const allSame = ratesByYear.every(r => r === ratesByYear[0]);
-        return allSame ? `${ratesByYear[0]} gal/sq` : ratesByYear.map((r, i) => `${yearsToShow[i]}yr: ${r}`).join('\n');
-      };
-
-      if (inputs.coatingSystem !== 'Aluminum' && anyYearHas('baseGal')) {
-        tableData.push(buildRow('Basecoat', inputs.selectedBasecoat, prices.basecoat > 0 ? `${formatCurrency(adj(prices.basecoat))}/gal` : '', coatRate('base'),
-          yearsToShow.map(year => `${estimates[year]?.baseGal || 0} gal`)));
-      }
-
-      if (anyYearHas('top1Gal')) {
-        tableData.push(buildRow('Topcoat 1', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', coatRate('top1'),
-          yearsToShow.map(year => `${estimates[year]?.top1Gal || 0} gal`)));
-      }
-      if (anyYearHas('top2Gal')) {
-        tableData.push(buildRow('Topcoat 2', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', coatRate('top2'),
-          yearsToShow.map(year => `${estimates[year]?.top2Gal || 0} gal`)));
-      }
-      if (anyYearHas('top3Gal')) {
-        tableData.push(buildRow('Topcoat 3', inputs.selectedTopcoat, prices.topcoat > 0 ? `${formatCurrency(adj(prices.topcoat))}/gal` : '', coatRate('top3'),
-          yearsToShow.map(year => `${estimates[year]?.top3Gal || 0} gal`)));
-      }
-      if (anyYearHas('rustPrimerGal')) {
-        tableData.push(buildRow('Rust Primer', pdfPrimers.rust, prices.rustPrimer > 0 ? `${formatCurrency(adj(prices.rustPrimer))}/gal` : '', '0.5 gal/sq',
-          yearsToShow.map(year => `${estimates[year]?.rustPrimerGal || 0} gal`)));
-      } else if (inputs.hasRust && inputs.rustPrimeMethod === 'spot'
-                 && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
-                 && inputs.roofType === 'Metal') {
-        // Spot-prime: no field calculation, but the contractor still needs the instruction.
-        tableData.push(buildRow('Rust Primer', `${pdfPrimers.rust} — ${SPOT_PRIME_NOTE}`, '', 'Spot prime',
-          yearsToShow.map(() => 'As needed')));
-      }
-      if (anyYearHas('adhesionPrimerGal')) {
-        tableData.push(buildRow('Adhesion Primer', pdfPrimers.adhesion, prices.adhesionPrimer > 0 ? `${formatCurrency(adj(prices.adhesionPrimer))}/gal` : '', '0.2 gal/sq',
-          yearsToShow.map(year => `${estimates[year]?.adhesionPrimerGal || 0} gal`)));
-      }
-      // Total coating + primer gallons per warranty year — mirrors the
-      // "TOTAL SYSTEM: X Gallons" line in the clipboard/on-screen exports so the
-      // PDF reports the full per-year gallon count for the system.
-      if (yearsToShow.some(year => (estimates[year]?.totalGallons || 0) > 0)) {
-        tableData.push(buildRow(TOTAL_GALLONS_LABEL, '', '', '',
-          yearsToShow.map(year => `${estimates[year]?.totalGallons || 0} gal`)));
-      }
+    const pdfSeamBuckets = yearsToShow.some(yr => (estimates[yr]?.seamBuckets || 0) > 0);
+    if (commonResults.seamStripe && (commonResults.accessoryQty > 0 || pdfSeamBuckets)) {
+      // Seams striped with topcoat on 10/15-year: penetrations on every tier, seams on 20-year
       if (commonResults.accessoryQty > 0) {
-        const priceUnit = prices.accessory > 0 ? `${formatCurrency(adj(prices.accessory))}/${commonResults.accessoryUnit}` : '';
-        // Quantity lives in the first year column; pad the rest to keep alignment.
-        const accCol = (qty) => yearsToShow.map((_, i) => i === 0 ? `${qty} ${commonResults.accessoryUnit}` : '');
-        // On metal roofs the seam sealer (butter grade) does double duty: sealing
-        // seams (billed by linear feet) and encapsulating fasteners (billed by roof
-        // area). Show those as separate line items so the split is explicit;
-        // otherwise it's a single accessory row.
-        if (commonResults.screwBuckets > 0) {
-          if (commonResults.linearBuckets > 0) {
-            tableData.push(buildRow('Seam Sealer (Seams)', `${commonResults.accessoryName} — by linear feet`, priceUnit, '', accCol(commonResults.linearBuckets)));
-          }
-          tableData.push(buildRow('Seam Sealer (Fastener Encapsulation)', `${commonResults.accessoryName} — encapsulates ~${commonResults.screwCount} fasteners`, priceUnit, '', accCol(commonResults.screwBuckets)));
-        } else {
-          tableData.push(buildRow('Accessories', commonResults.accessoryName, priceUnit, '', accCol(commonResults.accessoryQty)));
-        }
+        addItem({ name: 'Seam sealer, penetrations', product: `${commonResults.accessoryName} · ${commonResults.accessoryDesc}`, price: prices.accessory, unit: 'buckets', perYear: sameQty(commonResults.accessoryQty, 'buckets') });
       }
-      if (commonResults.fastenerCaulkTubes > 0) {
-        const priceUnit = prices.fastenerCaulk > 0 ? `${formatCurrency(adj(prices.fastenerCaulk))}/tube` : '';
-        const yearCols = [`${commonResults.fastenerCaulkTubes} Tubes`, '', ''];
-        tableData.push(buildRow('Fastener Caulk', `${FASTENER_CAULK_NAME} (~${FASTENERS_PER_CAULK_TUBE} fasteners/tube)`, priceUnit, '', yearCols));
-      }
-      if (commonResults.membraneRolls > 0) {
-        const yearCols = [`${commonResults.membraneRolls} rolls`, '', ''];
-        tableData.push(buildRow('Reinforcement Membrane', '40" x 324\' rolls', prices.membrane > 0 ? `${formatCurrency(adj(prices.membrane))}/roll` : '', '', yearCols));
-      }
-      if (inputs.goldseal) {
-        // The Goldseal warranty charge is derived from roof area, not from the
-        // per-gallon material prices, so it is a known dollar amount even when no
-        // material prices have been entered. Show that amount whenever we have it;
-        // only a distributor deliberately hiding their cost basis (margin hidden
-        // from exports) collapses it to "Included". Previously this was gated on
-        // showPriceUnit (material-price visibility), which wrongly printed
-        // "Included" for goldseal jobs that simply had no material prices entered.
-        const hideGoldsealCost = isDistributor && profitMargin > 0 && !showMarginInExports;
-        const yearCols = yearsToShow.map(year => {
-          const gc = estimates[year]?.goldsealCost || 0;
-          return (!hideGoldsealCost && gc > 0) ? formatCurrency(adj(gc)) : 'Included';
+      if (pdfSeamBuckets) {
+        addItem({
+          name: 'Seam sealer, seams', product: `${commonResults.accessoryName} · 20-year only; 10 & 15-yr seams striped with topcoat`,
+          price: prices.accessory, unit: 'buckets', sharedPrice: commonResults.accessoryQty > 0,
+          perYear: yearsToShow.map(yr => SEAM_STRIPE_TIERS.includes(yr) ? { text: 'Topcoat stripe' } : { qty: estimates[yr]?.seamBuckets || 0, unit: 'buckets' }),
         });
-        tableData.push(buildRow('Goldseal Warranty', '', '', '', yearCols));
       }
-
-      const headers = ['Product', 'Description'];
-      if (showPriceUnit) headers.push('Price/Unit');
-      if (showRates) headers.push('Rate');
-      headers.push(...yearsToShow.map(y => `${y}-Year`));
-
-      const colStyles = {
-        0: { fontStyle: 'bold', cellWidth: 30, textColor: colors.primary },
-        1: { cellWidth: 'auto' }
-      };
-      let colIdx = 2;
-      if (showPriceUnit) {
-        colStyles[colIdx] = { cellWidth: 22, halign: 'right' };
-        colIdx++;
+    } else if (commonResults.accessoryQty > 0) {
+      const accUnit = (commonResults.accessoryUnit || '').toLowerCase();
+      // On metal roofs the seam sealer (butter grade) does double duty: sealing
+      // seams (by linear feet) and encapsulating fasteners (by roof area). Show
+      // those as separate line items so the split is explicit.
+      if (commonResults.screwBuckets > 0) {
+        if (commonResults.linearBuckets > 0) {
+          addItem({ name: inputs.penetrationsLF > 0 ? 'Seam sealer, seams & penetrations' : 'Seam sealer, seams', product: `${commonResults.accessoryName} · by linear feet`, price: prices.accessory, unit: accUnit, perYear: sameQty(commonResults.linearBuckets, accUnit) });
+        }
+        addItem({ name: 'Seam sealer, fasteners', product: `${commonResults.accessoryName} · ~${(commonResults.screwCount || 0).toLocaleString()} fasteners`, price: prices.accessory, unit: accUnit, perYear: sameQty(commonResults.screwBuckets, accUnit), sharedPrice: commonResults.linearBuckets > 0 });
+      } else {
+        addItem({ name: commonResults.accessoryName || 'Accessories', product: commonResults.accessoryDesc || '', price: prices.accessory, unit: accUnit, perYear: sameQty(commonResults.accessoryQty, accUnit) });
       }
+    }
+    if (commonResults.fastenerCaulkTubes > 0) {
+      addItem({ name: 'Fastener caulk', product: `${FASTENER_CAULK_NAME} · ~${FASTENERS_PER_CAULK_TUBE} fasteners/tube`, price: prices.fastenerCaulk, unit: 'tubes', perYear: sameQty(commonResults.fastenerCaulkTubes, 'tubes') });
+    }
+    if (commonResults.membraneRolls > 0) {
+      addItem({ name: 'Reinforcement membrane', product: `40" × 324' rolls`, price: prices.membrane, unit: 'rolls', perYear: sameQty(commonResults.membraneRolls, 'rolls') });
+    }
+
+    const unitPriceLabel = (unit) => ({ gal: 'gal', buckets: 'bucket', tubes: 'tube', rolls: 'roll' }[unit] || unit);
+    const nonTierCols = 1 + (showRates ? 1 : 0) + (showPriceUnit ? 1 : 0);
+    const body = [];
+    const subs = {};
+    const rowKinds = [];
+    const pushRow = (cells, kind = 'item', rowSubs = {}) => {
+      const r = body.length;
+      body.push(cells);
+      rowKinds.push(kind);
+      Object.entries(rowSubs).forEach(([col, sub]) => { if (sub) subs[`${r}:${col}`] = sub; });
+    };
+    const tierStart = nonTierCols;
+
+    const itemRow = (it) => {
+      const cells = [it.name];
+      const rowSubs = { 0: it.product ? { text: it.product } : null };
       if (showRates) {
-        colStyles[colIdx] = { cellWidth: 22, fontSize: 8, halign: 'center' };
-        colIdx++;
+        cells.push(it.rate || '');
+        if (it.rate && it.unit === 'gal') rowSubs[cells.length - 1] = { text: 'gal/sq' };
       }
-      // Year columns right-aligned
-      yearsToShow.forEach(() => { colStyles[colIdx] = { halign: 'right' }; colIdx++; });
-
-      autoTable(doc, {
-        startY: yPos,
-        head: [headers],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: colors.primary, textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
-        styles: { fontSize: 9, cellPadding: 3 },
-        alternateRowStyles: { fillColor: colors.bgSoft },
-        columnStyles: colStyles,
-        margin: { left: margin, right: margin },
-        // Emphasize the per-year total-gallons summary row.
-        didParseCell: (data) => {
-          if (data.section === 'body' && data.row.raw && data.row.raw[0] === TOTAL_GALLONS_LABEL) {
-            data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.fillColor = colors.light;
-            data.cell.styles.textColor = colors.primary;
-          }
-        },
-      });
-      yPos = doc.lastAutoTable.finalY + 8;
-
-      // Per-Unit Pricing Reference (contractor mode only) — surfaces the
-      // contractor's per-gallon/tube/roll price clearly so they can spot-check.
-      if (isContractor && hasPrices) {
-        const accUnitLabel = commonResults.accessoryUnit
-          ? (commonResults.accessoryUnit === 'Buckets' ? 'bucket' : 'roll')
-          : 'unit';
-        const perUnitRows = [
-          { label: 'Basecoat', subtitle: inputs.selectedBasecoat, unit: 'gal', cost: prices.basecoat, show: inputs.coatingSystem !== 'Aluminum' && anyYearHas('baseGal') },
-          { label: 'Topcoat', subtitle: inputs.selectedTopcoat, unit: 'gal', cost: prices.topcoat, show: anyYearHas('top1Gal') || anyYearHas('top2Gal') || anyYearHas('top3Gal') },
-          { label: 'Rust Primer', subtitle: pdfPrimers.rust, unit: 'gal', cost: prices.rustPrimer, show: anyYearHas('rustPrimerGal') },
-          { label: 'Adhesion Primer', subtitle: pdfPrimers.adhesion, unit: 'gal', cost: prices.adhesionPrimer, show: anyYearHas('adhesionPrimerGal') },
-          { label: commonResults.accessoryName || 'Accessories', subtitle: '', unit: accUnitLabel, cost: prices.accessory, show: commonResults.accessoryQty > 0 },
-          { label: 'Fastener Caulk', subtitle: FASTENER_CAULK_NAME, unit: 'tube', cost: prices.fastenerCaulk, show: commonResults.fastenerCaulkTubes > 0 },
-          { label: 'Reinforcement Membrane', subtitle: '40" x 324\' rolls', unit: 'roll', cost: prices.membrane, show: commonResults.membraneRolls > 0 },
-        ].filter(r => r.show && r.cost > 0);
-
-        if (perUnitRows.length > 0) {
-          yPos = ensureSpace(yPos, perUnitRows.length * 7 + 18);
-          yPos = drawSectionHeader('Per-Unit Pricing', yPos);
-          autoTable(doc, {
-            startY: yPos,
-            head: [['Material', 'Product', 'Your Price']],
-            body: perUnitRows.map(r => [
-              r.label,
-              r.subtitle,
-              `${formatCurrency(adj(r.cost))} / ${r.unit}`,
-            ]),
-            theme: 'striped',
-            headStyles: { fillColor: colors.primary, textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
-            styles: { fontSize: 9, cellPadding: 3 },
-            alternateRowStyles: { fillColor: colors.bgSoft },
-            columnStyles: {
-              0: { fontStyle: 'bold', cellWidth: 45, textColor: colors.primary },
-              1: { cellWidth: 'auto', textColor: colors.muted },
-              2: { cellWidth: 38, halign: 'right', fontStyle: 'bold' },
-            },
-            margin: { left: margin, right: margin },
-          });
-          yPos = doc.lastAutoTable.finalY + 8;
+      if (showPriceUnit) {
+        const col = cells.length;
+        if (!it.priced) {
+          cells.push('');
+        } else if (it.price > 0) {
+          cells.push(formatCurrency(adj(it.price)));
+          rowSubs[col] = { text: `per ${unitPriceLabel(it.unit)}` };
+        } else {
+          cells.push('—');
+          if (it.missingPrice) rowSubs[col] = { text: 'No price', tone: 'warn' };
         }
       }
+      it.perYear.forEach((c, i) => {
+        const col = tierStart + i;
+        if (c.text) { cells.push(c.text); return; }
+        cells.push(c.qty > 0 ? `${fmtNum(c.qty)} ${c.unit}` : '—');
+        if (c.qty > 0 && it.price > 0) rowSubs[col] = { text: formatCurrency(lineCost(c.qty, it.price)) };
+      });
+      pushRow(cells, 'item', rowSubs);
+    };
 
-      // Pricing Summary
-      if (hasPrices) {
-        yPos = ensureSpace(yPos, 40);
-        yPos = drawSectionHeader('Pricing Summary', yPos);
+    items.slice(0, coatingItemCount).forEach(itemRow);
 
-        // Distributor mode honors the showMarginInExports toggle (which can hide
-        // its own line items). Contractor mode always shows line items priced
-        // for the contractor — that's the whole point.
-        const hidePdfLineCosts = isDistributor && profitMargin > 0 && !showMarginInExports;
+    // Total coatings (gallons, and cost when line costs are shown)
+    if (yearsToShow.some(yr => (estimates[yr]?.totalGallons || 0) > 0)) {
+      const cells = [{ content: 'Total coatings', colSpan: nonTierCols }];
+      const rowSubs = {};
+      yearsToShow.forEach((yr, i) => {
+        const est = estimates[yr] || {};
+        cells.push(`${fmtNum(est.totalGallons)} gal`);
+        const coatCost = r2(items.slice(0, coatingItemCount).reduce((sum, it) => sum + lineCost(it.perYear[i]?.qty || 0, it.price), 0));
+        if (coatCost > 0) rowSubs[tierStart + i] = { text: formatCurrency(coatCost) };
+      });
+      pushRow(cells, 'subtotal', rowSubs);
+    }
 
-        yearsToShow.forEach((year, idx) => {
-          const est = estimates[year];
-          if (!est) return;
+    items.slice(coatingItemCount).forEach(itemRow);
 
-          // Cost basis (distributor's input prices)
-          const baseCost = (est.baseGal || 0) * prices.basecoat;
-          const top1Cost = (est.top1Gal || 0) * prices.topcoat;
-          const top2Cost = (est.top2Gal || 0) * prices.topcoat;
-          const top3Cost = (est.top3Gal || 0) * prices.topcoat;
-          const adhesionCost = (est.adhesionPrimerGal || 0) * prices.adhesionPrimer;
-          const rustCost = (est.rustPrimerGal || 0) * prices.rustPrimer;
-          const accessoryCost = (commonResults.accessoryQty || 0) * prices.accessory;
-          const membraneCost = (commonResults.membraneRolls || 0) * prices.membrane;
-          const fastenerCaulkCost = (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk;
-          const goldsealCost = est.goldsealCost || 0;
-          const grandTotal = baseCost + top1Cost + top2Cost + top3Cost + adhesionCost + rustCost + accessoryCost + membraneCost + fastenerCaulkCost + goldsealCost;
+    if (inputs.goldseal) {
+      // The Goldseal warranty charge is derived from roof area, not from the
+      // per-gallon material prices, so it is a known dollar amount even when no
+      // material prices have been entered.
+      const cells = ['Goldseal warranty'];
+      if (showRates) cells.push('');
+      if (showPriceUnit) cells.push('');
+      yearsToShow.forEach(yr => {
+        const gc = estimates[yr]?.goldsealCost || 0;
+        cells.push(gc > 0 ? formatCurrency(r2(adj(gc))) : 'Included');
+      });
+      pushRow(cells, 'item', { 0: { text: 'Manufacturer warranty, priced per term' } });
+    }
 
-          // Build per-line rows (only if showing line costs). In contractor mode,
-          // each line is priced at the marked-up unit cost.
-          const lineRows = [];
-          if (!hidePdfLineCosts) {
-            if (inputs.coatingSystem !== 'Aluminum' && est.baseGal > 0 && prices.basecoat > 0)
-              lineRows.push(['Basecoat', `${est.baseGal} gal × ${formatCurrency(adj(prices.basecoat))}/gal`, formatCurrency(adj(baseCost))]);
-            if (est.top1Gal > 0 && prices.topcoat > 0)
-              lineRows.push(['Topcoat 1', `${est.top1Gal} gal × ${formatCurrency(adj(prices.topcoat))}/gal`, formatCurrency(adj(top1Cost))]);
-            if (est.top2Gal > 0 && prices.topcoat > 0)
-              lineRows.push(['Topcoat 2', `${est.top2Gal} gal × ${formatCurrency(adj(prices.topcoat))}/gal`, formatCurrency(adj(top2Cost))]);
-            if (est.top3Gal > 0 && prices.topcoat > 0)
-              lineRows.push(['Topcoat 3', `${est.top3Gal} gal × ${formatCurrency(adj(prices.topcoat))}/gal`, formatCurrency(adj(top3Cost))]);
-            if (est.rustPrimerGal > 0 && prices.rustPrimer > 0)
-              lineRows.push(['Rust Primer', `${est.rustPrimerGal} gal × ${formatCurrency(adj(prices.rustPrimer))}/gal`, formatCurrency(adj(rustCost))]);
-            if (est.adhesionPrimerGal > 0 && prices.adhesionPrimer > 0)
-              lineRows.push(['Adhesion Primer', `${est.adhesionPrimerGal} gal × ${formatCurrency(adj(prices.adhesionPrimer))}/gal`, formatCurrency(adj(adhesionCost))]);
-            if (commonResults.accessoryQty > 0 && prices.accessory > 0) {
-              const unitPrice = formatCurrency(adj(prices.accessory));
-              // Mirror the Materials Breakdown split: seams vs. fastener encapsulation.
-              if (commonResults.screwBuckets > 0) {
-                if (commonResults.linearBuckets > 0)
-                  lineRows.push(['Seam Sealer (Seams)', `${commonResults.linearBuckets} ${commonResults.accessoryUnit} × ${unitPrice}`, formatCurrency(adj(commonResults.linearBuckets * prices.accessory))]);
-                lineRows.push(['Seam Sealer (Fasteners)', `${commonResults.screwBuckets} ${commonResults.accessoryUnit} × ${unitPrice}`, formatCurrency(adj(commonResults.screwBuckets * prices.accessory))]);
-              } else {
-                lineRows.push(['Accessories', `${commonResults.accessoryQty} ${commonResults.accessoryUnit} × ${unitPrice}`, formatCurrency(adj(accessoryCost))]);
-              }
-            }
-            if (commonResults.fastenerCaulkTubes > 0 && prices.fastenerCaulk > 0)
-              lineRows.push(['Fastener Caulk', `${commonResults.fastenerCaulkTubes} tubes × ${formatCurrency(adj(prices.fastenerCaulk))}/tube`, formatCurrency(adj(fastenerCaulkCost))]);
-            if (commonResults.membraneRolls > 0 && prices.membrane > 0)
-              lineRows.push(['Membrane', `${commonResults.membraneRolls} rolls × ${formatCurrency(adj(prices.membrane))}`, formatCurrency(adj(membraneCost))]);
-            if (goldsealCost > 0)
-              lineRows.push(['Goldseal Warranty', '', formatCurrency(adj(goldsealCost))]);
-          }
+    // Totals at the foot of the table
+    if (hasPrices) {
+      const perSqFt = (v) => inputs.roofSizeSqFt > 0 ? formatCurrency(v / inputs.roofSizeSqFt) : null;
+      const totalRows = pdfTotalRows(perSqFt);
+      totalRows.filter(t => !(t.label.includes('sq ft') && !(inputs.roofSizeSqFt > 0))).forEach((t, i) => {
+        const cells = [{ content: t.label, colSpan: nonTierCols }, ...yearsToShow.map(yr => t.value(yr) || '')];
+        const kind = (i === 0 ? 'total-first' : (t.major ? 'total' : 'total-minor')) + (t.tone ? `:${t.tone}` : '');
+        const rowSubs = {};
+        if (i === 0 && unpricedCount > 0) rowSubs[0] = { text: `Excludes ${unpricedCount} unpriced item${unpricedCount > 1 ? 's' : ''}`, tone: 'warn' };
+        pushRow(cells, kind, rowSubs);
+      });
+    }
 
-          // Totals rows — contractor mode shows ONLY the marked-up total.
-          // Distributor mode preserves the existing breakdown behavior.
-          const totalRows = [];
-          if (isContractor) {
-            const contractorPrice = grandTotal * markupFactor;
-            totalRows.push(['Total', '', formatCurrency(contractorPrice)]);
-            if (inputs.roofSizeSqFt > 0) totalRows.push(['Total $/sq ft', '', formatCurrency(contractorPrice / inputs.roofSizeSqFt)]);
-          } else if (profitMargin > 0) {
-            const sellPrice = grandTotal / (1 - profitMargin / 100);
-            if (showMarginInExports) {
-              totalRows.push(['Distributor Cost', '', formatCurrency(grandTotal)]);
-              if (inputs.roofSizeSqFt > 0) totalRows.push(['Distributor $/sq ft', '', formatCurrency(grandTotal / inputs.roofSizeSqFt)]);
-              totalRows.push([`Contractor Price (${profitMargin}% margin)`, '', formatCurrency(sellPrice)]);
-              if (inputs.roofSizeSqFt > 0) totalRows.push(['Contractor $/sq ft', '', formatCurrency(sellPrice / inputs.roofSizeSqFt)]);
-              totalRows.push(['Margin', '', formatCurrency(sellPrice - grandTotal)]);
-            } else {
-              totalRows.push(['Total', '', formatCurrency(sellPrice)]);
-              if (inputs.roofSizeSqFt > 0) totalRows.push(['Total $/sq ft', '', formatCurrency(sellPrice / inputs.roofSizeSqFt)]);
-            }
-          } else {
-            totalRows.push(['Grand Total', '', formatCurrency(grandTotal)]);
-            if (inputs.roofSizeSqFt > 0) totalRows.push(['$/sq ft', '', formatCurrency(grandTotal / inputs.roofSizeSqFt)]);
-          }
-
-          const allRows = [...lineRows, ...totalRows];
-          const totalsStartIdx = lineRows.length;
-
-          yPos = ensureSpace(yPos, allRows.length * 6 + 14);
-          autoTable(doc, {
-            startY: yPos,
-            head: [[{ content: `${year}-Year System`, colSpan: 3, styles: { halign: 'left', fillColor: colors.primaryLight, textColor: 255, fontStyle: 'bold' } }]],
-            body: allRows,
-            theme: 'plain',
-            styles: { fontSize: 9, cellPadding: 2 },
-            columnStyles: {
-              0: { cellWidth: 50, fontStyle: 'bold' },
-              1: { cellWidth: 'auto', textColor: colors.muted },
-              2: { cellWidth: 32, halign: 'right' },
-            },
-            margin: { left: margin, right: margin },
-            didParseCell: (data) => {
-              if (data.section === 'body' && data.row.index >= totalsStartIdx) {
-                data.cell.styles.fillColor = colors.bgHero;
-                data.cell.styles.fontStyle = 'bold';
-                if (data.column.index === 2) data.cell.styles.textColor = colors.primary;
-              }
-            },
-          });
-          yPos = doc.lastAutoTable.finalY + 6;
-        });
-      }
+    y = ensureSpace(y, 120);
+    y = sectionTitle('Materials', y + 6, 'Quantities rounded up to full containers');
+    const head = [['Product']];
+    if (showRates) head[0].push('Rate');
+    if (showPriceUnit) head[0].push('Unit price');
+    head[0].push(...yearsToShow.map(yr => `${yr}-year`));
+    const fixedWidths = [
+      ...(showRates ? [62] : []),
+      ...(showPriceUnit ? [64] : []),
+      ...yearsToShow.map(() => (yearsToShow.length === 1 ? 110 : 74)),
+    ];
+    const widths = [contentWidth - fixedWidths.reduce((a, b) => a + b, 0), ...fixedWidths];
+    const columnStyles = {};
+    widths.forEach((w, i) => { columnStyles[i] = { cellWidth: w, halign: i === 0 ? 'left' : 'right' }; });
+    if (showRates) columnStyles[1].textColor = C.ink2;
+    y = plainTable({ y, head, body, columnStyles, subs, rowKinds, widths });
+    y += 14;
+    if (spotPrime) {
+      setText(8.5, 'normal', C.ink3);
+      doc.text(`Rust primer is spot prime only: ${SPOT_PRIME_NOTE}. No field quantity calculated.`, margin, y);
+      y += 14;
     }
 
     // ============================================================
@@ -1841,134 +2017,66 @@ export default function App() {
     // ============================================================
     const energySavingsForPDF = showEnergySavings ? calculateEnergySavingsForExport(energyElectricityRate) : null;
     if (energySavingsForPDF) {
-      yPos = ensureSpace(yPos, 80);
-      yPos = drawSectionHeader('Energy Savings Estimate', yPos);
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      doc.text('Converting to a reflective white coating can meaningfully reduce cooling costs.', margin, yPos);
-      yPos += 6;
-
-      // --- Three highlight cards: Annual Savings, Energy Reduction, Peak Cooling ---
-      const cardGap = 4;
-      const cardW = (contentWidth - cardGap * 2) / 3;
-      const cardH = 22;
-      const highlightCards = [
-        { label: 'Annual Savings', value: `$${energySavingsForPDF.annualSavingsLow.toLocaleString()} - $${energySavingsForPDF.annualSavingsHigh.toLocaleString()}`, sub: 'per year' },
-        { label: 'Energy Reduction', value: `${energySavingsForPDF.annualKwhSavings.toLocaleString()} kWh`, sub: 'per year' },
-        { label: 'Peak Cooling', value: `${energySavingsForPDF.tonsOfCooling} Tons`, sub: 'of AC offset' },
-      ];
-      highlightCards.forEach((card, i) => {
-        const x = margin + i * (cardW + cardGap);
-        doc.setFillColor(...colors.bgHero);
-        doc.roundedRect(x, yPos, cardW, cardH, 2, 2, 'F');
-        doc.setFillColor(...colors.success);
-        doc.rect(x, yPos, cardW, 1.5, 'F');
-        doc.setTextColor(...colors.muted);
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.text(card.label.toUpperCase(), x + cardW / 2, yPos + 6, { align: 'center' });
-        doc.setTextColor(...colors.primary);
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.text(card.value, x + cardW / 2, yPos + 13, { align: 'center' });
-        doc.setTextColor(...colors.muted);
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'normal');
-        doc.text(card.sub, x + cardW / 2, yPos + 18, { align: 'center' });
-      });
-      yPos += cardH + 8;
-
-      // --- Long-term ROI table ---
-      yPos = ensureSpace(yPos, 40);
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...colors.text);
-      doc.text('Long-Term ROI (Warranty Periods)', margin, yPos);
-      yPos += 3;
-      autoTable(doc, {
-        startY: yPos,
-        head: [['Period', 'Estimated Cumulative Savings']],
+      const e = energySavingsForPDF;
+      y = ensureSpace(y + 10, 200);
+      y = sectionTitle('Energy savings estimate', y, `${e.regionName} · climate zone ${e.climateZone}`);
+      y = plainTable({
+        y,
+        head: [['', '']],
         body: [
-          ['10-Year Window', `$${energySavingsForPDF.roi10Year.toLocaleString()}`],
-          ['15-Year Window', `$${energySavingsForPDF.roi15Year.toLocaleString()}`],
-          ['20-Year Window', `$${energySavingsForPDF.roi20Year.toLocaleString()}`],
+          ['Annual savings', `$${e.annualSavingsLow.toLocaleString()} – $${e.annualSavingsHigh.toLocaleString()}`],
+          ['Energy reduction', `${e.annualKwhSavings.toLocaleString()} kWh per year`],
+          ['Peak cooling offset', `${e.tonsOfCooling} tons of AC`],
+          ['Cumulative savings, 10-year', `$${e.roi10Year.toLocaleString()}`],
+          ['Cumulative savings, 15-year', `$${e.roi15Year.toLocaleString()}`],
+          ['Cumulative savings, 20-year', `$${e.roi20Year.toLocaleString()}`],
         ],
-        theme: 'striped',
-        headStyles: { fillColor: colors.success, textColor: 255, fontStyle: 'bold', fontSize: 9 },
-        styles: { fontSize: 9, cellPadding: 3 },
-        alternateRowStyles: { fillColor: colors.bgSoft },
-        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60 }, 1: { halign: 'right' } },
-        margin: { left: margin, right: margin },
-      });
-      yPos = doc.lastAutoTable.finalY + 8;
+        columnStyles: { 1: { halign: 'right', cellWidth: 180 } },
+      }) + 8;
+      setText(8, 'normal', C.ink3);
+      doc.text('Cumulative savings assume a 3% annual electricity rate increase.', margin, y);
+      y += 20;
 
-      // --- Assumptions table (this is the section the user said looked off) ---
-      yPos = ensureSpace(yPos, 60);
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...colors.text);
-      doc.text('Calculation Assumptions', margin, yPos);
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'italic');
-      doc.setTextColor(...colors.muted);
-      doc.text('(highly conservative)', margin + doc.getTextWidth('Calculation Assumptions') + 3, yPos);
-      yPos += 3;
-
+      y = ensureSpace(y, 130);
+      setText(8, 'bold', C.ink3);
+      doc.text('Assumptions (highly conservative)', margin, y);
+      y += 13;
       const assumptionRows = [
-        ['Reflectivity Change', `${energySavingsForPDF.beforeRoof} to ${energySavingsForPDF.afterRoof} (+${energySavingsForPDF.deltaReflectance}%)`],
-        ['Climate Region', `${energySavingsForPDF.regionName} (Zone ${energySavingsForPDF.climateZone})`],
-        ['Cooling Degree Days', `${energySavingsForPDF.cdd.toLocaleString()}`],
-        ['Solar Radiation', `${energySavingsForPDF.solarRadiation} kWh/m²/year`],
-        ['HVAC Efficiency', 'SEER 13 (typical commercial)'],
-        ['Electricity Rate', `$${energyElectricityRate}/kWh`],
-        ['Conservative Factors', `Cooling season ${energySavingsForPDF.coolingSeasonPct}%, building reality 40%, heat transfer 35%`],
-        ['Industry Range Target', 'Low end of $0.25 - $0.75 per sq ft / year'],
-        ['ROI Escalation', '3% annual electricity rate increase'],
+        ['Reflectivity change', `${e.beforeRoof} to ${e.afterRoof} (+${e.deltaReflectance}%)`],
+        ['Climate', `${e.cdd.toLocaleString()} cooling degree days · ${e.solarRadiation} kWh/m²/yr solar radiation`],
+        ['HVAC efficiency', 'SEER 13 (typical commercial)'],
+        ['Electricity rate', `$${energyElectricityRate}/kWh`],
+        ['Conservative factors', `Cooling season ${e.coolingSeasonPct}%, building reality 40%, heat transfer 35%`],
+        ['Industry range target', 'Low end of $0.25 – $0.75 per sq ft per year'],
       ];
-
-      autoTable(doc, {
-        startY: yPos,
-        body: assumptionRows,
-        theme: 'plain',
-        styles: { fontSize: 8, cellPadding: 2, textColor: colors.text },
-        columnStyles: {
-          0: { fontStyle: 'bold', cellWidth: 50, textColor: colors.muted },
-          1: { cellWidth: 'auto' },
-        },
-        margin: { left: margin, right: margin },
+      assumptionRows.forEach(([k, v]) => {
+        setText(8.5, 'normal', C.ink3);
+        doc.text(k, margin, y);
+        setText(8.5, 'normal', C.ink2);
+        doc.text(v, margin + 120, y);
+        y += 12;
       });
-      yPos = doc.lastAutoTable.finalY + 5;
-
-      // Source line
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'italic');
-      doc.setTextColor(...colors.muted);
-      const sourceText = `Source: DOE / LBNL Cool Roof Calculator and ASHRAE 90.1. Actual savings vary by building characteristics, HVAC efficiency, occupancy patterns, and weather conditions.`;
-      const sourceSplit = doc.splitTextToSize(sourceText, contentWidth);
-      doc.text(sourceSplit, margin, yPos);
-      yPos += sourceSplit.length * 3 + 5;
-      doc.setTextColor(...colors.text);
+      y += 4;
+      setText(7.5, 'normal', C.ink3);
+      const sourceSplit = doc.splitTextToSize('Source: DOE / LBNL Cool Roof Calculator and ASHRAE 90.1. Actual savings vary by building characteristics, HVAC efficiency, occupancy patterns and weather conditions.', contentWidth);
+      doc.text(sourceSplit, margin, y);
+      y += sourceSplit.length * 10 + 8;
     }
 
     // ============================================================
-    // DISCLAIMER
+    // TERMS
     // ============================================================
-    yPos = ensureSpace(yPos, 28);
-    doc.setFillColor(...colors.light);
-    doc.roundedRect(margin, yPos, contentWidth, 22, 2, 2, 'F');
-    doc.setTextColor(...colors.text);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.text('IMPORTANT DISCLAIMER', margin + 4, yPos + 5);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
     const disclaimerText = isContractor
       ? 'This quote is provided as a guideline and estimate. Material quantities are calculated from the dimensions and application rates shown above and may vary based on actual site conditions, measurements, and waste. Pricing valid for 30 days from quote date unless otherwise noted. Final approval of quantities rests with the purchaser.'
       : 'This quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements, and waste factors. The end-user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.';
-    const splitDisclaimer = doc.splitTextToSize(disclaimerText, contentWidth - 8);
-    doc.text(splitDisclaimer, margin + 4, yPos + 10);
+    setText(7.5, 'normal', C.ink3);
+    const splitDisclaimer = doc.splitTextToSize(disclaimerText, contentWidth * 0.72);
+    y = ensureSpace(y + 6, splitDisclaimer.length * 10 + 24);
+    setText(8, 'bold', C.ink2);
+    doc.text('Terms', margin, y);
+    y += 12;
+    setText(7.5, 'normal', C.ink3);
+    doc.text(splitDisclaimer, margin, y, { lineHeightFactor: 1.4 });
 
     // ============================================================
     // FOOTERS — render after all content so we know total page count
@@ -1976,18 +2084,12 @@ export default function App() {
     const totalPages = doc.getNumberOfPages();
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
-      doc.setFillColor(...colors.light);
-      doc.rect(0, pageHeight - 10, pageWidth, 10, 'F');
-      doc.setTextColor(...colors.muted);
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'italic');
-      doc.text(
-        isContractor ? 'Contractor Material Quote' : 'Internal Distributor Estimate',
-        margin, pageHeight - 4
-      );
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 4, { align: 'right' });
-      doc.setTextColor(...colors.text);
+      const fy = pageHeight - 36;
+      rule(fy - 12);
+      setText(7.5, 'normal', C.ink3);
+      const footLeft = [isContractor ? 'Contractor quote' : 'Distributor estimate · internal', inputs.projectName].filter(Boolean).join(' · ');
+      doc.text(footLeft, margin, fy);
+      doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, fy, { align: 'right' });
     }
 
     // Save
@@ -1996,6 +2098,7 @@ export default function App() {
       ? `${inputs.projectName.replace(/[^a-z0-9]/gi, '_')}${suffix}`
       : `Roofing${suffix}`;
     doc.save(fileName);
+    showToast(`${isContractor ? 'Contractor quote' : 'Distributor estimate'} PDF downloaded`);
   };
 
   const currentOptions = PRODUCT_OPTIONS[inputs.coatingSystem];
@@ -2017,22 +2120,36 @@ export default function App() {
       (commonResults.accessoryQty || 0) * prices.accessory +
       (commonResults.membraneRolls || 0) * prices.membrane +
       (commonResults.fastenerCaulkTubes || 0) * prices.fastenerCaulk +
+      (est.seamBuckets || 0) * prices.accessory +
       (est.goldsealCost || 0);
   });
+
+  // Sum of priced lines at a markup factor. Each line is quantity × a cents-rounded
+  // unit price, rounded to cents, so printed lines always add up to the printed total.
+  const pricedTotal = (year, factor = 1) => {
+    const est = estimates[year];
+    if (!est) return 0;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const line = (qty, price) => (qty > 0 && price > 0) ? r2(qty * r2(price * factor)) : 0;
+    return r2(line(est.baseGal, prices.basecoat) + line(est.top1Gal, prices.topcoat) + line(est.top2Gal, prices.topcoat)
+      + line(est.top3Gal, prices.topcoat) + line(est.adhesionPrimerGal, prices.adhesionPrimer) + line(est.rustPrimerGal, prices.rustPrimer)
+      + line(commonResults.accessoryQty, prices.accessory) + line(commonResults.membraneRolls, prices.membrane)
+      + line(commonResults.fastenerCaulkTubes, prices.fastenerCaulk) + line(est.seamBuckets || 0, prices.accessory)
+      + r2((est.goldsealCost || 0) * factor));
+  };
 
   // Validation error display helper
   const ValidationError = ({ field }) => {
     const err = validationErrors[field];
     if (!err) return null;
-    return <div className="text-xs text-red-600 mt-1 flex items-center gap-1"><AlertTriangle size={12} />{err}</div>;
+    return <div id={`err-${field}`} role="alert" className="text-xs text-red-700 mt-1.5 flex items-start gap-1"><AlertTriangle size={12} className="mt-px shrink-0" />{err}</div>;
   };
 
-  const inputBorder = (field) => validationErrors[field] ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300';
 
   // Available roof types for current coating system (used in multi-section)
   const getAvailableRoofTypes = () => {
     const types = ['Capsheet'];
-    if (inputs.coatingSystem !== 'Aluminum') types.push('Single-Ply');
+    if (inputs.coatingSystem !== 'Aluminum') types.push('Single-Ply', 'Previously Coated');
     if (inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard')) types.push('Sprayfoam');
     if (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') types.push('Metal');
     return types;
@@ -2050,13 +2167,13 @@ export default function App() {
         if (!q.estimates?.[year]) return null;
         const est = q.estimates[year];
         const p = q.prices || {};
-        const priceTotal = (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0) + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0) + ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) + ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) + ((q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0)) + (est.goldsealCost || 0);
+        const priceTotal = (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0) + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0) + ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) + ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) + ((q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0)) + (est.seamBuckets || 0) * (p.accessory || 0) + (est.goldsealCost || 0);
         return { priceTotal, gallons: est.totalGallons || 0, sqft: q.inputs.roofSizeSqFt || 0 };
       });
       if (yearData.every(d => d === null)) return;
       const hasPrices = yearData.some(d => d !== null && d.priceTotal > 0);
       if (hasPrices) {
-        rows.push({ label: `${year}-Year Total`, values: yearData.map(d => d === null ? 'N/A' : d.priceTotal === 0 ? 'No prices' : formatCurrency(d.priceTotal)) });
+        rows.push({ label: `${year}-Year Distributor Cost`, values: yearData.map(d => d === null ? 'N/A' : d.priceTotal === 0 ? 'No prices' : formatCurrency(d.priceTotal)) });
       }
       rows.push({ label: `${year}-Year Gallons`, values: yearData.map(d => d === null ? 'N/A' : d.gallons === 0 ? '-' : `${d.gallons} gal`) });
       if (hasPrices) {
@@ -2092,28 +2209,229 @@ export default function App() {
     doCopy(text);
   };
 
-  const downloadComparisonPDF = () => {
-    const { rows, headers } = getComparisonData();
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-    doc.setFontSize(16);
+  const downloadComparisonPDF = async () => {
+    const logos = await loadLogos();
+    const quotes = selectedForCompare.map(id => savedQuotes.find(sq => sq.id === id)).filter(Boolean);
+    const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 48;
+    const contentWidth = pageWidth - 2 * margin;
+    // Palette mirrors DESIGN.md (ink scale, hairlines, success for best-value marks)
+    const ink = [26, 31, 54], ink3 = [98, 108, 126], line = [227, 232, 238], lineStrong = [201, 209, 218], canvas = [246, 248, 250], success = [21, 128, 61];
+    const fmtDate = (q) => {
+      const [y, m, d] = (q.date || '').split('-').map(Number);
+      const date = y ? new Date(y, m - 1, d) : new Date(q.savedAt);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+    // Raw distributor prices, no margin (same basis as the on-screen comparison)
+    const costOf = (q, year) => {
+      const est = q.estimates?.[year];
+      if (!est) return null;
+      const p = q.prices || {};
+      return (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0)
+        + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0)
+        + (q.commonResults?.accessoryQty || 0) * (p.accessory || 0) + (q.commonResults?.membraneRolls || 0) * (p.membrane || 0)
+        + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.seamBuckets || 0) * (p.accessory || 0) + (est.goldsealCost || 0);
+    };
+
+    drawLogos(doc, logos, pageWidth - margin, margin);
     doc.setFont('helvetica', 'bold');
-    doc.text('Quote Comparison', pageWidth / 2, 20, { align: 'center' });
-    doc.setFontSize(9);
+    doc.setFontSize(22);
+    doc.setTextColor(...ink);
+    doc.text('Quote comparison', margin, margin + 16);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, 28, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setTextColor(...ink3);
+    doc.text(`${quotes.length} saved quotes · distributor cost, no margin · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`, margin, margin + 34);
+    doc.setDrawColor(...ink);
+    doc.setLineWidth(2);
+    doc.line(margin, margin + 46, pageWidth - margin, margin + 46);
+
+    const labelW = 150;
+    const valueW = (contentWidth - labelW) / quotes.length;
+    const head = [['', ...quotes.map(q => q.inputs.projectName || 'Untitled')]];
+    const columnStyles = { 0: { halign: 'left', cellWidth: labelW, textColor: ink3 } };
+    quotes.forEach((_, i) => { columnStyles[i + 1] = { cellWidth: valueW }; });
+    const base = {
+      theme: 'plain',
+      styles: { font: 'helvetica', fontSize: 9, textColor: ink, cellPadding: { top: 6, bottom: 6, left: 5, right: 5 }, halign: 'right', lineColor: line, lineWidth: { bottom: 0.5 } },
+      headStyles: { fontStyle: 'bold', textColor: ink, lineColor: lineStrong, lineWidth: { bottom: 0.75 } },
+      columnStyles,
+      margin: { left: margin, right: margin, bottom: 64 },
+    };
+    const edgePadding = (data) => {
+      if (data.column.index === 0) data.cell.styles.cellPadding = { ...data.cell.styles.cellPadding, left: 0 };
+      if (data.column.index === data.table.columns.length - 1) data.cell.styles.cellPadding = { ...data.cell.styles.cellPadding, right: 0 };
+    };
+
+    // Facts per quote
     autoTable(doc, {
-      startY: 35,
-      head: [['', ...headers]],
-      body: rows.map(row => [row.label, ...row.values]),
-      theme: 'grid',
-      headStyles: { fillColor: [37, 99, 235], fontStyle: 'bold', halign: 'center', fontSize: 9 },
-      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 40 } },
-      styles: { fontSize: 8, cellPadding: 3, halign: 'center' },
-      alternateRowStyles: { fillColor: [245, 247, 250] },
+      ...base,
+      startY: margin + 70,
+      head,
+      body: [
+        ['System', ...quotes.map(q => q.inputs.coatingSystem + (q.inputs.coatingSystem === 'Acrylic' ? ` (${q.inputs.acrylicSystemType.toLowerCase()})` : ''))],
+        ['Roof', ...quotes.map(q => `${q.inputs.roofType} · ${(q.inputs.roofSizeSqFt || 0).toLocaleString()} sq ft`)],
+        ['Customer', ...quotes.map(q => q.customerInfo?.name || q.customerInfo?.company || '—')],
+        ['Goldseal warranty', ...quotes.map(q => q.inputs.goldseal ? 'Yes' : 'No')],
+        ['Quote date', ...quotes.map(fmtDate)],
+      ],
+      didParseCell: edgePadding,
     });
+
+    // Tiers: cost, per sq ft, gallons; best values marked
+    const body = [];
+    const kinds = [];
+    const marks = {};
+    ['10', '15', '20'].forEach(year => {
+      const data = quotes.map(q => {
+        const est = q.estimates?.[year];
+        if (!est) return null;
+        const cost = costOf(q, year);
+        const sqft = q.inputs.roofSizeSqFt || 0;
+        return { cost, perSqFt: cost > 0 && sqft > 0 ? cost / sqft : null, gallons: est.totalGallons || 0 };
+      });
+      if (data.every(d => d === null)) return;
+      // A mark goes to a single winner only; ties carry no mark
+      const minOf = (key) => {
+        const vals = data.filter(d => d && d[key] > 0).map(d => d[key]);
+        if (vals.length < 2) return null;
+        const min = Math.min(...vals);
+        return vals.filter(v => v === min).length === 1 ? min : null;
+      };
+      const minCost = minOf('cost'), minSq = minOf('perSqFt'), minGal = minOf('gallons');
+      body.push([{ content: `${year}-year`, colSpan: quotes.length + 1 }]); kinds.push('group');
+      const priced = data.some(d => d && d.cost > 0);
+      if (priced) {
+        data.forEach((d, i) => { if (d && d.cost === minCost) marks[`${body.length}:${i + 1}`] = 'Best value'; });
+        body.push(['Distributor cost', ...data.map(d => d === null ? 'N/A' : d.cost > 0 ? formatCurrency(d.cost) : 'No prices')]); kinds.push('total');
+        data.forEach((d, i) => { if (d && d.perSqFt === minSq && minSq !== null) marks[`${body.length}:${i + 1}`] = 'Lowest'; });
+        body.push(['Per sq ft', ...data.map(d => d === null || d.perSqFt === null ? '—' : formatCurrency(d.perSqFt))]); kinds.push('item');
+      }
+      // Matches the screen: least material is marked only when no prices are entered
+      if (!priced) data.forEach((d, i) => { if (d && d.gallons === minGal && minGal !== null) marks[`${body.length}:${i + 1}`] = 'Least material'; });
+      body.push(['Coating gallons', ...data.map(d => d === null ? 'N/A' : d.gallons > 0 ? `${d.gallons.toLocaleString()} gal` : '—')]); kinds.push('item');
+    });
+
+    autoTable(doc, {
+      ...base,
+      startY: doc.lastAutoTable.finalY + 26,
+      head: [['', ...quotes.map(() => '')]],
+      showHead: 'never',
+      body,
+      didParseCell: (data) => {
+        edgePadding(data);
+        const kind = kinds[data.row.index];
+        if (kind === 'group') {
+          data.cell.styles.fillColor = canvas;
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.textColor = ink;
+          data.cell.styles.halign = 'left';
+        } else if (kind === 'total') {
+          data.cell.styles.fontStyle = 'bold';
+          if (data.column.index === 0) data.cell.styles.textColor = ink;
+        }
+        if (Object.keys(marks).some(k => k.startsWith(`${data.row.index}:`))) {
+          data.cell.styles.minCellHeight = 12 + 9 * 1.15 + 1.5 + 7.5 * 1.25;
+        }
+      },
+      didDrawCell: (data) => {
+        const mark = marks[`${data.row.index}:${data.column.index}`];
+        if (!mark) return;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...success);
+        const x = data.cell.x + data.cell.width - data.cell.padding('right');
+        doc.text(mark, x, data.cell.y + data.cell.padding('top') + 9 * 1.15 + 1.5, { align: 'right', baseline: 'top' });
+      },
+    });
+
+    const totalPages = doc.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setDrawColor(...line);
+      doc.setLineWidth(0.75);
+      doc.line(margin, pageHeight - 48, pageWidth - margin, pageHeight - 48);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...ink3);
+      doc.text('Quote comparison · internal, distributor cost', margin, pageHeight - 36);
+      doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 36, { align: 'right' });
+    }
     doc.save('quote-comparison.pdf');
+    showToast('Comparison PDF downloaded');
   };
+
+  // --- POPOVERS, SHORTCUTS, NAVIGATION ---
+  const savedBtnRef = useRef(null);
+  const moreBtnRef = useRef(null);
+  const issuesBtnRef = useRef(null);
+  const comparisonRef = useRef(null);
+
+  const closeSaved = () => { setShowSaved(false); setCompareMode(false); setSelectedForCompare([]); };
+
+  // Esc closes whichever layer is open and returns focus to its trigger; Ctrl/Cmd+S saves
+  const saveQuoteRef = useRef(saveQuote);
+  saveQuoteRef.current = saveQuote;
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveQuoteRef.current();
+        return;
+      }
+      if (e.key !== 'Escape') return;
+      if (showSaved) { closeSaved(); savedBtnRef.current?.focus(); }
+      else if (showMore) { setShowMore(false); moreBtnRef.current?.focus(); }
+      else if (showValidationSummary) { setShowValidationSummary(false); issuesBtnRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // Scroll to and focus the field behind a validation message
+  const jumpToField = (key) => {
+    setShowValidationSummary(false);
+    if (key === 'email' || key === 'phone') setShowCustomerInfo(true);
+    setTimeout(() => {
+      const el = document.querySelector(`[data-field="${key}"]`);
+      if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); }
+    }, 50);
+  };
+
+  // One-line summary for a saved quote: area, 15-year (or 10-year) cost, save time
+  const savedQuoteSummary = (q) => {
+    const tier = q.estimates?.['15'] ? '15' : '10';
+    const est = q.estimates?.[tier];
+    const p = q.prices || {};
+    const cost = est ? (est.baseGal || 0) * (p.basecoat || 0) + (est.top1Gal || 0) * (p.topcoat || 0) + (est.top2Gal || 0) * (p.topcoat || 0)
+      + (est.top3Gal || 0) * (p.topcoat || 0) + (est.adhesionPrimerGal || 0) * (p.adhesionPrimer || 0) + (est.rustPrimerGal || 0) * (p.rustPrimer || 0)
+      + (q.commonResults?.accessoryQty || 0) * (p.accessory || 0) + (q.commonResults?.membraneRolls || 0) * (p.membrane || 0)
+      + (q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0) + (est.seamBuckets || 0) * (p.accessory || 0) + (est.goldsealCost || 0) : 0;
+    return [
+      `${(q.inputs.roofSizeSqFt || 0).toLocaleString()} sq ft`,
+      cost > 0 ? `${formatCurrency(cost)} ${tier}-yr` : q.inputs.coatingSystem,
+    ].join(' · ');
+  };
+  const savedTime = (q) => new Date(q.savedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+  // Comparison opens directly under the top bar and takes focus
+  const openComparison = () => {
+    setShowComparison(true);
+    setShowSaved(false);
+    setTimeout(() => {
+      comparisonRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      comparisonRef.current?.focus({ preventScroll: true });
+    }, 50);
+  };
+
+  // Field wiring for errors: aria-invalid, described-by and a jump target
+  const fieldProps = (key) => ({
+    'data-field': key,
+    'aria-invalid': validationErrors[key] ? true : undefined,
+    'aria-describedby': validationErrors[key] ? `err-${key}` : undefined,
+  });
 
   // --- RENDER HELPERS ---
   // Plain render functions (not components) so inputs keep focus across re-renders.
@@ -2132,7 +2450,13 @@ export default function App() {
       (e.rustPrimerGal || 0) * prices.rustPrimer;
   };
   const isReinforced = inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Reinforced';
-  const showAccessory = inputs.linearFeet > 0 || (inputs.roofType === 'Metal' && (commonResults.screwBuckets > 0 || commonResults.fastenerCaulkTubes > 0));
+  const detailLF = (inputs.linearFeet || 0) + (inputs.penetrationsLF || 0);
+  const showAccessory = detailLF > 0 || (inputs.roofType === 'Metal' && (commonResults.screwBuckets > 0 || commonResults.fastenerCaulkTubes > 0));
+  // Topcoat-striped seams: penetrations stay a common butter-grade line; seams are butter grade on 20-year only
+  const seamStripeOn = !!commonResults.seamStripe;
+  const stripeGallons = Math.ceil(estimates['10']?.seamStripeGal || estimates['15']?.seamStripeGal || 0);
+  const hasSeamBuckets = tiers.some(y => (estimates[y]?.seamBuckets || 0) > 0);
+  const linearLabel = inputs.penetrationsLF > 0 ? (inputs.linearFeet > 0 ? 'seams and penetrations' : 'penetrations') : 'seams';
   const hasAccessoryRows = showAccessory || commonResults.fastenerCaulkTubes > 0 || isReinforced;
   const accUnitSingular = commonResults.accessoryUnit === 'Buckets' ? 'bucket' : 'roll';
   const roofTypeLabel = useMultiSection && roofSections.length > 0 ? [...new Set(roofSections.map(s => s.roofType))].join(' / ') : inputs.roofType;
@@ -2146,7 +2470,7 @@ export default function App() {
     { key: 'rustPrimer', show: estimates['10']?.rustPrimerGal > 0 },
     { key: 'adhesionPrimer', show: !inputs.passedAdhesion },
     { key: 'topcoat', show: tiers.some(y => estimates[y]?.top1Gal > 0) },
-    { key: 'accessory', show: showAccessory && (commonResults.accessoryQty > 0 || commonResults.screwBuckets > 0 || commonResults.linearBuckets > 0) },
+    { key: 'accessory', show: (showAccessory && (commonResults.accessoryQty > 0 || commonResults.screwBuckets > 0 || commonResults.linearBuckets > 0)) || hasSeamBuckets },
     { key: 'fastenerCaulk', show: commonResults.fastenerCaulkTubes > 0 },
     { key: 'membrane', show: isReinforced && commonResults.membraneRolls > 0 },
   ];
@@ -2156,6 +2480,18 @@ export default function App() {
   const leadTier = tiers.includes(mobileTier) ? mobileTier : '10';
   // On phones only the selected warranty tier column is shown
   const tierCls = (y) => (y === leadTier ? '' : 'hidden sm:table-cell');
+
+  // Application rate for a coat across the shown tiers: "1.5 gal/sq" or "1.5 / 2 / 2.5 gal/sq"
+  const rateText = (key) => {
+    const r = tiers.map(y => estimates[y]?.rates?.[key] || 0);
+    return `${r.every(v => v === r[0]) ? r[0] : r.join(' / ')} gal/sq`;
+  };
+
+  // Seam treatment choice shows when any roof (or roof section) is silicone over single-ply or capsheet
+  const qualifiesForStripe = (roofType) => inputs.coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet');
+  const seamTreatmentApplies = inputs.accessoryType === 'Butter Grade' && (useMultiSection && roofSections.length > 0
+    ? roofSections.some(sec => qualifiesForStripe(sec.roofType))
+    : qualifiesForStripe(inputs.roofType));
 
   const productCell = (name, detail, extra) => (
     <td className="sm:min-w-[190px]">
@@ -2176,13 +2512,14 @@ export default function App() {
           min="0"
           placeholder="0.00"
           aria-label={`Price per ${unit}`}
+          {...fieldProps(`price_${key}`)}
           value={prices[key] || ''}
           onChange={(e) => handlePriceChange(key, e.target.value)}
           className={`input input-sm num w-[76px] sm:w-[92px] pl-5 text-right ${isUnpriced(key) ? '!border-amber-400 bg-amber-50/60' : ''}`}
         />
       </div>
       <span className="hidden print-value num">{prices[key] > 0 ? formatCurrency(prices[key]) : '—'}</span>
-      <div className={`text-xs mt-1 num ${isUnpriced(key) ? 'text-amber-700' : 'text-ink-3'}`}>
+      <div className={`text-xs mt-1 num ${isUnpriced(key) ? 'text-amber-700' : profitMargin > 0 && prices[key] > 0 ? 'text-sell-700' : 'text-ink-3'}`}>
         {isUnpriced(key) ? 'No price' : profitMargin > 0 && prices[key] > 0 ? `sells at ${formatCurrency(prices[key] * marginFactor)}` : `per ${unit}`}
       </div>
     </td>
@@ -2198,7 +2535,7 @@ export default function App() {
           {price > 0 && <div className="text-xs text-ink-3 mt-0.5">{formatCurrency(qty * price)}</div>}
         </>
       ) : (
-        <span className="text-ink-4">—</span>
+        <span className="text-ink-3">—</span>
       )}
     </td>
   );
@@ -2238,43 +2575,65 @@ export default function App() {
               <span className="sm:hidden">Roofing Calculator</span>
               <span className="hidden sm:inline">Roofing Materials Calculator</span>
             </h1>
+            <span className="hidden md:inline text-xs text-ink-3 truncate" aria-live="polite">
+              {currentQuoteId ? (isDirty ? 'Unsaved changes' : 'All changes saved') : (hasContent ? 'Not saved yet' : '')}
+            </span>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
             {hasErrors && (
-              <button onClick={() => setShowValidationSummary(!showValidationSummary)} className="btn-ghost text-red-700 hover:text-red-800 hover:bg-red-50" aria-expanded={showValidationSummary}>
-                <AlertTriangle size={15} />
-                <span className="num">{Object.keys(validationErrors).length}</span>
-                <span className="hidden md:inline">issue{Object.keys(validationErrors).length > 1 ? 's' : ''}</span>
-              </button>
+              <div className="relative">
+                <button ref={issuesBtnRef} onClick={() => { setShowValidationSummary(!showValidationSummary); setShowSaved(false); setShowMore(false); }} className="btn-ghost text-red-700 hover:text-red-800 hover:bg-red-50" aria-expanded={showValidationSummary} aria-label={`${Object.keys(validationErrors).length} input issue${Object.keys(validationErrors).length > 1 ? 's' : ''}`}>
+                  <AlertTriangle size={15} />
+                  <span className="num">{Object.keys(validationErrors).length}</span>
+                  <span className="hidden md:inline">issue{Object.keys(validationErrors).length > 1 ? 's' : ''}</span>
+                </button>
+                {showValidationSummary && (
+                  <>
+                    <button className="fixed inset-0 z-40 cursor-default" aria-label="Close issues" tabIndex={-1} onClick={() => setShowValidationSummary(false)} />
+                    <div className="popover">
+                      <div className="px-3.5 py-2.5 border-b border-line text-[13px] font-semibold">Fix before sending</div>
+                      <ul className="py-1">
+                        {Object.entries(validationErrors).map(([key, msg]) => (
+                          <li key={key}>
+                            <button onClick={() => jumpToField(key)} className="w-full text-left flex items-start gap-2 px-3.5 py-2 text-[13px] text-ink-2 hover:bg-canvas">
+                              <AlertTriangle size={14} className="text-red-600 shrink-0 mt-0.5" /> {msg}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
             <div className="relative">
-              <button onClick={() => setShowSaved(!showSaved)} className="btn-secondary" aria-expanded={showSaved} aria-label="Saved quotes">
+              <button ref={savedBtnRef} onClick={() => { setShowSaved(!showSaved); setShowMore(false); setShowValidationSummary(false); }} className="btn-secondary" aria-expanded={showSaved} aria-label={`Saved quotes (${savedQuotes.length})`}>
                 <FileText size={15} />
                 <span className="hidden sm:inline">Saved</span>
-                <span className="num text-ink-3">{savedQuotes.length}</span>
+                {savedQuotes.length > 0 && <span className="num text-ink-3">{savedQuotes.length}</span>}
                 <ChevronDown size={14} className="text-ink-3" />
               </button>
               {showSaved && (
                 <>
-                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close saved quotes" onClick={() => { setShowSaved(false); setCompareMode(false); setSelectedForCompare([]); }} />
-                  <div className="absolute right-0 top-10 z-50 w-[340px] max-w-[calc(100vw-2rem)] panel shadow-pop overflow-hidden">
+                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close saved quotes" tabIndex={-1} onClick={closeSaved} />
+                  <div className="popover sm:w-[380px]" role="dialog" aria-label="Saved quotes">
                     <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-line">
                       <span className="text-[13px] font-semibold">Saved quotes</span>
                       {savedQuotes.length >= 2 && (
                         <button
                           onClick={() => { setCompareMode(!compareMode); setSelectedForCompare([]); }}
-                          className="text-[13px] font-medium text-accent-600 hover:text-accent-700"
+                          className="text-[13px] font-medium text-accent-600 hover:text-accent-700 min-h-[32px]"
                         >
                           {compareMode ? 'Cancel' : 'Compare…'}
                         </button>
                       )}
                     </div>
                     {savedQuotes.length === 0 ? (
-                      <p className="px-3.5 py-6 text-[13px] text-ink-3 text-center">No saved quotes yet. Use Save quote to keep this one.</p>
+                      <p className="px-3.5 py-6 text-[13px] text-ink-3 text-center">No saved quotes yet. Save keeps the open quote here.</p>
                     ) : (
-                      <ul className="max-h-80 overflow-y-auto divide-y divide-line">
+                      <ul className="max-h-[min(20rem,60vh)] overflow-y-auto divide-y divide-line">
                         {savedQuotes.map(quote => (
-                          <li key={quote.id} className="flex items-center gap-2 px-3.5 py-2 hover:bg-canvas">
+                          <li key={quote.id} className={`flex items-center gap-2 px-3.5 py-2 hover:bg-canvas ${quote.id === currentQuoteId ? 'bg-accent-50/60' : ''}`}>
                             {compareMode && (
                               <input
                                 type="checkbox"
@@ -2292,13 +2651,20 @@ export default function App() {
                               />
                             )}
                             <button
-                              onClick={() => { if (!compareMode) { loadQuote(quote); setShowSaved(false); showToast(`Loaded ${quote.inputs.projectName || 'untitled quote'}`); } }}
-                              className={`text-left flex-1 min-w-0 ${compareMode ? 'cursor-default' : ''}`}
+                              onClick={() => {
+                                if (compareMode) return;
+                                const open = () => { loadQuote(quote); showToast(`Loaded ${quote.inputs.projectName || 'untitled quote'}`); };
+                                closeSaved();
+                                if (quote.id === currentQuoteId) open(); else withDiscardCheck(open);
+                              }}
+                              className={`text-left flex-1 min-w-0 py-0.5 ${compareMode ? 'cursor-default' : ''}`}
                             >
-                              <div className="text-[13px] font-medium truncate">{quote.inputs.projectName || 'Untitled'}</div>
-                              <div className="text-xs text-ink-3 truncate">
-                                {quote.inputs.coatingSystem} on {quote.inputs.roofType} · {new Date(quote.savedAt).toLocaleDateString()}
+                              <div className="text-[13px] font-medium truncate">
+                                {quote.inputs.projectName || 'Untitled'}
+                                {quote.id === currentQuoteId && <span className="ml-1.5 text-xs font-normal text-accent-700">Open</span>}
                               </div>
+                              <div className="text-xs text-ink-3 truncate num">{savedQuoteSummary(quote)}</div>
+                              <div className="text-xs text-ink-3 num">Saved {savedTime(quote)}</div>
                             </button>
                             {!compareMode && (
                               <button onClick={() => deleteQuote(quote.id)} className="icon-btn hover:text-red-700" aria-label={`Delete ${quote.inputs.projectName || 'Untitled'}`}>
@@ -2309,16 +2675,23 @@ export default function App() {
                         ))}
                       </ul>
                     )}
-                    {compareMode && (
+                    {compareMode ? (
                       <div className="flex items-center justify-between px-3.5 py-2.5 border-t border-line bg-canvas">
                         <span className="text-xs text-ink-3">Pick 2 or 3 quotes</span>
                         <button
                           disabled={selectedForCompare.length < 2}
-                          onClick={() => { setShowComparison(true); setShowSaved(false); }}
-                          className="btn-primary h-7"
+                          onClick={openComparison}
+                          className="btn-primary"
                         >
                           Compare{selectedForCompare.length > 0 ? ` (${selectedForCompare.length})` : ''}
                         </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 border-t border-line bg-canvas">
+                        <button onClick={() => { closeSaved(); startNewQuote(); }} className="btn-ghost -ml-2"><Plus size={14} /> New quote</button>
+                        {currentQuoteId && (
+                          <button onClick={() => { closeSaved(); saveQuote({ asNew: true }); }} className="btn-ghost -mr-2">Save as new</button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2326,31 +2699,36 @@ export default function App() {
               )}
             </div>
             <div className="relative md:hidden">
-              <button onClick={() => setShowMore(!showMore)} className="btn-secondary px-2" aria-expanded={showMore} aria-label="More actions">
+              <button ref={moreBtnRef} onClick={() => { setShowMore(!showMore); setShowSaved(false); setShowValidationSummary(false); }} className="btn-secondary px-2" aria-expanded={showMore} aria-label="More actions">
                 <MoreHorizontal size={16} />
               </button>
               {showMore && (
                 <>
-                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close menu" onClick={() => setShowMore(false)} />
-                  <div className="absolute right-0 top-10 z-50 w-48 panel shadow-pop py-1">
-                    <label className="flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas cursor-pointer">
+                  <button className="fixed inset-0 z-40 cursor-default" aria-label="Close menu" tabIndex={-1} onClick={() => setShowMore(false)} />
+                  <div className="absolute right-0 top-10 z-50 w-52 panel shadow-pop py-1" role="menu">
+                    <label className="menu-item focus-within:bg-canvas focus-within:ring-2 focus-within:ring-inset focus-within:ring-accent-600">
                       <Upload size={15} className="text-ink-3" /> Import quote file
-                      <input type="file" accept=".json" onChange={(e) => { importQuote(e); setShowMore(false); }} className="hidden" />
+                      <input type="file" accept=".json" onChange={(e) => { importQuote(e); setShowMore(false); }} className="sr-only" />
                     </label>
-                    <button onClick={() => { exportQuote(); setShowMore(false); }} className="w-full flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas">
+                    <button onClick={() => { exportQuote(); setShowMore(false); }} className="menu-item">
                       <Download size={15} className="text-ink-3" /> Export quote file
                     </button>
-                    <button onClick={() => { setShowMore(false); window.print(); }} className="w-full flex items-center gap-2.5 px-3 h-9 text-[13px] text-ink-2 hover:bg-canvas">
+                    <button onClick={() => { setShowMore(false); window.print(); }} className="menu-item">
                       <Printer size={15} className="text-ink-3" /> Print
                     </button>
+                    {currentQuoteId && (
+                      <button onClick={() => { setShowMore(false); saveQuote({ asNew: true }); }} className="menu-item">
+                        <Save size={15} className="text-ink-3" /> Save as new quote
+                      </button>
+                    )}
                   </div>
                 </>
               )}
             </div>
-            <label className="btn-secondary cursor-pointer hidden md:inline-flex" aria-label="Import quote file" title="Import quote file">
+            <label className="btn-secondary cursor-pointer hidden md:inline-flex focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-600" title="Import quote file">
               <Upload size={15} />
               <span>Import</span>
-              <input type="file" accept=".json" onChange={importQuote} className="hidden" />
+              <input type="file" accept=".json" onChange={importQuote} className="sr-only" aria-label="Import quote file" />
             </label>
             <button onClick={exportQuote} className="btn-secondary hidden md:inline-flex" aria-label="Export quote file" title="Export quote file">
               <Download size={15} />
@@ -2360,7 +2738,8 @@ export default function App() {
               <Printer size={15} />
               <span className="hidden lg:inline">Print</span>
             </button>
-            <button onClick={saveQuote} className="btn-primary">
+            <button onClick={() => saveQuote()} className="btn-primary relative" title="Save quote (Ctrl+S)" aria-label={isDirty ? 'Save quote, unsaved changes' : 'Save quote'}>
+              {isDirty && <span className="md:hidden absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white" aria-hidden="true" />}
               <Save size={15} />
               <span>Save<span className="hidden sm:inline"> quote</span></span>
             </button>
@@ -2368,24 +2747,14 @@ export default function App() {
         </div>
       </header>
 
-      {/* Validation Summary */}
-      {showValidationSummary && hasErrors && (
-        <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pt-4 print:hidden">
-          <div className="callout-danger">
-            <AlertTriangle size={16} className="shrink-0 mt-px" />
-            <div>
-              <div className="font-semibold mb-1">Fix these before sending the quote</div>
-              <ul className="space-y-0.5">
-                {Object.entries(validationErrors).map(([key, msg]) => <li key={key}>{msg}</li>)}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Print Header (only visible when printing) */}
       <div className="hidden print:block mb-6">
-        <div className="border-b-2 border-ink pb-3 mb-4">
+        <div className="border-b-2 border-ink pb-3 mb-4 relative">
+          <div className="absolute right-0 top-0 flex items-center gap-4">
+            {LOGO_FILES.map(src => (
+              <img key={src} src={src} alt="" className="h-9 w-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            ))}
+          </div>
           <h1 className="text-xl font-bold">Roofing System Estimate</h1>
           {inputs.projectName && <p className="text-base font-semibold mt-1">{inputs.projectName}</p>}
           <p className="text-sm text-ink-3 mt-1">Date: {quoteDate}</p>
@@ -2424,744 +2793,12 @@ export default function App() {
         )}
       </div>
 
-      <main className="max-w-[1320px] mx-auto px-4 lg:px-8 py-5 lg:py-6 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:block print:p-0 print:max-w-none">
-
-        {/* LEFT COLUMN: INPUTS */}
-        <aside className="panel divide-y divide-line print:hidden">
-
-          {/* PROJECT */}
-          <section className="px-4 sm:px-5 py-5 space-y-4">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Project</h2>
-            <div>
-              <label htmlFor="projectName" className="label">Project name</label>
-              <input
-                id="projectName"
-                type="text"
-                value={inputs.projectName}
-                onChange={(e) => handleChange('projectName', e.target.value)}
-                className="input"
-                placeholder="e.g. Smith Warehouse"
-              />
-            </div>
-            <div>
-              <label htmlFor="quoteDate" className="label">Quote date</label>
-              <input
-                id="quoteDate"
-                type="date"
-                value={quoteDate}
-                onChange={(e) => setQuoteDate(e.target.value)}
-                className="input num"
-              />
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowCustomerInfo(!showCustomerInfo)}
-                aria-expanded={showCustomerInfo}
-                className="w-full flex items-center justify-between text-[13px] font-medium text-ink-2 hover:text-ink py-1"
-              >
-                <span className="flex items-center gap-2"><User size={15} className="text-ink-3" /> Customer details <span className="font-normal text-ink-3">Optional</span></span>
-                <ChevronDown size={16} className={`text-ink-3 transition-transform ${showCustomerInfo ? 'rotate-180' : ''}`} />
-              </button>
-              {showCustomerInfo && (
-                <div className="grid sm:grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <label htmlFor="custName" className="label">Customer name</label>
-                    <input id="custName" type="text" value={customerInfo.name} onChange={(e) => handleCustomerInfoChange('name', e.target.value)} className="input" placeholder="Jane Doe" />
-                  </div>
-                  <div>
-                    <label htmlFor="custCompany" className="label">Company</label>
-                    <input id="custCompany" type="text" value={customerInfo.company} onChange={(e) => handleCustomerInfoChange('company', e.target.value)} className="input" placeholder="ABC Roofing Co." />
-                  </div>
-                  <div>
-                    <label htmlFor="custPhone" className="label">Phone</label>
-                    <input id="custPhone" type="tel" value={customerInfo.phone} onChange={(e) => handleCustomerInfoChange('phone', e.target.value)} className={`input ${validationErrors.phone ? 'input-error' : ''}`} placeholder="(555) 123-4567" />
-                    <ValidationError field="phone" />
-                  </div>
-                  <div>
-                    <label htmlFor="custEmail" className="label">Email</label>
-                    <input id="custEmail" type="email" value={customerInfo.email} onChange={(e) => handleCustomerInfoChange('email', e.target.value)} className={`input ${validationErrors.email ? 'input-error' : ''}`} placeholder="customer@email.com" />
-                    <ValidationError field="email" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label htmlFor="custAddress" className="label">Mailing address</label>
-                    <input id="custAddress" type="text" value={customerInfo.address} onChange={(e) => handleCustomerInfoChange('address', e.target.value)} className="input" placeholder="123 Main St, City, State 12345" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label htmlFor="custProjectAddress" className="label">Project address</label>
-                    <input id="custProjectAddress" type="text" value={customerInfo.projectAddress} onChange={(e) => handleCustomerInfoChange('projectAddress', e.target.value)} className="input" placeholder="456 Project St, City, State 12345" />
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* SYSTEM */}
-          <section className="px-4 sm:px-5 py-5 space-y-4">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Coating system</h2>
-            <div className="seg" role="group" aria-label="Coating system">
-              {['Silicone', 'Acrylic', 'Aluminum'].map(sys => segButton(sys, inputs.coatingSystem === sys, () => handleChange('coatingSystem', sys)))}
-            </div>
-            {inputs.coatingSystem === 'Acrylic' && (
-              <div>
-                <span className="label">Acrylic system type</span>
-                <div className="seg" role="group" aria-label="Acrylic system type">
-                  {segButton('Standard', inputs.acrylicSystemType === 'Standard', () => handleChange('acrylicSystemType', 'Standard'))}
-                  {segButton('Reinforced', inputs.acrylicSystemType === 'Reinforced', () => handleChange('acrylicSystemType', 'Reinforced'))}
-                </div>
-                <p className="hint">{inputs.acrylicSystemType === 'Reinforced' ? 'Full-system membrane reinforcement.' : 'No membrane.'}</p>
-              </div>
-            )}
-            <div>
-              <label htmlFor="topcoat" className="label">Topcoat</label>
-              <select id="topcoat" className="input" value={inputs.selectedTopcoat} onChange={(e) => handleChange('selectedTopcoat', e.target.value)}>
-                {currentOptions.topcoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            </div>
-            {inputs.coatingSystem !== 'Aluminum' && (
-              <div>
-                <label htmlFor="basecoat" className="label">Basecoat</label>
-                <select id="basecoat" className="input" value={inputs.selectedBasecoat} onChange={(e) => handleChange('selectedBasecoat', e.target.value)}>
-                  {currentOptions.basecoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-              </div>
-            )}
-            <div>
-              <label htmlFor="butterGrade" className="label">Seam treatment (butter grade)</label>
-              <select id="butterGrade" className="input" value={inputs.selectedButterGrade} onChange={(e) => handleChange('selectedButterGrade', e.target.value)}>
-                {currentOptions.butterGrades.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            </div>
-            <div>
-              <span className="label">Detailing</span>
-              <div className="seg" role="group" aria-label="Detailing preference">
-                {segButton('Butter grade', inputs.accessoryType === 'Butter Grade', () => handleChange('accessoryType', 'Butter Grade'))}
-                {segButton('Fabric', inputs.accessoryType === 'Fabric', () => handleChange('accessoryType', 'Fabric'))}
-              </div>
-            </div>
-            <div>
-              <label htmlFor="fabric" className="label">Fabric / mesh</label>
-              <select
-                id="fabric"
-                className="input"
-                value={inputs.selectedFabric}
-                onChange={(e) => handleChange('selectedFabric', e.target.value)}
-                disabled={inputs.accessoryType === 'Butter Grade'}
-              >
-                {currentOptions.fabrics.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-              {inputs.accessoryType === 'Butter Grade' && <p className="hint">Only used when detailing with fabric.</p>}
-            </div>
-          </section>
-
-          {/* ROOF */}
-          <section className="px-4 sm:px-5 py-5 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Roof</h2>
-              <label className="flex items-center gap-2.5 text-[13px] text-ink-2 cursor-pointer">
-                Multiple sections
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={useMultiSection}
-                  aria-label="Multiple roof sections"
-                  onClick={() => { setUseMultiSection(!useMultiSection); if (!useMultiSection && roofSections.length === 0) addRoofSection(); }}
-                  className="switch"
-                >
-                  <span />
-                </button>
-              </label>
-            </div>
-
-            {!useMultiSection ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="roofSize" className="label">Roof area <span className="font-normal text-ink-3">sq ft</span></label>
-                  <input
-                    id="roofSize"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    max="1000000"
-                    value={inputs.roofSizeSqFt || ''}
-                    onChange={(e) => handleChange('roofSizeSqFt', parseFloat(e.target.value) || 0)}
-                    className={`input num ${validationErrors.roofSizeSqFt ? 'input-error' : ''}`}
-                    placeholder="5,000"
-                  />
-                  <ValidationError field="roofSizeSqFt" />
-                  <p className="hint num">{commonResults.squares.toFixed(2)} squares</p>
-                </div>
-                <div>
-                  <label htmlFor="linearFeet" className="label">Seams <span className="font-normal text-ink-3">linear ft</span></label>
-                  <input
-                    id="linearFeet"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    max="100000"
-                    value={inputs.linearFeet || ''}
-                    onChange={(e) => handleChange('linearFeet', parseFloat(e.target.value) || 0)}
-                    className={`input num ${validationErrors.linearFeet ? 'input-error' : ''}`}
-                    placeholder="250"
-                  />
-                  <ValidationError field="linearFeet" />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <ul className="border border-line rounded-md divide-y divide-line">
-                  {roofSections.map((section) => (
-                    <li key={section.id} className="p-3 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <input
-                          type="text"
-                          aria-label="Section name"
-                          value={section.name}
-                          onChange={(e) => updateRoofSection(section.id, 'name', e.target.value)}
-                          className="min-w-0 flex-1 text-[13px] font-semibold bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-canvas focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-100"
-                        />
-                        <button onClick={() => removeRoofSection(section.id)} className="icon-btn hover:text-red-700" aria-label={`Remove ${section.name}`}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="label text-xs mb-1">Sq ft</label>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            min="0"
-                            value={section.sqFt || ''}
-                            onChange={(e) => updateRoofSection(section.id, 'sqFt', parseFloat(e.target.value) || 0)}
-                            className={`input input-sm num ${validationErrors[`section_${section.id}_sqFt`] ? 'input-error' : ''}`}
-                            placeholder="0"
-                          />
-                          <ValidationError field={`section_${section.id}_sqFt`} />
-                        </div>
-                        <div>
-                          <label className="label text-xs mb-1">Linear ft</label>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            min="0"
-                            value={section.linearFeet || ''}
-                            onChange={(e) => updateRoofSection(section.id, 'linearFeet', parseFloat(e.target.value) || 0)}
-                            className={`input input-sm num ${validationErrors[`section_${section.id}_lf`] ? 'input-error' : ''}`}
-                            placeholder="0"
-                          />
-                          <ValidationError field={`section_${section.id}_lf`} />
-                        </div>
-                        <div>
-                          <label className="label text-xs mb-1">Roof type</label>
-                          <select value={section.roofType} onChange={(e) => updateRoofSection(section.id, 'roofType', e.target.value)} className="input input-sm">
-                            {getAvailableRoofTypes().map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="label text-xs mb-1">Waste</label>
-                          <select value={section.wasteFactor} onChange={(e) => updateRoofSection(section.id, 'wasteFactor', e.target.value)} className="input input-sm num">
-                            {percentOptions(15)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="label text-xs mb-1">Stretch</label>
-                          <select value={section.stretchFactor} onChange={(e) => updateRoofSection(section.id, 'stretchFactor', e.target.value)} className="input input-sm num">
-                            {percentOptions(30)}
-                          </select>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-                <button onClick={addRoofSection} className="btn-secondary w-full">
-                  <Plus size={14} /> Add section
-                </button>
-                <dl className="text-[13px] space-y-1 num">
-                  <div className="flex justify-between"><dt className="text-ink-3">Total area</dt><dd className="font-medium">{inputs.roofSizeSqFt.toLocaleString()} sq ft · {commonResults.squares.toFixed(2)} sq</dd></div>
-                  <div className="flex justify-between"><dt className="text-ink-3">Total seams</dt><dd className="font-medium">{inputs.linearFeet.toLocaleString()} LF</dd></div>
-                </dl>
-              </div>
-            )}
-
-            <fieldset disabled={useMultiSection} className={`space-y-4 ${useMultiSection ? 'opacity-60' : ''}`}>
-              {useMultiSection && <p className="hint mt-0">Roof type, waste and stretch are set per section above.</p>}
-              <div>
-                <label htmlFor="roofType" className="label">Roof type</label>
-                <select id="roofType" className="input" value={inputs.roofType} onChange={(e) => handleChange('roofType', e.target.value)}>
-                  <option value="Capsheet">Capsheet</option>
-                  {/* Single-Ply not available for Aluminum */}
-                  {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
-                  {/* Sprayfoam for Silicone or Acrylic Standard only, NOT Aluminum */}
-                  {inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
-                  {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
-                  {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
-                </select>
-                {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet and single-ply only.</p>}
-                {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and capsheet only.</p>}
-              </div>
-
-              {/* Fastener encapsulation method — sits right under Roof Type so it's
-                  immediately visible when Metal is picked (otherwise it's easy to miss). */}
-              {inputs.roofType === 'Metal' && inputs.accessoryType === 'Butter Grade' && (
-                <div>
-                  <span className="label">Fastener encapsulation</span>
-                  <div className="seg" role="group" aria-label="Fastener encapsulation">
-                    {segButton('Butter grade', !inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', false))}
-                    {segButton('Self-leveling caulk', !!inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', true))}
-                  </div>
-                  <p className="hint">
-                    {inputs.useFastenerCaulk
-                      ? `Fasteners covered by self-leveling caulk (~${FASTENERS_PER_CAULK_TUBE}/tube). Butter grade stays for seams and penetrations only.`
-                      : 'Butter grade buckets cover both seams and fasteners. Switch to caulk if the contractor prefers it.'}
-                  </p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="waste" className="label">Waste</label>
-                  <select id="waste" className="input num" value={inputs.wasteFactor} onChange={(e) => handleChange('wasteFactor', e.target.value)}>
-                    {percentOptions(15)}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="stretch" className="label">Stretch</label>
-                  <select id="stretch" className="input num" value={inputs.stretchFactor} onChange={(e) => handleChange('stretchFactor', e.target.value)}>
-                    {percentOptions(30)}
-                  </select>
-                </div>
-              </div>
-            </fieldset>
-          </section>
-
-          {/* CONDITIONS */}
-          <section className="px-4 sm:px-5 pt-5 pb-2">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em] mb-1">Site conditions</h2>
-            <div className="divide-y divide-line">
-              {/* Adhesion test not needed for Aluminum */}
-              {inputs.coatingSystem !== 'Aluminum' && (
-                <div>
-                  {switchRow('Passed adhesion test', inputs.passedAdhesion, () => handleChange('passedAdhesion', !inputs.passedAdhesion))}
-                  {!inputs.passedAdhesion && (
-                    <div className="callout-danger mb-3">
-                      <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                      <span>Adhesion failure: adhesion primer added to the order.</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* RUST TOGGLE - FOR SILICONE OR ACRYLIC ON METAL (not Aluminum) */}
-              {(inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic') && inputs.roofType === 'Metal' && (
-                <div>
-                  {switchRow('Rust present', inputs.hasRust, () => handleChange('hasRust', !inputs.hasRust))}
-                  {inputs.hasRust && (
-                    <div className="pb-3">
-                      <span className="label">Rust primer coverage</span>
-                      <div className="seg" role="group" aria-label="Rust primer coverage">
-                        {segButton('Field prime', inputs.rustPrimeMethod !== 'spot', () => handleChange('rustPrimeMethod', 'field'))}
-                        {segButton('Spot prime', inputs.rustPrimeMethod === 'spot', () => handleChange('rustPrimeMethod', 'spot'))}
-                      </div>
-                      <p className="hint">
-                        {inputs.rustPrimeMethod === 'spot'
-                          ? `No primer quantity calculated. All quotes will read: "${SPOT_PRIME_NOTE}".`
-                          : 'Rust primer at 0.5 gal/sq across the entire field.'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {switchRow('Goldseal warranty', inputs.goldseal, () => handleChange('goldseal', !inputs.goldseal))}
-            </div>
-          </section>
-        </aside>
-
-        {/* RIGHT COLUMN: RESULTS */}
-        <div ref={resultsRef} className="results-col min-w-0 lg:sticky" style={{ top: resultsTop }}>
-          <section id="order" className="panel overflow-hidden print:border-0 scroll-mt-20">
-            <div className="flex items-start justify-between gap-4 px-4 sm:px-5 py-4 border-b border-line">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold tracking-[-0.01em]">Material order</h2>
-                <p className="text-[13px] text-ink-3 mt-0.5">{systemLabel} on {roofTypeLabel} · {factorsLabel}</p>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-lg font-semibold num leading-tight">{commonResults.squares.toFixed(1)} <span className="text-[13px] font-normal text-ink-3">sq</span></div>
-                <div className="text-xs text-ink-3 num">{inputs.roofSizeSqFt.toLocaleString()} sq ft</div>
-              </div>
-            </div>
-
-            {/* DISTRIBUTOR MARGIN */}
-            <div className="px-4 sm:px-5 py-3 border-b border-line flex flex-wrap items-center gap-x-6 gap-y-2 bg-canvas/50 print:hidden">
-              <label htmlFor="margin" className="flex items-center gap-2.5">
-                <span className="text-[13px] font-medium text-ink-2">Distributor margin</span>
-                <span className="relative">
-                  <input
-                    id="margin"
-                    type="number"
-                    inputMode="decimal"
-                    step="1"
-                    min="0"
-                    max="99"
-                    value={profitMargin}
-                    onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
-                    className={`input input-sm num w-[76px] pr-7 text-right ${validationErrors.profitMargin ? 'input-error' : ''}`}
-                    placeholder="0"
-                  />
-                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">%</span>
-                </span>
-              </label>
-              {profitMargin > 0 && (
-                <label className="flex items-center gap-2 text-[13px] text-ink-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showMarginInExports}
-                    onChange={(e) => setShowMarginInExports(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Show cost and margin in distributor estimate and email
-                </label>
-              )}
-              <div className="basis-full -mt-1 empty:hidden">
-                <ValidationError field="profitMargin" />
-                {profitMargin > 0 && (
-                  <p className="text-xs text-ink-3">
-                    {showMarginInExports
-                      ? 'Distributor estimate PDF and email text show distributor cost, margin % and per-line unit prices.'
-                      : 'Distributor estimate PDF and email text show only the final price. The contractor quote never shows cost basis or margin.'}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* MISSING LINEAR FEET */}
-            {inputs.linearFeet <= 0 && (
-              <div className="px-4 sm:px-5 pt-4">
-                <div className="callout-warn">
-                  <AlertTriangle size={15} className="shrink-0 mt-px text-amber-600" />
-                  <div>
-                    <span className="font-semibold">Quote incomplete.</span> Add seam linear feet to calculate butter grade (seam sealant).
-                    {inputs.roofType === 'Metal' && commonResults.screwBuckets > 0 && (
-                      <span className="block mt-0.5 text-amber-800">Fastener encapsulation for ~{commonResults.screwCount} screws is included, based on roof area.</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ORDER TABLE */}
-            {tiers.length > 1 && (
-              <div className="sm:hidden px-4 pt-4">
-                <div className="seg" role="group" aria-label="Warranty tier">
-                  {tiers.map(y => segButton(`${y}-year`, leadTier === y, () => setMobileTier(y)))}
-                </div>
-              </div>
-            )}
-            <div className="overflow-x-auto mt-3 print:overflow-visible">
-              <table className="order w-full sm:min-w-[600px] text-sm border-separate border-spacing-0">
-                <thead>
-                  <tr>
-                    <th scope="col">Product</th>
-                    <th scope="col">Price / unit</th>
-                    {tiers.map(y => <th key={y} scope="col" className={`text-ink-2 ${tierCls(y)}`}>{y}-year</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Base Coat (Acrylic) OR System Primer (Silicone) */}
-                  {inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0 && (
-                    <tr>
-                      {productCell('Basecoat', inputs.selectedBasecoat)}
-                      {priceCell('basecoat', 'gal')}
-                      {tierQtyCells('baseGal', 'gal', prices.basecoat)}
-                    </tr>
-                  )}
-
-                  {/* Spot Prime note row — rust present but user chose spot prime, so no quantities */}
-                  {inputs.hasRust && inputs.rustPrimeMethod === 'spot'
-                    && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
-                    && inputs.roofType === 'Metal' && (
-                    <tr>
-                      <td colSpan={colCount} className="!text-left">
-                        <div className="flex items-start gap-2">
-                          <Info size={14} className="mt-0.5 text-amber-600 shrink-0" />
-                          <div>
-                            <div className="font-medium">Rust primer — spot prime</div>
-                            <div className="text-xs text-ink-3 mt-0.5">{currentPrimers.rust} — {SPOT_PRIME_NOTE}. No field quantity calculated.</div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-
-                  {/* Rust Primer (Metal only) */}
-                  {estimates['10']?.rustPrimerGal > 0 && (
-                    <tr>
-                      {productCell('Rust primer', `${currentPrimers.rust} · 5-gal pails`)}
-                      {priceCell('rustPrimer', 'gal')}
-                      {tierQtyCells('rustPrimerGal', 'gal', prices.rustPrimer)}
-                    </tr>
-                  )}
-
-                  {/* Adhesion Primer */}
-                  {!inputs.passedAdhesion && (
-                    <tr>
-                      {productCell('Adhesion primer', `${currentPrimers.adhesion} · 1-gal containers`,
-                        <span className="badge bg-red-50 text-red-700 mt-1.5"><AlertTriangle size={11} /> Failed adhesion test</span>)}
-                      {priceCell('adhesionPrimer', 'gal')}
-                      {tierQtyCells('adhesionPrimerGal', 'gal', prices.adhesionPrimer)}
-                    </tr>
-                  )}
-
-                  {/* Top Coats */}
-                  {['top1Gal', 'top2Gal', 'top3Gal'].map((field, i) => (
-                    (estimates['10']?.[field] > 0 || estimates['15']?.[field] > 0 || estimates['20']?.[field] > 0) && (
-                      <tr key={field}>
-                        {productCell(`Topcoat ${i + 1}`, inputs.selectedTopcoat)}
-                        {i === 0 ? priceCell('topcoat', 'gal') : sameAsCell('Same as topcoat 1')}
-                        {tierQtyCells(field, 'gal', prices.topcoat)}
-                      </tr>
-                    )
-                  ))}
-
-                  {/* Coatings subtotal */}
-                  <tr className="row-sub">
-                    <td>Coatings total</td>
-                    <td />
-                    {tiers.map(y => (
-                      <td key={y} className={`num whitespace-nowrap ${tierCls(y)}`}>
-                        <div>{fmtQty(estimates[y]?.totalGallons)} gal</div>
-                        {hasCoatingPrices && <div className="text-xs text-ink-3 font-normal mt-0.5">{formatCurrency(coatingCost(y))}</div>}
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* ACCESSORIES (same quantity for every warranty tier) */}
-                  {hasAccessoryRows && (
-                    <tr>
-                      <td colSpan={colCount} className="!text-left !pt-4 !pb-1.5 text-xs font-medium text-ink-3">Accessories</td>
-                    </tr>
-                  )}
-
-                  {showAccessory && (
-                    commonResults.screwBuckets > 0 ? (
-                      /* Metal roof: the seam sealer does double duty — sealing seams (by
-                         linear feet) and encapsulating fasteners (by roof area). Show them
-                         as separate line items sharing one per-bucket price. */
-                      <>
-                        {commonResults.linearBuckets > 0 && (
-                          <tr>
-                            {productCell(`${commonResults.accessoryName || 'Seam sealer'} — seams`, 'By linear feet')}
-                            {priceCell('accessory', 'bucket')}
-                            {commonQtyCells(commonResults.linearBuckets, 'buckets', prices.accessory)}
-                          </tr>
-                        )}
-                        <tr>
-                          {productCell(`${commonResults.accessoryName || 'Seam sealer'} — fasteners`, `Encapsulates ~${(commonResults.screwCount || 0).toLocaleString()} fasteners (by roof area)`)}
-                          {commonResults.linearBuckets > 0 ? sameAsCell('Same as above') : priceCell('accessory', 'bucket')}
-                          {commonQtyCells(commonResults.screwBuckets, 'buckets', prices.accessory)}
-                        </tr>
-                      </>
-                    ) : (
-                      <tr>
-                        {productCell(
-                          inputs.linearFeet > 0 ? commonResults.accessoryName : 'Fastener encapsulation',
-                          inputs.linearFeet > 0 ? commonResults.accessoryDesc : 'Metal roof screw encapsulation'
-                        )}
-                        {priceCell('accessory', accUnitSingular)}
-                        {commonQtyCells(commonResults.accessoryQty, (commonResults.accessoryUnit || '').toLowerCase(), prices.accessory)}
-                      </tr>
-                    )
-                  )}
-
-                  {/* FASTENER CAULK ROW (when toggled on for metal roofs) */}
-                  {commonResults.fastenerCaulkTubes > 0 && (
-                    <tr>
-                      {productCell('Fastener caulk', `${FASTENER_CAULK_NAME} · ~${FASTENERS_PER_CAULK_TUBE} fasteners/tube, covers ~${(commonResults.screwCount || 0).toLocaleString()}`)}
-                      {priceCell('fastenerCaulk', 'tube')}
-                      {commonQtyCells(commonResults.fastenerCaulkTubes, 'tubes', prices.fastenerCaulk)}
-                    </tr>
-                  )}
-
-                  {/* ACRYLIC MEMBRANE ROW (Only for Reinforced) */}
-                  {isReinforced && (
-                    <tr>
-                      {productCell('Reinforcement membrane', `Full-system reinforcement · 40" × 324' rolls`)}
-                      {priceCell('membrane', 'roll')}
-                      {commonQtyCells(commonResults.membraneRolls, 'rolls', prices.membrane)}
-                    </tr>
-                  )}
-
-                  {/* Goldseal */}
-                  {inputs.goldseal && (
-                    <tr>
-                      {productCell('Goldseal warranty', 'Priced per warranty term')}
-                      <td />
-                      {tiers.map(y => qtyCell(y, 1, 'warranty', estimates[y]?.goldsealCost || 0))}
-                    </tr>
-                  )}
-
-                </tbody>
-                <tfoot>
-                  {/* GRAND TOTAL */}
-                  <tr className="row-total">
-                    <td>
-                      {profitMargin > 0 ? 'Cost to distributor' : 'Total'}
-                      {unpricedNote && <div className="text-xs font-normal text-amber-700 mt-0.5">{unpricedNote}</div>}
-                    </td>
-                    <td className="!font-normal text-xs text-ink-3"><span className="print:hidden">{profitMargin > 0 ? 'Your cost' : 'All materials'}</span></td>
-                    {tiers.map(y => (
-                      <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>
-                        {hasPrices ? formatCurrency(grandTotals[y] || 0) : <span className="text-[13px] font-normal text-ink-4">Enter prices</span>}
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* COST PER SQ FT */}
-                  {hasPrices && inputs.roofSizeSqFt > 0 && (
-                    <tr className="row-meta">
-                      <td>{profitMargin > 0 ? 'Distributor cost per sq ft' : 'Cost per sq ft'}</td>
-                      <td />
-                      {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) / inputs.roofSizeSqFt)}</td>)}
-                    </tr>
-                  )}
-
-                  {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
-                  {profitMargin > 0 && hasPrices && (
-                    <>
-                      <tr className="row-total">
-                        <td>
-                          Contractor price
-                          <div className="text-xs font-normal text-ink-3 mt-0.5 print:hidden">{profitMargin}% margin</div>
-                        </td>
-                        <td />
-                        {tiers.map(y => (
-                          <td key={y} className={`num text-[15px] text-accent-700 whitespace-nowrap ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor)}</td>
-                        ))}
-                      </tr>
-                      <tr className="row-meta print:hidden">
-                        <td>Your profit</td>
-                        <td />
-                        {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor - (grandTotals[y] || 0))}</td>)}
-                      </tr>
-                      {inputs.roofSizeSqFt > 0 && (
-                        <tr className="row-meta">
-                          <td>Contractor price per sq ft</td>
-                          <td />
-                          {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) * marginFactor / inputs.roofSizeSqFt)}</td>)}
-                        </tr>
-                      )}
-                    </>
-                  )}
-                  <tr className="row-meta"><td colSpan={colCount} className="!pb-1" /></tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {/* PDF DOWNLOADS */}
-            <div className="px-4 sm:px-5 py-4 border-t border-line grid sm:grid-cols-2 gap-x-3 gap-y-4 print:hidden">
-              <div>
-                <button onClick={() => generatePDF('distributor')} className="btn-primary btn-lg w-full">
-                  <FileDown size={16} /> Distributor estimate
-                </button>
-                <p className="hint">PDF with cost basis, margin and sell price, for the distributor.</p>
-              </div>
-              <div>
-                <button onClick={() => generatePDF('contractor')} className="btn-secondary btn-lg w-full">
-                  <FileText size={16} /> Contractor quote
-                </button>
-                <p className="hint">PDF with materials, rates and contractor pricing. No cost basis or margin.</p>
-              </div>
-            </div>
-
-          </section>
-
-        </div>
-      </main>
-
-      <div className="max-w-[1320px] mx-auto px-4 lg:px-8 grid gap-5 lg:gap-6 lg:grid-cols-2 items-start print:hidden">
-          {/* COPY TO EMAIL SECTION */}
-          <section className="panel print:hidden">
-            <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 pt-4 pb-3">
-              <h2 className="text-sm font-semibold flex items-center gap-2"><Mail size={15} className="text-ink-3" /> Email text</h2>
-              <div className="flex items-center gap-2">
-                <div className="seg" role="group" aria-label="Email version">
-                  {segButton('Distributor', emailViewMode === 'distributor', () => setEmailViewMode('distributor'))}
-                  {segButton('Contractor', emailViewMode === 'contractor', () => setEmailViewMode('contractor'))}
-                </div>
-                <button onClick={copyToClipboard} className="btn-secondary">
-                  {copySuccess ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {copySuccess ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
-            <div className="px-4 sm:px-5 pb-4">
-              <p className="text-xs text-ink-3 mb-2">
-                {emailViewMode === 'contractor'
-                  ? profitMargin > 0
-                    ? `Prices marked up to contractor price (${profitMargin}% margin). No distributor cost or margin included.`
-                    : 'No margin set, so prices match the values entered above.'
-                  : 'Distributor version. Includes cost basis and margin if that option is on.'}
-              </p>
-              <textarea
-                readOnly
-                aria-label="Email text"
-                value={emailViewMode === 'contractor' ? contractorEmailText : emailText}
-                className="w-full h-44 rounded-md border border-line bg-canvas p-3 font-mono text-xs leading-relaxed text-ink-2 resize-y focus:outline-none focus:border-accent-600 focus:ring-[3px] focus:ring-accent-100"
-              />
-            </div>
-          </section>
-
-          {/* ENERGY SAVINGS ESTIMATOR (TOGGLEABLE) */}
-          <section className="panel overflow-hidden print:hidden">
-            <button
-              onClick={() => setShowEnergySavings(!showEnergySavings)}
-              aria-expanded={showEnergySavings}
-              className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-canvas/60 transition-colors"
-            >
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                <Zap size={15} className="text-ink-3" />
-                Energy savings estimate
-                <span className="font-normal text-[13px] text-ink-3">Optional</span>
-              </span>
-              <ChevronDown size={16} className={`text-ink-3 transition-transform ${showEnergySavings ? 'rotate-180' : ''}`} />
-            </button>
-            {showEnergySavings && (
-              <div className="border-t border-line">
-                <EnergySavingsEstimator
-                  roofSize={inputs.roofSizeSqFt}
-                  roofType={inputs.roofType}
-                  coatingSystem={inputs.coatingSystem}
-                  selectedRegion={energyRegion}
-                  onRegionChange={setEnergyRegion}
-                  onResultsChange={(results, rate, region) => {
-                    setEnergySavingsResults(results);
-                    setEnergyElectricityRate(rate);
-                    if (region) setEnergyRegion(region);
-                  }}
-                />
-              </div>
-            )}
-          </section>
-      </div>
-
-      <footer className="max-w-[1320px] mx-auto px-4 lg:px-8 text-xs text-ink-3 leading-relaxed print:max-w-none print:px-0">
-        <div className="border-t border-line mt-6 py-5 print:mt-3 print:pt-3">
-            <div className="max-w-[90ch]">
-              <p className="mb-1">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% waste and ${Math.round(inputs.stretchFactor * 100)}% stretch.`}</p>
-              <p>
-                Disclaimer: this quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements and waste factors. The end user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.
-              </p>
-            </div>
-        </div>
-      </footer>
-
       {/* QUOTE COMPARISON VIEW */}
       {showComparison && selectedForCompare.length >= 2 && (
-        <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pb-8 print:hidden">
-          <section id="comparison" className="panel overflow-hidden">
+        <div className="max-w-[1320px] mx-auto px-4 lg:px-8 pt-5 lg:pt-6 print:hidden">
+          <section id="comparison" ref={comparisonRef} tabIndex={-1} aria-labelledby="comparisonTitle" className="panel overflow-hidden scroll-mt-20 focus:outline-none">
             <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 py-3.5 border-b border-line">
-              <h2 className="text-base font-semibold">Quote comparison</h2>
+              <h2 id="comparisonTitle" className="text-base font-semibold">Quote comparison</h2>
               <div className="flex items-center gap-2">
                 <button onClick={copyComparisonText} className="btn-secondary">
                   {compCopied ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {compCopied ? 'Copied' : 'Copy text'}
@@ -3182,10 +2819,15 @@ export default function App() {
               <table className="order w-full text-sm">
                 <thead>
                   <tr>
-                    <th scope="col" className="w-48"></th>
+                    <th scope="col" className="w-48"><span className="sr-only">Field</span></th>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <th key={id} scope="col" className="!text-ink !font-semibold !text-[13px]">{q?.inputs.projectName || 'Untitled'}</th>;
+                      return (
+                        <th key={id} scope="col" className="!text-ink !font-semibold !text-[13px]">
+                          {q?.inputs.projectName || 'Untitled'}
+                          <span className="block !font-normal text-xs text-ink-3 mt-0.5">Saved {q ? savedTime(q) : ''}</span>
+                        </th>
+                      );
                     })}
                   </tr>
                 </thead>
@@ -3234,6 +2876,7 @@ export default function App() {
                         ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) +
                         ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) +
                         ((q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0)) +
+                        (est.seamBuckets || 0) * (p.accessory || 0) +
                         (est.goldsealCost || 0);
                       const gallons = est.totalGallons || 0;
                       const sqft = q.inputs.roofSizeSqFt || 0;
@@ -3243,21 +2886,23 @@ export default function App() {
                     if (quoteData.every(d => d === null)) return null;
                     const hasPrices = quoteData.some(d => d !== null && d.priceTotal > 0);
                     const validTotals = quoteData.filter(d => d !== null && d.priceTotal > 0).map(d => d.priceTotal);
-                    const minTotal = validTotals.length > 0 ? Math.min(...validTotals) : null;
+                    // Marks go to a single winner only; ties carry no mark
+                    const uniqueMin = (vals) => { if (vals.length < 2) return null; const m = Math.min(...vals); return vals.filter(v => v === m).length === 1 ? m : null; };
+                    const minTotal = uniqueMin(validTotals);
                     const validGallons = quoteData.filter(d => d !== null && d.gallons > 0).map(d => d.gallons);
-                    const minGallons = validGallons.length > 0 ? Math.min(...validGallons) : null;
+                    const minGallons = uniqueMin(validGallons);
                     return (
                       <React.Fragment key={year}>
                         {/* Price total row - show if any quote has prices */}
                         {hasPrices && (
                           <tr>
-                            <td className="font-semibold">{year}-year total</td>
+                            <td className="font-semibold">{year}-year distributor cost</td>
                             {quoteData.map((d, i) => (
                               <td key={selectedForCompare[i]} className="num">
                                 {d === null ? (
-                                  <span className="text-ink-4 text-xs">N/A</span>
+                                  <span className="text-ink-3 text-xs">N/A</span>
                                 ) : d.priceTotal === 0 ? (
-                                  <span className="text-ink-4 text-xs">No prices</span>
+                                  <span className="text-ink-3 text-xs">No prices</span>
                                 ) : (
                                   <span className="font-semibold">
                                     {formatCurrency(d.priceTotal)}
@@ -3276,12 +2921,12 @@ export default function App() {
                           {quoteData.map((d, i) => (
                             <td key={selectedForCompare[i]} className="num">
                               {d === null ? (
-                                <span className="text-ink-4 text-xs">N/A</span>
+                                <span className="text-ink-3 text-xs">N/A</span>
                               ) : d.gallons === 0 ? (
-                                <span className="text-ink-4">—</span>
+                                <span className="text-ink-3">—</span>
                               ) : (
                                 <span className={hasPrices ? '' : 'font-semibold'}>
-                                  {d.gallons} gal
+                                  {d.gallons.toLocaleString()} gal
                                   {!hasPrices && d.gallons === minGallons && validGallons.length > 1 && (
                                     <span className="block text-xs text-green-700 font-medium">Least material</span>
                                   )}
@@ -3309,20 +2954,21 @@ export default function App() {
                         ((q.commonResults?.accessoryQty || 0) * (p.accessory || 0)) +
                         ((q.commonResults?.membraneRolls || 0) * (p.membrane || 0)) +
                         ((q.commonResults?.fastenerCaulkTubes || 0) * (p.fastenerCaulk || 0)) +
+                        (est.seamBuckets || 0) * (p.accessory || 0) +
                         (est.goldsealCost || 0);
                       if (total === 0) return null;
                       return total / q.inputs.roofSizeSqFt;
                     });
                     if (sqftData.every(d => d === null)) return null;
                     const validSqft = sqftData.filter(d => d !== null && d > 0);
-                    const minSqft = validSqft.length > 0 ? Math.min(...validSqft) : null;
+                    const minSqft = validSqft.length > 1 && validSqft.filter(v => v === Math.min(...validSqft)).length === 1 ? Math.min(...validSqft) : null;
                     return (
                       <tr key={`sqft-${year}`}>
                         <td className="text-ink-3">{year}-year per sq ft</td>
                         {sqftData.map((val, i) => (
                           <td key={selectedForCompare[i]} className="num">
                             {val === null ? (
-                              <span className="text-ink-4">—</span>
+                              <span className="text-ink-3">—</span>
                             ) : (
                               <span className={val === minSqft && validSqft.length > 1 ? 'font-semibold text-green-700' : ''}>
                                 {formatCurrency(val)}
@@ -3344,18 +2990,886 @@ export default function App() {
                     <td className="text-ink-3">Quote date</td>
                     {selectedForCompare.map(id => {
                       const q = savedQuotes.find(sq => sq.id === id);
-                      return <td key={id} className="num">{q?.date || new Date(q?.savedAt).toLocaleDateString()}</td>;
+                      const [yy, mm, dd] = (q?.date || '').split('-').map(Number);
+                      const d = yy ? new Date(yy, mm - 1, dd) : new Date(q?.savedAt);
+                      return <td key={id} className="num">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>;
                     })}
                   </tr>
                 </tbody>
               </table>
             </div>
-            <p className="px-4 sm:px-5 py-3 text-xs text-ink-3 border-t border-line">
-              Quotes saved before estimate data was stored can't show totals. Re-save them to compare.
-            </p>
+            {selectedForCompare.some(id => !savedQuotes.find(sq => sq.id === id)?.estimates) && (
+              <p className="px-4 sm:px-5 py-3 text-xs text-ink-3 border-t border-line">
+                Quotes saved before estimate data was stored can't show totals. Re-save them to compare.
+              </p>
+            )}
           </section>
         </div>
       )}
+
+      <main className="max-w-[1320px] mx-auto px-4 lg:px-8 py-5 lg:py-6 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:block print:p-0 print:max-w-none">
+
+        {/* LEFT COLUMN: INPUTS */}
+        {/* Phones lead with the roof (what a rep measures on site); desks keep project first */}
+        <aside className="panel flex flex-col print:hidden">
+
+          {/* PROJECT */}
+          <section className="order-4 lg:order-1 border-t border-line lg:border-t-0 px-4 sm:px-5 py-5 space-y-4">
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Project</h2>
+            <div>
+              <label htmlFor="projectName" className="label">Project name</label>
+              <input
+                id="projectName"
+                type="text"
+                value={inputs.projectName}
+                onChange={(e) => handleChange('projectName', e.target.value)}
+                className="input"
+                placeholder="e.g. Smith Warehouse"
+              />
+            </div>
+            <div>
+              <label htmlFor="quoteDate" className="label">Quote date</label>
+              <input
+                id="quoteDate"
+                type="date"
+                value={quoteDate}
+                onChange={(e) => setQuoteDate(e.target.value)}
+                className="input num"
+              />
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowCustomerInfo(!showCustomerInfo)}
+                aria-expanded={showCustomerInfo}
+                className="disclosure"
+              >
+                <span className="flex items-center gap-2"><User size={15} className="text-ink-3" /> Customer details <span className="font-normal text-ink-3">Optional</span></span>
+                <ChevronDown size={16} className={`text-ink-3 transition-transform ${showCustomerInfo ? 'rotate-180' : ''}`} />
+              </button>
+              {showCustomerInfo && (
+                <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label htmlFor="custName" className="label">Customer name</label>
+                    <input id="custName" type="text" value={customerInfo.name} onChange={(e) => handleCustomerInfoChange('name', e.target.value)} className="input" placeholder="Jane Doe" autoComplete="name" />
+                  </div>
+                  <div>
+                    <label htmlFor="custCompany" className="label">Company</label>
+                    <input id="custCompany" type="text" value={customerInfo.company} onChange={(e) => handleCustomerInfoChange('company', e.target.value)} className="input" placeholder="ABC Roofing Co." autoComplete="organization" />
+                  </div>
+                  <div>
+                    <label htmlFor="custPhone" className="label">Phone</label>
+                    <input id="custPhone" type="tel" value={customerInfo.phone} onChange={(e) => handleCustomerInfoChange('phone', e.target.value)} className={`input ${validationErrors.phone ? 'input-error' : ''}`} placeholder="(555) 123-4567" autoComplete="tel" {...fieldProps('phone')} />
+                    <ValidationError field="phone" />
+                  </div>
+                  <div>
+                    <label htmlFor="custEmail" className="label">Email</label>
+                    <input id="custEmail" type="email" value={customerInfo.email} onChange={(e) => handleCustomerInfoChange('email', e.target.value)} className={`input ${validationErrors.email ? 'input-error' : ''}`} placeholder="customer@email.com" autoComplete="email" {...fieldProps('email')} />
+                    <ValidationError field="email" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="custAddress" className="label">Mailing address</label>
+                    <input id="custAddress" type="text" value={customerInfo.address} onChange={(e) => handleCustomerInfoChange('address', e.target.value)} className="input" placeholder="123 Main St, City, State 12345" autoComplete="street-address" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="custProjectAddress" className="label">Project address</label>
+                    <input id="custProjectAddress" type="text" value={customerInfo.projectAddress} onChange={(e) => handleCustomerInfoChange('projectAddress', e.target.value)} className="input" placeholder="456 Project St, City, State 12345" />
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* SYSTEM */}
+          <section className="order-3 lg:order-2 border-t border-line px-4 sm:px-5 py-5 space-y-4">
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Coating system</h2>
+            <div className="seg" role="group" aria-label="Coating system">
+              {['Silicone', 'Acrylic', 'Aluminum'].map(sys => segButton(sys, inputs.coatingSystem === sys, () => handleChange('coatingSystem', sys)))}
+            </div>
+            {inputs.coatingSystem === 'Acrylic' && (
+              <div>
+                <span className="label" id="acrylicTypeLabel">Acrylic system type</span>
+                <div className="seg" role="group" aria-labelledby="acrylicTypeLabel">
+                  {segButton('Standard', inputs.acrylicSystemType === 'Standard', () => handleChange('acrylicSystemType', 'Standard'))}
+                  {segButton('Reinforced', inputs.acrylicSystemType === 'Reinforced', () => handleChange('acrylicSystemType', 'Reinforced'))}
+                </div>
+                <p className="hint">{inputs.acrylicSystemType === 'Reinforced' ? 'Full-system membrane reinforcement.' : 'No membrane.'}</p>
+              </div>
+            )}
+            {/* Product picks have sensible defaults; collapsed to one line until the rep needs to change them */}
+            <div>
+              <button type="button" onClick={() => setShowProducts(!showProducts)} aria-expanded={showProducts} className="disclosure items-start text-left">
+                <span className="min-w-0">
+                  <span className="block">Products</span>
+                  {!showProducts && (
+                    <span className="block font-normal text-xs text-ink-3 mt-0.5 leading-snug">
+                      {[inputs.selectedTopcoat, inputs.coatingSystem !== 'Aluminum' ? inputs.selectedBasecoat : null, inputs.accessoryType === 'Fabric' ? inputs.selectedFabric : inputs.selectedButterGrade].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center gap-1 shrink-0 text-xs font-medium text-accent-600">
+                  {showProducts ? 'Done' : 'Change'}
+                  <ChevronDown size={14} className={`transition-transform ${showProducts ? 'rotate-180' : ''}`} />
+                </span>
+              </button>
+              {showProducts && (
+                <div className="space-y-4 mt-3">
+                  <div>
+                    <label htmlFor="topcoat" className="label">Topcoat</label>
+                    <select id="topcoat" className="input" value={inputs.selectedTopcoat} onChange={(e) => handleChange('selectedTopcoat', e.target.value)}>
+                      {currentOptions.topcoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  </div>
+                  {inputs.coatingSystem !== 'Aluminum' && (
+                    <div>
+                      <label htmlFor="basecoat" className="label">Basecoat</label>
+                      <select id="basecoat" className="input" value={inputs.selectedBasecoat} onChange={(e) => handleChange('selectedBasecoat', e.target.value)}>
+                        {currentOptions.basecoats.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <span className="label" id="detailingLabel">Detailing</span>
+                    <div className="seg" role="group" aria-labelledby="detailingLabel">
+                      {segButton('Butter grade', inputs.accessoryType === 'Butter Grade', () => handleChange('accessoryType', 'Butter Grade'))}
+                      {segButton('Fabric', inputs.accessoryType === 'Fabric', () => handleChange('accessoryType', 'Fabric'))}
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="butterGrade" className="label">Butter grade product</label>
+                    <select id="butterGrade" className="input" value={inputs.selectedButterGrade} onChange={(e) => handleChange('selectedButterGrade', e.target.value)}>
+                      {currentOptions.butterGrades.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  </div>
+                  {inputs.accessoryType === 'Fabric' && (
+                    <div>
+                      <label htmlFor="fabric" className="label">Fabric / mesh</label>
+                      <select id="fabric" className="input" value={inputs.selectedFabric} onChange={(e) => handleChange('selectedFabric', e.target.value)}>
+                        {currentOptions.fabrics.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ROOF */}
+          <section className="order-1 lg:order-3 lg:border-t border-line px-4 sm:px-5 py-5 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Roof</h2>
+              <div className="flex items-center gap-2.5 text-[13px] text-ink-2">
+                <span id="multiSectionLabel">Multiple sections</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={useMultiSection}
+                  aria-labelledby="multiSectionLabel"
+                  onClick={() => { setUseMultiSection(!useMultiSection); if (!useMultiSection && roofSections.length === 0) addRoofSection(); }}
+                  className="switch"
+                >
+                  <span />
+                </button>
+              </div>
+            </div>
+
+            {!useMultiSection ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="roofSize" className="label">Roof area <span className="font-normal text-ink-3">sq ft</span></label>
+                  <input
+                    id="roofSize"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="1000000"
+                    value={inputs.roofSizeSqFt || ''}
+                    onChange={(e) => handleChange('roofSizeSqFt', parseFloat(e.target.value) || 0)}
+                    className={`input num ${validationErrors.roofSizeSqFt ? 'input-error' : ''}`}
+                    placeholder="5,000"
+                    {...fieldProps('roofSizeSqFt')}
+                  />
+                  <ValidationError field="roofSizeSqFt" />
+                  <p className="hint num">{commonResults.squares.toFixed(2)} squares</p>
+                </div>
+                <div>
+                  <label htmlFor="linearFeet" className="label">Seams <span className="font-normal text-ink-3">linear ft</span></label>
+                  <input
+                    id="linearFeet"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="100000"
+                    value={inputs.linearFeet || ''}
+                    onChange={(e) => handleChange('linearFeet', parseFloat(e.target.value) || 0)}
+                    className={`input num ${validationErrors.linearFeet ? 'input-error' : ''}`}
+                    placeholder="250"
+                    {...fieldProps('linearFeet')}
+                  />
+                  <ValidationError field="linearFeet" />
+                </div>
+                <div>
+                  <label htmlFor="penetrationsLF" className="label">Penetrations <span className="font-normal text-ink-3">linear ft</span></label>
+                  <input
+                    id="penetrationsLF"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="100000"
+                    value={inputs.penetrationsLF || ''}
+                    onChange={(e) => handleChange('penetrationsLF', parseFloat(e.target.value) || 0)}
+                    className="input num"
+                    placeholder="0"
+                  />
+                  <p className="hint">Detailed with butter grade.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <ul className="border border-line rounded-md divide-y divide-line">
+                  {roofSections.map((section) => (
+                    <li key={section.id} className="p-3 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="group flex items-center gap-1.5 min-w-0 flex-1 rounded px-1 -mx-1 py-0.5 hover:bg-canvas focus-within:bg-white focus-within:ring-2 focus-within:ring-accent-100 cursor-text">
+                          <input
+                            type="text"
+                            aria-label="Section name"
+                            value={section.name}
+                            onChange={(e) => updateRoofSection(section.id, 'name', e.target.value)}
+                            className="min-w-0 flex-1 text-[13px] font-semibold bg-transparent focus:outline-none"
+                          />
+                          <Pencil size={12} className="text-ink-3 shrink-0" aria-hidden="true" />
+                        </label>
+                        <button onClick={() => removeRoofSection(section.id)} className="icon-btn hover:text-red-700" aria-label={`Remove ${section.name}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label htmlFor={`sec-${section.id}-sqft`} className="label text-xs mb-1">Sq ft</label>
+                          <input
+                            id={`sec-${section.id}-sqft`}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            value={section.sqFt || ''}
+                            onChange={(e) => updateRoofSection(section.id, 'sqFt', Math.max(0, parseFloat(e.target.value) || 0))}
+                            className={`input input-sm num ${validationErrors[`section_${section.id}_sqFt`] ? 'input-error' : ''}`}
+                            placeholder="0"
+                            {...fieldProps(`section_${section.id}_sqFt`)}
+                          />
+                          <ValidationError field={`section_${section.id}_sqFt`} />
+                        </div>
+                        <div>
+                          <label htmlFor={`sec-${section.id}-lf`} className="label text-xs mb-1">Linear ft</label>
+                          <input
+                            id={`sec-${section.id}-lf`}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            value={section.linearFeet || ''}
+                            onChange={(e) => updateRoofSection(section.id, 'linearFeet', Math.max(0, parseFloat(e.target.value) || 0))}
+                            className={`input input-sm num ${validationErrors[`section_${section.id}_lf`] ? 'input-error' : ''}`}
+                            placeholder="0"
+                            {...fieldProps(`section_${section.id}_lf`)}
+                          />
+                          <ValidationError field={`section_${section.id}_lf`} />
+                        </div>
+                        <div>
+                          <label htmlFor={`sec-${section.id}-type`} className="label text-xs mb-1">Roof type</label>
+                          <select id={`sec-${section.id}-type`} value={section.roofType} onChange={(e) => updateRoofSection(section.id, 'roofType', e.target.value)} className="input input-sm">
+                            {getAvailableRoofTypes().map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label htmlFor={`sec-${section.id}-pen`} className="label text-xs mb-1">Penetr. ft</label>
+                          <input
+                            id={`sec-${section.id}-pen`}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            value={section.penetrationsLF || ''}
+                            onChange={(e) => updateRoofSection(section.id, 'penetrationsLF', Math.max(0, parseFloat(e.target.value) || 0))}
+                            className="input input-sm num"
+                            placeholder="0"
+                            aria-label="Penetrations, linear feet"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor={`sec-${section.id}-waste`} className="label text-xs mb-1">Waste</label>
+                          <select id={`sec-${section.id}-waste`} value={section.wasteFactor} onChange={(e) => updateRoofSection(section.id, 'wasteFactor', e.target.value)} className="input input-sm num">
+                            {percentOptions(15)}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor={`sec-${section.id}-stretch`} className="label text-xs mb-1">Stretch</label>
+                          <select id={`sec-${section.id}-stretch`} value={section.stretchFactor} onChange={(e) => updateRoofSection(section.id, 'stretchFactor', e.target.value)} className="input input-sm num">
+                            {percentOptions(30)}
+                          </select>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <button onClick={addRoofSection} className="btn-secondary w-full">
+                  <Plus size={14} /> Add section
+                </button>
+                <dl className="text-[13px] space-y-1 num">
+                  <div className="flex justify-between"><dt className="text-ink-3">Total area</dt><dd className="font-medium">{inputs.roofSizeSqFt.toLocaleString()} sq ft · {commonResults.squares.toFixed(2)} sq</dd></div>
+                  <div className="flex justify-between"><dt className="text-ink-3">Total seams</dt><dd className="font-medium">{inputs.linearFeet.toLocaleString()} LF</dd></div>
+                  <div className="flex justify-between"><dt className="text-ink-3">Total penetrations</dt><dd className="font-medium">{(inputs.penetrationsLF || 0).toLocaleString()} LF</dd></div>
+                </dl>
+              </div>
+            )}
+
+            {/* Single-roof settings; in multi-section mode each section carries its own */}
+            {!useMultiSection && (
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="roofType" className="label">Roof type</label>
+                  <select id="roofType" className="input" value={inputs.roofType} onChange={(e) => handleChange('roofType', e.target.value)}>
+                    <option value="Capsheet">Capsheet</option>
+                    {/* Single-Ply not available for Aluminum */}
+                    {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
+                    {/* Previously coated: same application rates as single-ply */}
+                    {inputs.coatingSystem !== 'Aluminum' && <option value="Previously Coated">Previously coated</option>}
+                    {/* Sprayfoam for Silicone or Acrylic Standard only, NOT Aluminum */}
+                    {inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard') && <option value="Sprayfoam">Sprayfoam</option>}
+                    {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
+                    {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
+                  </select>
+                  {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet, single-ply and previously coated roofs only.</p>}
+                  {inputs.roofType === 'Previously Coated' && <p className="hint">Uses the single-ply application rates.</p>}
+                  {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and capsheet only.</p>}
+                </div>
+
+                {/* Fastener encapsulation method — sits right under Roof Type so it's
+                    immediately visible when Metal is picked (otherwise it's easy to miss). */}
+                {inputs.roofType === 'Metal' && inputs.accessoryType === 'Butter Grade' && (
+                  <div>
+                    <span className="label" id="fastenerLabel">Fastener encapsulation</span>
+                    <div className="seg" role="group" aria-labelledby="fastenerLabel">
+                      {segButton('Butter grade', !inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', false))}
+                      {segButton('Self-leveling caulk', !!inputs.useFastenerCaulk, () => handleChange('useFastenerCaulk', true))}
+                    </div>
+                    <p className="hint">
+                      {inputs.useFastenerCaulk
+                        ? `Fasteners covered by self-leveling caulk (~${FASTENERS_PER_CAULK_TUBE}/tube). Butter grade stays for seams and penetrations only.`
+                        : 'Butter grade buckets cover both seams and fasteners. Switch to caulk if the contractor prefers it.'}
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="waste" className="label">Waste</label>
+                    <select id="waste" className="input num" value={inputs.wasteFactor} onChange={(e) => handleChange('wasteFactor', e.target.value)}>
+                      {percentOptions(15)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="stretch" className="label">Stretch <span className="font-normal text-ink-3">extra coverage</span></label>
+                    <select id="stretch" className="input num" value={inputs.stretchFactor} onChange={(e) => handleChange('stretchFactor', e.target.value)}>
+                      {percentOptions(30)}
+                    </select>
+                  </div>
+                  {!(parseFloat(inputs.wasteFactor) > 0) && (
+                    <p className="hint col-span-2 mt-0">No waste added. Most quotes allow 5–10% for overspray and cut-ins.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+                {/* Seam treatment: silicone over single-ply or capsheet can stripe seams with topcoat on 10/15-year */}
+                {seamTreatmentApplies && (
+                  <div>
+                    <span className="label" id="seamTreatmentLabel">Seam treatment</span>
+                    <div className="seg" role="group" aria-labelledby="seamTreatmentLabel">
+                      {segButton('Topcoat stripe', inputs.seamTreatment === 'topcoat', () => handleChange('seamTreatment', 'topcoat'))}
+                      {segButton('Butter grade', inputs.seamTreatment !== 'topcoat', () => handleChange('seamTreatment', 'butter'))}
+                    </div>
+                    <p className="hint">
+                      {inputs.seamTreatment === 'topcoat'
+                        ? '10 and 15-year: one layer of topcoat at 1.5 gal/sq, 2" each side of the seam (about 200 LF per gallon). 20-year seams use butter grade. Penetrations always use butter grade.'
+                        : 'Seams and penetrations use butter grade on every warranty.'}
+                    </p>
+                  </div>
+                )}
+          </section>
+
+          {/* CONDITIONS */}
+          <section className="order-2 lg:order-4 border-t border-line px-4 sm:px-5 pt-5 pb-2">
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em] mb-1">Site conditions</h2>
+            <div className="divide-y divide-line">
+              {/* Adhesion test not needed for Aluminum */}
+              {inputs.coatingSystem !== 'Aluminum' && (
+                <div>
+                  {switchRow('Passed adhesion test', inputs.passedAdhesion, () => handleChange('passedAdhesion', !inputs.passedAdhesion))}
+                  {!inputs.passedAdhesion && (
+                    <div className="callout-danger mb-3">
+                      <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                      <span>Adhesion failure: adhesion primer added to the order.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* RUST TOGGLE - FOR SILICONE OR ACRYLIC ON METAL (not Aluminum) */}
+              {(inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic') && inputs.roofType === 'Metal' && (
+                <div>
+                  {switchRow('Rust present', inputs.hasRust, () => handleChange('hasRust', !inputs.hasRust))}
+                  {inputs.hasRust && (
+                    <div className="pb-3">
+                      <span className="label" id="rustCoverageLabel">Rust primer coverage</span>
+                      <div className="seg" role="group" aria-labelledby="rustCoverageLabel">
+                        {segButton('Field prime', inputs.rustPrimeMethod !== 'spot', () => handleChange('rustPrimeMethod', 'field'))}
+                        {segButton('Spot prime', inputs.rustPrimeMethod === 'spot', () => handleChange('rustPrimeMethod', 'spot'))}
+                      </div>
+                      <p className="hint">
+                        {inputs.rustPrimeMethod === 'spot'
+                          ? `No primer quantity calculated. All quotes will read: "${SPOT_PRIME_NOTE}".`
+                          : 'Rust primer at 0.5 gal/sq across the entire field.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {switchRow('Goldseal warranty', inputs.goldseal, () => handleChange('goldseal', !inputs.goldseal))}
+            </div>
+          </section>
+        </aside>
+
+        {/* RIGHT COLUMN: RESULTS */}
+        <div ref={resultsRef} className="results-col min-w-0 lg:sticky" style={{ top: resultsTop }}>
+          <section id="order" className="panel overflow-hidden print:border-0 scroll-mt-20">
+            <div className="flex items-start justify-between gap-4 px-4 sm:px-5 py-4 border-b border-line">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold tracking-[-0.01em]">Material order</h2>
+                <p className="text-[13px] text-ink-3 mt-0.5">{systemLabel} on {roofTypeLabel} · {factorsLabel}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-lg font-semibold num leading-tight">{commonResults.squares.toFixed(1)} <span className="text-[13px] font-normal text-ink-3">sq</span></div>
+                <div className="text-xs text-ink-3 num">{inputs.roofSizeSqFt.toLocaleString()} sq ft</div>
+              </div>
+            </div>
+
+            {/* DISTRIBUTOR MARGIN */}
+            <div className="px-4 sm:px-5 py-3 border-b border-line flex flex-wrap items-center gap-x-6 gap-y-2 bg-canvas/50 print:hidden">
+              <label htmlFor="margin" className="flex items-center gap-2.5">
+                <span className="text-[13px] font-medium text-ink-2">Distributor margin</span>
+                <span className="relative">
+                  <input
+                    id="margin"
+                    type="number"
+                    inputMode="decimal"
+                    step="1"
+                    min="0"
+                    max="99"
+                    value={profitMargin}
+                    // A margin outside 0–99% has no meaning (100% divides by zero), so it can't be entered
+                    onChange={(e) => setProfitMargin(Math.min(99, Math.max(0, parseFloat(e.target.value) || 0)))}
+                    className={`input input-sm num w-[76px] pr-7 text-right ${validationErrors.profitMargin ? 'input-error' : ''}`}
+                    {...fieldProps('profitMargin')}
+                    placeholder="0"
+                  />
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">%</span>
+                </span>
+              </label>
+              <div className="basis-full -mt-1 empty:hidden">
+                <ValidationError field="profitMargin" />
+                <p className="text-xs text-ink-3">
+                  {profitMargin > 0
+                    ? <>The distributor estimate shows your cost and the {profitMargin}% margin. The contractor quote shows only the <span className="text-sell-700 font-medium">contractor prices</span>.</>
+                    : 'Set a margin to mark up prices on the contractor quote.'}
+                </p>
+              </div>
+            </div>
+
+            {/* MISSING LINEAR FEET (only once there is a roof to quote) */}
+            {inputs.roofSizeSqFt > 0 && inputs.linearFeet <= 0 && (
+              <div className="px-4 sm:px-5 pt-4">
+                <div className="callout-warn">
+                  <AlertTriangle size={15} className="shrink-0 mt-px text-amber-600" />
+                  <div>
+                    <span className="font-semibold">Quote incomplete.</span> Add seam linear feet to calculate butter grade (seam sealant).
+                    {inputs.roofType === 'Metal' && commonResults.screwBuckets > 0 && (
+                      <span className="block mt-0.5 text-amber-800">Fastener encapsulation for ~{commonResults.screwCount} screws is included, based on roof area.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* EMPTY STATE */}
+            {!(inputs.roofSizeSqFt > 0) && (
+              <div className="px-4 sm:px-5 py-10 text-center">
+                <div className="text-sm font-medium">Enter the roof area to build the order</div>
+                <p className="text-[13px] text-ink-3 mt-1 max-w-[46ch] mx-auto">Quantities for each coat, primer and accessory appear here for the 10, 15 and 20-year systems, with prices once you enter them.</p>
+              </div>
+            )}
+
+            {/* ORDER TABLE */}
+            {inputs.roofSizeSqFt > 0 && (<>
+            {tiers.length > 1 && (
+              <div className="sm:hidden px-4 pt-4">
+                <div className="seg" role="group" aria-label="Warranty tier">
+                  {tiers.map(y => segButton(`${y}-year`, leadTier === y, () => setMobileTier(y)))}
+                </div>
+              </div>
+            )}
+            <div className="overflow-x-auto mt-3 print:overflow-visible">
+              <table className="order w-full sm:min-w-[600px] text-sm border-separate border-spacing-0">
+                <colgroup>
+                  <col />
+                  <col className="w-[96px] sm:w-[120px]" />
+                  {tiers.map(y => <col key={y} className={`w-[92px] sm:w-[130px] ${tierCls(y)}`} />)}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col">Product</th>
+                    <th scope="col">Price / unit</th>
+                    {tiers.map(y => <th key={y} scope="col" className={`text-ink-2 ${tierCls(y)}`}>{y}-year</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Base Coat (Acrylic) OR System Primer (Silicone) */}
+                  {inputs.coatingSystem !== 'Aluminum' && estimates['10']?.baseGal > 0 && (
+                    <tr>
+                      {productCell('Basecoat', `${inputs.selectedBasecoat} · ${rateText('base')}`)}
+                      {priceCell('basecoat', 'gal')}
+                      {tierQtyCells('baseGal', 'gal', prices.basecoat)}
+                    </tr>
+                  )}
+
+                  {/* Spot Prime note row — rust present but user chose spot prime, so no quantities */}
+                  {inputs.hasRust && inputs.rustPrimeMethod === 'spot'
+                    && (inputs.coatingSystem === 'Silicone' || inputs.coatingSystem === 'Acrylic')
+                    && inputs.roofType === 'Metal' && (
+                    <tr>
+                      <td colSpan={colCount} className="!text-left">
+                        <div className="flex items-start gap-2">
+                          <Info size={14} className="mt-0.5 text-amber-600 shrink-0" />
+                          <div>
+                            <div className="font-medium">Rust primer — spot prime</div>
+                            <div className="text-xs text-ink-3 mt-0.5">{currentPrimers.rust} — {SPOT_PRIME_NOTE}. No field quantity calculated.</div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Rust Primer (Metal only) */}
+                  {estimates['10']?.rustPrimerGal > 0 && (
+                    <tr>
+                      {productCell('Rust primer', `${currentPrimers.rust} · 0.5 gal/sq · 5-gal pails`)}
+                      {priceCell('rustPrimer', 'gal')}
+                      {tierQtyCells('rustPrimerGal', 'gal', prices.rustPrimer)}
+                    </tr>
+                  )}
+
+                  {/* Adhesion Primer */}
+                  {!inputs.passedAdhesion && (
+                    <tr>
+                      {productCell('Adhesion primer', `${currentPrimers.adhesion} · 0.2 gal/sq · 1-gal containers`,
+                        <span className="badge h-auto min-h-5 py-0.5 bg-red-50 text-red-700 mt-1.5"><AlertTriangle size={11} className="shrink-0" /> Failed adhesion test</span>)}
+                      {priceCell('adhesionPrimer', 'gal')}
+                      {tierQtyCells('adhesionPrimerGal', 'gal', prices.adhesionPrimer)}
+                    </tr>
+                  )}
+
+                  {/* Top Coats */}
+                  {['top1Gal', 'top2Gal', 'top3Gal'].map((field, i) => (
+                    (estimates['10']?.[field] > 0 || estimates['15']?.[field] > 0 || estimates['20']?.[field] > 0) && (
+                      <tr key={field}>
+                        {productCell(`Topcoat, coat ${i + 1}`, `${inputs.selectedTopcoat} · ${rateText(`top${i + 1}`)}`,
+                          i === 0 && seamStripeOn && stripeGallons > 0 && (
+                            <div className="text-xs text-ink-3 mt-0.5 leading-snug">Includes ~{stripeGallons} gal seam stripe on 10 and 15-year ({inputs.linearFeet.toLocaleString()} LF at 200 LF/gal)</div>
+                          ))}
+                        {i === 0 ? priceCell('topcoat', 'gal') : sameAsCell('Same as topcoat 1')}
+                        {tierQtyCells(field, 'gal', prices.topcoat)}
+                      </tr>
+                    )
+                  ))}
+
+                  {/* Coatings subtotal */}
+                  <tr className="row-sub">
+                    <td>Coatings total</td>
+                    <td />
+                    {tiers.map(y => (
+                      <td key={y} className={`num whitespace-nowrap ${tierCls(y)}`}>
+                        <div>{fmtQty(estimates[y]?.totalGallons)} gal</div>
+                        {hasCoatingPrices && <div className="text-xs text-ink-3 font-normal mt-0.5">{formatCurrency(coatingCost(y))}</div>}
+                      </td>
+                    ))}
+                  </tr>
+
+                  {/* ACCESSORIES (same quantity for every warranty tier) */}
+                  {hasAccessoryRows && (
+                    <tr>
+                      <td colSpan={colCount} className="!text-left !pt-4 !pb-1.5 text-xs font-medium text-ink-3">Accessories</td>
+                    </tr>
+                  )}
+
+                  {showAccessory && (
+                    seamStripeOn ? (
+                      /* Seams striped with topcoat on 10/15-year: penetrations are a butter-grade
+                         line on every tier; seams take butter grade on the 20-year only. */
+                      <>
+                        {commonResults.accessoryQty > 0 && (
+                          <tr>
+                            {productCell(`${commonResults.accessoryName} — penetrations`, commonResults.accessoryDesc)}
+                            {priceCell('accessory', accUnitSingular)}
+                            {commonQtyCells(commonResults.accessoryQty, 'buckets', prices.accessory)}
+                          </tr>
+                        )}
+                        {hasSeamBuckets && (
+                          <tr>
+                            {productCell(`${commonResults.accessoryName} — seams`, '20-year only. 10 and 15-year seams are striped with topcoat.')}
+                            {commonResults.accessoryQty > 0 ? sameAsCell('Same as penetrations') : priceCell('accessory', accUnitSingular)}
+                            {tiers.map(y => (SEAM_STRIPE_TIERS.includes(y)
+                              ? <td key={y} className={`text-xs text-ink-3 pt-3 whitespace-nowrap ${tierCls(y)}`}>Topcoat stripe</td>
+                              : qtyCell(y, estimates[y]?.seamBuckets || 0, 'buckets', prices.accessory)))}
+                          </tr>
+                        )}
+                      </>
+                    ) : commonResults.screwBuckets > 0 ? (
+                      /* Metal roof: the seam sealer does double duty — sealing seams (by
+                         linear feet) and encapsulating fasteners (by roof area). Show them
+                         as separate line items sharing one per-bucket price. */
+                      <>
+                        {commonResults.linearBuckets > 0 && (
+                          <tr>
+                            {productCell(`${commonResults.accessoryName || 'Seam sealer'} — ${linearLabel}`, 'By linear feet')}
+                            {priceCell('accessory', 'bucket')}
+                            {commonQtyCells(commonResults.linearBuckets, 'buckets', prices.accessory)}
+                          </tr>
+                        )}
+                        <tr>
+                          {productCell(`${commonResults.accessoryName || 'Seam sealer'} — fasteners`, `Encapsulates ~${(commonResults.screwCount || 0).toLocaleString()} fasteners (by roof area)`)}
+                          {commonResults.linearBuckets > 0 ? sameAsCell('Same as seams') : priceCell('accessory', 'bucket')}
+                          {commonQtyCells(commonResults.screwBuckets, 'buckets', prices.accessory)}
+                        </tr>
+                      </>
+                    ) : (
+                      <tr>
+                        {productCell(
+                          detailLF > 0 ? commonResults.accessoryName : 'Fastener encapsulation',
+                          detailLF > 0 ? `${commonResults.accessoryDesc}${inputs.penetrationsLF > 0 ? ` · ${linearLabel}` : ''}` : 'Metal roof screw encapsulation'
+                        )}
+                        {priceCell('accessory', accUnitSingular)}
+                        {commonQtyCells(commonResults.accessoryQty, (commonResults.accessoryUnit || '').toLowerCase(), prices.accessory)}
+                      </tr>
+                    )
+                  )}
+
+                  {/* FASTENER CAULK ROW (when toggled on for metal roofs) */}
+                  {commonResults.fastenerCaulkTubes > 0 && (
+                    <tr>
+                      {productCell('Fastener caulk', `${FASTENER_CAULK_NAME} · ~${FASTENERS_PER_CAULK_TUBE} fasteners/tube, covers ~${(commonResults.screwCount || 0).toLocaleString()}`)}
+                      {priceCell('fastenerCaulk', 'tube')}
+                      {commonQtyCells(commonResults.fastenerCaulkTubes, 'tubes', prices.fastenerCaulk)}
+                    </tr>
+                  )}
+
+                  {/* ACRYLIC MEMBRANE ROW (Only for Reinforced) */}
+                  {isReinforced && (
+                    <tr>
+                      {productCell('Reinforcement membrane', `Full-system reinforcement · 40" × 324' rolls`)}
+                      {priceCell('membrane', 'roll')}
+                      {commonQtyCells(commonResults.membraneRolls, 'rolls', prices.membrane)}
+                    </tr>
+                  )}
+
+                  {/* Goldseal */}
+                  {inputs.goldseal && (
+                    <tr>
+                      {productCell('Goldseal warranty', 'Priced per warranty term')}
+                      <td />
+                      {tiers.map(y => qtyCell(y, 1, 'warranty', estimates[y]?.goldsealCost || 0))}
+                    </tr>
+                  )}
+
+                </tbody>
+                <tfoot>
+                  {/* GRAND TOTAL */}
+                  <tr className="row-total">
+                    <td>
+                      {profitMargin > 0 ? 'Cost to distributor' : 'Total'}
+                      {unpricedNote && <div className="text-xs font-normal text-amber-700 mt-0.5">{unpricedNote}</div>}
+                    </td>
+                    <td />
+                    {tiers.map(y => (
+                      <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>
+                        {hasPrices ? formatCurrency(grandTotals[y] || 0) : <span className="text-[13px] font-normal text-ink-3">Enter prices</span>}
+                      </td>
+                    ))}
+                  </tr>
+
+                  {/* COST PER SQ FT */}
+                  {hasPrices && inputs.roofSizeSqFt > 0 && (
+                    <tr className="row-meta">
+                      <td>{profitMargin > 0 ? 'Distributor cost per sq ft' : 'Cost per sq ft'}</td>
+                      <td />
+                      {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency((grandTotals[y] || 0) / inputs.roofSizeSqFt)}</td>)}
+                    </tr>
+                  )}
+
+                  {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
+                  {profitMargin > 0 && hasPrices && (
+                    <>
+                      {/* Contractor-facing band: what the contractor will see, in the sell color */}
+                      <tr className="row-total row-sell">
+                        <td>
+                          <span className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-sell-600 shrink-0" aria-hidden="true" />
+                            Contractor price
+                          </span>
+                          <div className="text-xs font-normal text-sell-700 mt-0.5 pl-4 print:hidden">{profitMargin}% margin · what the contractor sees</div>
+                        </td>
+                        <td />
+                        {tiers.map(y => (
+                          <td key={y} className={`num text-[15px] whitespace-nowrap !text-sell-700 ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor))}</td>
+                        ))}
+                      </tr>
+                      {inputs.roofSizeSqFt > 0 && (
+                        <tr className="row-meta row-sell">
+                          <td className="pl-8">Contractor price per sq ft</td>
+                          <td />
+                          {tiers.map(y => <td key={y} className={`num !text-sell-700 ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) / inputs.roofSizeSqFt)}</td>)}
+                        </tr>
+                      )}
+                      <tr className="row-meta print:hidden">
+                        <td>Your profit <span className="text-xs">(distributor only)</span></td>
+                        <td />
+                        {tiers.map(y => <td key={y} className={`num !font-medium !text-gain-700 ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) - (grandTotals[y] || 0))}</td>)}
+                      </tr>
+                    </>
+                  )}
+                  <tr className="row-meta"><td colSpan={colCount} className="!pb-1" /></tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* HOW QUANTITIES ARE DERIVED */}
+            <div className="px-4 sm:px-5 pb-3 print:hidden">
+              <button type="button" onClick={() => setShowMethod(!showMethod)} aria-expanded={showMethod} className="flex items-center gap-1.5 text-[13px] font-medium text-accent-600 hover:text-accent-700 min-h-[32px]">
+                <Info size={14} /> {showMethod ? 'Hide how quantities are calculated' : 'How quantities are calculated'}
+              </button>
+              {showMethod && (
+                <ul className="mt-1 text-xs text-ink-2 space-y-1 list-disc pl-4 leading-relaxed max-w-[75ch]">
+                  <li>Each coat: squares × the application rate shown under the product (gal per square) × (1 + waste + stretch), rounded up to full 5-gal pails.</li>
+                  <li>Topcoat coats 1–3 are separate passes of the same topcoat. Longer warranties add passes or heavier rates, so a coat can be absent at one tier.</li>
+                  <li>Rust primer: 0.5 gal per square, the same way. Adhesion primer: 0.2 gal per square, rounded up to whole gallons.</li>
+                  <li>Seam sealer and fabric come from seam and penetration linear feet; fastener encapsulation on metal comes from roof area.</li>
+                  <li>Silicone over single-ply or capsheet can stripe seams with topcoat on 10 and 15-year: one layer at 1.5 gal/sq, 2" each side (200 LF per gallon), added to coat 1 before rounding. Penetrations and 20-year seams use butter grade.</li>
+                  <li>Line cost = quantity × unit price. Totals add the printed lines, so the math can be checked with a calculator.</li>
+                </ul>
+              )}
+            </div>
+            </>)}
+
+            {/* PDF DOWNLOADS */}
+            <div className="px-4 sm:px-5 py-4 border-t border-line grid sm:grid-cols-2 gap-x-3 gap-y-4 print:hidden">
+              <div>
+                <button onClick={() => generatePDF('distributor')} className="btn-primary btn-lg w-full">
+                  <FileDown size={16} /> Distributor estimate
+                </button>
+                <p className="hint">For the distributor: your cost, margin and the contractor price.</p>
+              </div>
+              <div>
+                <button onClick={() => generatePDF('contractor')} className="btn-secondary btn-lg w-full">
+                  <FileText size={16} /> Contractor quote
+                </button>
+                <p className="hint">
+                  For the contractor: marked-up prices only, never cost or margin.
+                  {!(profitMargin > 0) && <span className="block text-amber-700">No margin set, so prices equal your cost.</span>}
+                </p>
+              </div>
+            </div>
+
+          </section>
+
+        </div>
+      </main>
+
+      <div className="max-w-[1320px] mx-auto px-4 lg:px-8 grid gap-5 lg:gap-6 lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)] items-start print:hidden">
+          {/* ENERGY SAVINGS ESTIMATOR (TOGGLEABLE) */}
+          <section className="panel overflow-hidden print:hidden">
+            <button
+              onClick={() => setShowEnergySavings(!showEnergySavings)}
+              aria-expanded={showEnergySavings}
+              className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-canvas/60 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Zap size={15} className="text-ink-3" />
+                Energy savings estimate
+                <span className="font-normal text-[13px] text-ink-3">Optional</span>
+              </span>
+              <ChevronDown size={16} className={`text-ink-3 transition-transform ${showEnergySavings ? 'rotate-180' : ''}`} />
+            </button>
+            {showEnergySavings && (
+              <div className="border-t border-line">
+                <EnergySavingsEstimator
+                  roofSize={inputs.roofSizeSqFt}
+                  roofType={inputs.roofType}
+                  coatingSystem={inputs.coatingSystem}
+                  selectedRegion={energyRegion}
+                  onRegionChange={setEnergyRegion}
+                  onResultsChange={(results, rate, region) => {
+                    setEnergySavingsResults(results);
+                    setEnergyElectricityRate(rate);
+                    if (region) setEnergyRegion(region);
+                  }}
+                />
+              </div>
+            )}
+          </section>
+          {/* COPY TO EMAIL SECTION */}
+          <section className="panel print:hidden">
+            <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-5 pt-4 pb-3">
+              <h2 className="text-sm font-semibold flex items-center gap-2"><Mail size={15} className="text-ink-3" /> Email text</h2>
+              <div className="flex items-center gap-2">
+                <div className="seg" role="group" aria-label="Email version">
+                  {segButton('Distributor', emailViewMode === 'distributor', () => setEmailViewMode('distributor'))}
+                  {segButton('Contractor', emailViewMode === 'contractor', () => setEmailViewMode('contractor'))}
+                </div>
+                <button onClick={copyToClipboard} className="btn-secondary">
+                  {copySuccess ? <CheckCircle size={14} className="text-green-700" /> : <Copy size={14} />} {copySuccess ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <div className="px-4 sm:px-5 pb-4">
+              <p className="text-xs text-ink-3 mb-2">
+                {emailViewMode === 'contractor'
+                  ? profitMargin > 0
+                    ? `Prices marked up to contractor price (${profitMargin}% margin). No distributor cost or margin included.`
+                    : 'No margin set, so prices match the values entered above.'
+                  : 'Distributor version. Includes your cost and margin.'}
+              </p>
+              <textarea
+                readOnly
+                aria-label="Email text"
+                value={emailViewMode === 'contractor' ? contractorEmailText : emailText}
+                className="w-full h-56 sm:h-44 rounded-md border border-line bg-canvas p-3 font-mono text-[13px] sm:text-xs leading-relaxed text-ink-2 resize-y focus:outline-none focus:border-accent-600 focus:ring-[3px] focus:ring-accent-100"
+              />
+            </div>
+          </section>
+
+      </div>
+
+      <footer className="max-w-[1320px] mx-auto px-4 lg:px-8 text-xs text-ink-3 leading-relaxed print:max-w-none print:px-0">
+        <div className="border-t border-line mt-6 py-5 print:mt-3 print:pt-3">
+            <div className="max-w-[75ch]">
+              <p className="mb-1">{useMultiSection && roofSections.length > 0 ? 'Estimates include per-section waste and stretch factors.' : `Estimates include ${Math.round(inputs.wasteFactor * 100)}% waste and ${Math.round(inputs.stretchFactor * 100)}% stretch.`}</p>
+              <p>
+                Disclaimer: this quote is provided as a guideline and estimate only. Actual material quantities may vary depending on factors including but not limited to application rates, true measurements and waste factors. The end user is solely responsible for verifying all measurements and site conditions. Final approval of quantities and costs rests with the purchaser.
+              </p>
+            </div>
+        </div>
+      </footer>
 
       {/* MOBILE SUMMARY BAR */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-line px-4 py-2.5 flex items-center justify-between gap-3 print:hidden" style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))' }}>
@@ -3366,19 +3880,84 @@ export default function App() {
           </div>
           <div className="text-[15px] font-semibold truncate">
             {fmtQty(estimates[leadTier]?.totalGallons)} gal
-            {hasPrices && <span className="text-ink-3 font-normal"> · {profitMargin > 0 ? 'your cost ' : 'total '}</span>}
-            {hasPrices && formatCurrency(grandTotals[leadTier] || 0)}
+            {hasPrices && <span className="text-ink-3 font-normal"> · {profitMargin > 0 ? 'contractor ' : 'total '}</span>}
+            {hasPrices && <span className={profitMargin > 0 ? 'text-sell-700' : ''}>{formatCurrency(profitMargin > 0 ? pricedTotal(leadTier, marginFactor) : (grandTotals[leadTier] || 0))}</span>}
           </div>
         </div>
         <a href="#order" className="btn-secondary shrink-0">View order</a>
       </div>
 
+      {/* CONFIRM DIALOG */}
+      {confirmState && (
+        <ConfirmDialog
+          state={confirmState}
+          onClose={() => setConfirmState(null)}
+        />
+      )}
+
       {/* TOAST */}
       {toast && (
-        <div role="status" className="fixed z-50 bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-md bg-ink text-white text-[13px] px-3.5 py-2.5 shadow-pop print:hidden">
-          <CheckCircle size={15} className="text-green-400" /> {toast}
+        <div key={toast.key} role={toast.tone === 'error' ? 'alert' : 'status'} className="fixed z-50 top-[64px] inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:max-w-[440px] lg:top-auto lg:bottom-6 lg:translate-x-0 lg:left-[max(2rem,calc((100vw-1320px)/2+2rem))] lg:max-w-[400px] flex items-center gap-2.5 rounded-md bg-ink text-white text-[13px] pl-3.5 pr-2 py-2 shadow-pop print:hidden">
+          {toast.tone === 'error'
+            ? <AlertTriangle size={15} className="text-amber-300 shrink-0" />
+            : <CheckCircle size={15} className="text-green-400 shrink-0" />}
+          <span className="flex-1 min-w-0 py-0.5">{toast.message}</span>
+          {toast.action && (
+            <button onClick={toast.action.onClick} className="shrink-0 rounded px-2.5 min-h-[32px] font-semibold text-accent-200 hover:bg-white/10">{toast.action.label}</button>
+          )}
+          <button onClick={() => setToast(null)} className="shrink-0 rounded p-1.5 text-white/70 hover:text-white hover:bg-white/10" aria-label="Dismiss"><X size={14} /></button>
         </div>
       )}
+    </div>
+  );
+}
+
+// Confirmation for actions that can lose work or send a flawed quote.
+// Focus starts on the safe choice, stays inside the dialog, and Esc cancels.
+function ConfirmDialog({ state, onClose }) {
+  const panelRef = useRef(null);
+  const returnFocus = useRef(typeof document !== 'undefined' ? document.activeElement : null);
+
+  useEffect(() => {
+    panelRef.current?.querySelector('[data-autofocus]')?.focus();
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); onClose(); }
+      if (e.key === 'Tab') {
+        const items = [...panelRef.current.querySelectorAll('button')];
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    const prev = returnFocus.current;
+    return () => { window.removeEventListener('keydown', onKey, true); prev?.focus?.(); };
+  }, [onClose]);
+
+  const run = (fn) => { onClose(); fn(); };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 print:hidden">
+      <div className="absolute inset-0 bg-ink/30" onClick={onClose} aria-hidden="true" />
+      <div ref={panelRef} role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody" className="relative w-full max-w-[420px] bg-white border border-line rounded-md shadow-pop">
+        <div className="px-5 pt-5 pb-4">
+          <h2 id="confirmTitle" className="text-[15px] font-semibold">{state.title}</h2>
+          <p id="confirmBody" className="text-[13px] text-ink-2 mt-1.5 leading-relaxed">{state.body}</p>
+        </div>
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-2 px-5 py-3 border-t border-line bg-canvas rounded-b-md [&>button]:w-full sm:[&>button]:w-auto">
+          <button onClick={onClose} className="btn-ghost sm:mr-auto focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-accent-600">Cancel</button>
+          <button
+            {...(state.secondary ? {} : { 'data-autofocus': true })}
+            onClick={() => run(state.onConfirm)}
+            className={`${state.secondary ? 'btn-secondary' : 'btn-primary'} focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-accent-600`}
+          >
+            {state.confirmLabel}
+          </button>
+          {state.secondary && (
+            <button data-autofocus onClick={() => run(state.secondary.onClick)} className="btn-primary focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-accent-600">{state.secondary.label}</button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

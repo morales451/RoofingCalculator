@@ -11,6 +11,10 @@ export default {
         line: { DEFAULT: '#e3e8ee', strong: '#c9d1da' },
         ink: { DEFAULT: '#1a1f36', 2: '#3c4257', 3: '#626c7e', 4: '#8a94a6' },
         accent: { 50: '#f0f1fe', 100: '#e1e4fc', 200: '#c5cbf8', 600: '#4b53d0', 700: '#3c43b3', 800: '#323894' },
+        // Contractor-facing money: every figure the contractor will see (sell prices)
+        sell: { 50: '#effaf8', 100: '#d5f2ed', 600: '#0d7d72', 700: '#0b6b62' },
+        // Distributor profit (a gain); same family as the success state
+        gain: { 700: '#15803d' },
       },
       fontFamily: {
         sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
