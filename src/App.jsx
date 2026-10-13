@@ -1474,6 +1474,9 @@ export default function App() {
       lineStrong: [201, 209, 218],
       canvas: [246, 248, 250],
       amber: [180, 83, 9],
+      sell: [11, 107, 98], // contractor-facing money (DESIGN.md: Sell)
+      sellTint: [239, 250, 248],
+      gain: [21, 128, 61], // distributor margin
     };
 
     const docTitle = isContractor ? 'Contractor quote' : 'Distributor estimate';
@@ -1565,7 +1568,7 @@ export default function App() {
             data.cell.styles.halign = columnStyles[data.column.index].halign;
           }
           if (data.section !== 'body') return;
-          const kind = rowKinds[data.row.index];
+          const [kind, tone] = String(rowKinds[data.row.index] || '').split(':');
           if (kind === 'subtotal') {
             data.cell.styles.fillColor = C.canvas;
             data.cell.styles.fontStyle = 'bold';
@@ -1586,6 +1589,9 @@ export default function App() {
             data.cell.styles.cellPadding = { ...pad, top: 2, bottom: 3 };
             data.cell.styles.lineWidth = { bottom: 0 };
           }
+          // Distributor estimate: contractor-facing rows carry the sell tint, margin the gain color
+          if (tone === 'sell') { data.cell.styles.textColor = C.sell; data.cell.styles.fillColor = C.sellTint; }
+          if (tone === 'gain') data.cell.styles.textColor = C.gain;
           // Reserve exact height for the muted second line (drawn in didDrawCell).
           const sub = subs[`${data.row.index}:${data.column.index}`];
           if (sub && widths) {
@@ -1634,9 +1640,9 @@ export default function App() {
         return [
           { label: 'Distributor cost', major: true, value: yr => formatCurrency(pricedTotal(yr)) },
           { label: 'Cost per sq ft', value: yr => perSqFt(pricedTotal(yr)) },
-          { label: `Contractor price (${profitMargin}% margin)`, major: true, value: yr => formatCurrency(pricedTotal(yr, sellFactor)) },
-          { label: 'Contractor price per sq ft', value: yr => perSqFt(pricedTotal(yr, sellFactor)) },
-          { label: 'Margin', value: yr => formatCurrency(pricedTotal(yr, sellFactor) - pricedTotal(yr)) },
+          { label: `Contractor price (${profitMargin}% margin)`, major: true, tone: 'sell', value: yr => formatCurrency(pricedTotal(yr, sellFactor)) },
+          { label: 'Contractor price per sq ft', tone: 'sell', value: yr => perSqFt(pricedTotal(yr, sellFactor)) },
+          { label: 'Margin', tone: 'gain', value: yr => formatCurrency(pricedTotal(yr, sellFactor) - pricedTotal(yr)) },
         ];
       }
       return [
@@ -1969,7 +1975,7 @@ export default function App() {
       const totalRows = pdfTotalRows(perSqFt);
       totalRows.filter(t => !(t.label.includes('sq ft') && !(inputs.roofSizeSqFt > 0))).forEach((t, i) => {
         const cells = [{ content: t.label, colSpan: nonTierCols }, ...yearsToShow.map(yr => t.value(yr) || '')];
-        const kind = i === 0 ? 'total-first' : (t.major ? 'total' : 'total-minor');
+        const kind = (i === 0 ? 'total-first' : (t.major ? 'total' : 'total-minor')) + (t.tone ? `:${t.tone}` : '');
         const rowSubs = {};
         if (i === 0 && unpricedCount > 0) rowSubs[0] = { text: `Excludes ${unpricedCount} unpriced item${unpricedCount > 1 ? 's' : ''}`, tone: 'warn' };
         pushRow(cells, kind, rowSubs);
@@ -2504,7 +2510,7 @@ export default function App() {
         />
       </div>
       <span className="hidden print-value num">{prices[key] > 0 ? formatCurrency(prices[key]) : '—'}</span>
-      <div className={`text-xs mt-1 num ${isUnpriced(key) ? 'text-amber-700' : 'text-ink-3'}`}>
+      <div className={`text-xs mt-1 num ${isUnpriced(key) ? 'text-amber-700' : profitMargin > 0 && prices[key] > 0 ? 'text-sell-700' : 'text-ink-3'}`}>
         {isUnpriced(key) ? 'No price' : profitMargin > 0 && prices[key] > 0 ? `sells at ${formatCurrency(prices[key] * marginFactor)}` : `per ${unit}`}
       </div>
     </td>
@@ -3462,7 +3468,7 @@ export default function App() {
                 <ValidationError field="profitMargin" />
                 <p className="text-xs text-ink-3">
                   {profitMargin > 0
-                    ? `The distributor estimate shows your cost and the ${profitMargin}% margin. The contractor quote shows marked-up prices only.`
+                    ? <>The distributor estimate shows your cost and the {profitMargin}% margin. The contractor quote shows only the <span className="text-sell-700 font-medium">contractor prices</span>.</>
                     : 'Set a margin to mark up prices on the contractor quote.'}
                 </p>
               </div>
@@ -3700,28 +3706,32 @@ export default function App() {
                   {/* CONTRACTOR PRICE (With Margin) - Only shows when margin is applied */}
                   {profitMargin > 0 && hasPrices && (
                     <>
-                      <tr className="row-total">
+                      {/* Contractor-facing band: what the contractor will see, in the sell color */}
+                      <tr className="row-total row-sell">
                         <td>
-                          Contractor price
-                          <div className="text-xs font-normal text-ink-3 mt-0.5 print:hidden">{profitMargin}% margin</div>
+                          <span className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-sell-600 shrink-0" aria-hidden="true" />
+                            Contractor price
+                          </span>
+                          <div className="text-xs font-normal text-sell-700 mt-0.5 pl-4 print:hidden">{profitMargin}% margin · what the contractor sees</div>
                         </td>
                         <td />
                         {tiers.map(y => (
-                          <td key={y} className={`num text-[15px] whitespace-nowrap ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor))}</td>
+                          <td key={y} className={`num text-[15px] whitespace-nowrap !text-sell-700 ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor))}</td>
                         ))}
                       </tr>
-                      <tr className="row-meta print:hidden">
-                        <td>Your profit</td>
-                        <td />
-                        {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) - (grandTotals[y] || 0))}</td>)}
-                      </tr>
                       {inputs.roofSizeSqFt > 0 && (
-                        <tr className="row-meta">
-                          <td>Contractor price per sq ft</td>
+                        <tr className="row-meta row-sell">
+                          <td className="pl-8">Contractor price per sq ft</td>
                           <td />
-                          {tiers.map(y => <td key={y} className={`num ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) / inputs.roofSizeSqFt)}</td>)}
+                          {tiers.map(y => <td key={y} className={`num !text-sell-700 ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) / inputs.roofSizeSqFt)}</td>)}
                         </tr>
                       )}
+                      <tr className="row-meta print:hidden">
+                        <td>Your profit <span className="text-xs">(distributor only)</span></td>
+                        <td />
+                        {tiers.map(y => <td key={y} className={`num !font-medium !text-gain-700 ${tierCls(y)}`}>{formatCurrency(pricedTotal(y, marginFactor) - (grandTotals[y] || 0))}</td>)}
+                      </tr>
                     </>
                   )}
                   <tr className="row-meta"><td colSpan={colCount} className="!pb-1" /></tr>
@@ -3857,7 +3867,7 @@ export default function App() {
           <div className="text-[15px] font-semibold truncate">
             {fmtQty(estimates[leadTier]?.totalGallons)} gal
             {hasPrices && <span className="text-ink-3 font-normal"> · {profitMargin > 0 ? 'contractor ' : 'total '}</span>}
-            {hasPrices && formatCurrency(profitMargin > 0 ? pricedTotal(leadTier, marginFactor) : (grandTotals[leadTier] || 0))}
+            {hasPrices && <span className={profitMargin > 0 ? 'text-sell-700' : ''}>{formatCurrency(profitMargin > 0 ? pricedTotal(leadTier, marginFactor) : (grandTotals[leadTier] || 0))}</span>}
           </div>
         </div>
         <a href="#order" className="btn-secondary shrink-0">View order</a>

@@ -29,6 +29,9 @@ colors:
   warn-callout-text: "#78350f"
   success: "#15803d"
   success-on-dark: "#4ade80"
+  sell: "#0b6b62"
+  sell-tint: "#effaf8"
+  gain: "#15803d"
 typography:
   headline:
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
@@ -270,7 +273,14 @@ The palette is a cool blue-grey neutral scale with one saturated indigo and a sm
 - **Warning** (`warn`, `warn-icon`, `warn-field`, `warn-tint`, `warn-border`, `warn-callout-text`): Incomplete or missing data. Covers the "Quote incomplete" callout, the amber border and tint on a price field with no price, "No price" and "Excludes N unpriced items" text, the spot-prime note icon, and the unpriced count in the phone summary bar.
 - **Success** (`success`, `success-on-dark`): Confirmation and best value. Covers the Copied check, the toast check (`success-on-dark`, on ink), and the "Best value", "Least material" and lowest-per-sq-ft marks in quote comparison. A mark goes to a single winner only; ties carry no mark.
 
+### Money roles
+- **Sell** (`sell`, `#0b6b62`; tint `sell-tint`, `#effaf8`): Every figure the contractor will see. It covers the "sells at $X" line under a unit price, the contractor price and contractor price per sq ft rows (which share a faint sell-tint band and a sell dot at the foot of the order table), the contractor figure in the phone summary bar, and the contractor rows of the distributor estimate PDF. Contrast is 6.4:1 on white and 6.0:1 on the tint. On the contractor quote, where every figure is a contractor price, the sell color is not used, because it only means something next to cost.
+- **Gain** (`gain`, `#15803d`): The distributor's profit or margin row, on screen and in the distributor estimate PDF. It is never used on anything the contractor sees.
+- Cost stays in Ledger Ink. Each money row keeps its text label, so color is never the only signal.
+
 ### Named Rules
+**The Who-Sees-It Rule.** Sell teal marks money the contractor will see; gain green marks the distributor's margin; ink is cost. The three never trade places.
+
 **The Accent-Is-a-Verb Rule.** Indigo marks only something you can press, something focused, or something selected or switched on. It never colors a heading, a figure, a panel or an icon at rest.
 
 **The State-Means-Something Rule.** Red, amber and green appear only when a condition calls for them: failed or invalid (red), incomplete or unpriced (amber), confirmed or best (green). Never use them as decoration or for categories.

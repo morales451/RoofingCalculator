@@ -103,6 +103,9 @@
   .order .row-sub td { @apply bg-canvas/60 font-medium; }
   .order .row-total td { @apply border-t border-line-strong border-b-0 pt-3 font-semibold text-ink; }
   .order .row-meta td { @apply border-b-0 pt-1 pb-1.5 text-[13px] text-ink-3; }
+  /* Contractor-facing band in the totals: a faint sell tint owns the rows the contractor will see */
+  .order tfoot .row-sell td { @apply bg-sell-50; }
+  .order tfoot .row-sell td:first-child { @apply text-sell-700; }
 }
 
 /* Touch screens: every control reaches a 44px target */

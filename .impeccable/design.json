@@ -408,6 +408,24 @@
           "#dcfce7",
           "#f0fdf4"
         ]
+      },
+      "sell": {
+        "role": "semantic",
+        "displayName": "Sell",
+        "canonical": "#0b6b62",
+        "purpose": "Money the contractor will see (sells-at, contractor price rows, phone bar, distributor PDF contractor rows)."
+      },
+      "sell-tint": {
+        "role": "semantic",
+        "displayName": "Sell Tint",
+        "canonical": "#effaf8",
+        "purpose": "Band behind contractor price rows."
+      },
+      "gain": {
+        "role": "semantic",
+        "displayName": "Gain",
+        "canonical": "#15803d",
+        "purpose": "Distributor profit / margin rows only."
       }
     },
     "typographyMeta": {
