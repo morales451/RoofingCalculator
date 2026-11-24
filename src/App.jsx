@@ -361,6 +361,11 @@ export default function App() {
             '15': { base: 1.25, top1: 2.5, top2: 0, top3: 0 },
             '20': { base: 1.25, top1: 3.0, top2: 0, top3: 0 },
         },
+        'Smooth Capsheet': {
+            '10': { base: 1.0, top1: 1.5, top2: 0, top3: 0 },
+            '15': { base: 1.0, top1: 2.0, top2: 0, top3: 0 },
+            '20': { base: 1.0, top1: 2.5, top2: 0, top3: 0 },
+        },
         'Sprayfoam': {
             '10': { base: 0, top1: 1.5, top2: 0, top3: 0 },
             '15': { base: 0, top1: 2.0, top2: 0, top3: 0 },
@@ -389,6 +394,7 @@ export default function App() {
                 '15': { base: 2.0, top1: 1.0, top2: 1.5, top3: 1.5 },
                 '20': { base: 2.0, top1: 1.0, top2: 2.0, top3: 2.0 },
             },
+            'Smooth Capsheet': null,
             'Sprayfoam': null, 
             'Metal': null
         },
@@ -397,6 +403,12 @@ export default function App() {
                 '10': { base: 1.75, top1: 2.0, top2: 0, top3: 0 },
                 '15': { base: 2.0, top1: 2.0, top2: 0, top3: 0 },
                 '20': { base: 2.0, top1: 2.0, top2: 1.5, top3: 0 },
+            },
+            // Smooth capsheet: first coat (base), second coat, third coat (20-year)
+            'Smooth Capsheet': {
+                '10': { base: 1.5, top1: 1.5, top2: 0, top3: 0 },
+                '15': { base: 1.5, top1: 2.0, top2: 0, top3: 0 },
+                '20': { base: 1.5, top1: 1.5, top2: 2.0, top3: 0 },
             },
             'Sprayfoam': {
                 '10': { base: 1.5, top1: 1.5, top2: 0, top3: 0 },
@@ -426,6 +438,7 @@ export default function App() {
             '15': null, // Not available
             '20': null  // Not available
         },
+        'Smooth Capsheet': null, // Not supported
         'Sprayfoam': null, // Not supported
         'Single-Ply': null, // Not supported
         'Previously Coated': null // Not supported
@@ -444,7 +457,7 @@ export default function App() {
 
         // Aluminum only supports Metal and Capsheet
         if (value === 'Aluminum') {
-            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply' || inputs.roofType === 'Previously Coated') {
+            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply' || inputs.roofType === 'Previously Coated' || inputs.roofType === 'Smooth Capsheet') {
                 newRoofType = 'Metal';
             }
         }
@@ -457,7 +470,7 @@ export default function App() {
         }));
     } else if (field === 'acrylicSystemType') {
         if (value === 'Reinforced') {
-            if (inputs.roofType === 'Metal' || inputs.roofType === 'Sprayfoam') {
+            if (inputs.roofType === 'Metal' || inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Smooth Capsheet') {
                 setInputs(prev => ({ ...prev, [field]: value, roofType: 'Capsheet' }));
                 return;
             }
@@ -692,11 +705,11 @@ export default function App() {
   // Seam stripe with topcoat: one layer at 1.5 gal/sq (24 wet mils), 2" each side
   // of the seam. A 4" band is 1/3 sq ft per LF = 1/300 square, so 1.5/300 =
   // 0.005 gal per LF, i.e. 200 LF of seam per gallon. Offered on silicone over
-  // single-ply and capsheet for the 10 and 15-year systems; 20-year seams stay butter grade.
+  // single-ply, capsheet and smooth capsheet for the 10 and 15-year systems; 20-year seams stay butter grade.
   const SEAM_STRIPE_LF_PER_GAL = 200;
   const SEAM_STRIPE_TIERS = ['10', '15'];
   const usesSeamStripe = (coatingSystem, roofType, accessoryType, seamTreatment) =>
-    coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet') && accessoryType === 'Butter Grade' && seamTreatment === 'topcoat';
+    coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet' || roofType === 'Smooth Capsheet') && accessoryType === 'Butter Grade' && seamTreatment === 'topcoat';
 
   // --- PER-SECTION CALCULATION HELPER ---
   const calculateForSection = (section, globalInputs) => {
@@ -1074,7 +1087,7 @@ export default function App() {
     };
 
     let beforeRoof, afterRoof;
-    if (roofType === 'Capsheet') beforeRoof = ROOF_PROPERTIES.blackCapsheet;
+    if (roofType === 'Capsheet' || roofType === 'Smooth Capsheet') beforeRoof = ROOF_PROPERTIES.blackCapsheet;
     else if (roofType === 'Metal') beforeRoof = ROOF_PROPERTIES.darkMetal;
     else beforeRoof = { solarReflectance: 0.15, name: 'Existing Roof' };
 
@@ -2149,6 +2162,7 @@ export default function App() {
   // Available roof types for current coating system (used in multi-section)
   const getAvailableRoofTypes = () => {
     const types = ['Capsheet'];
+    if (inputs.coatingSystem === 'Silicone' || (inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Standard')) types.push('Smooth Capsheet');
     if (inputs.coatingSystem !== 'Aluminum') types.push('Single-Ply', 'Previously Coated');
     if (inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard')) types.push('Sprayfoam');
     if (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') types.push('Metal');
@@ -2488,7 +2502,7 @@ export default function App() {
   };
 
   // Seam treatment choice shows when any roof (or roof section) is silicone over single-ply or capsheet
-  const qualifiesForStripe = (roofType) => inputs.coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet');
+  const qualifiesForStripe = (roofType) => inputs.coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet' || roofType === 'Smooth Capsheet');
   const seamTreatmentApplies = inputs.accessoryType === 'Butter Grade' && (useMultiSection && roofSections.length > 0
     ? roofSections.some(sec => qualifiesForStripe(sec.roofType))
     : qualifiesForStripe(inputs.roofType));
@@ -3331,6 +3345,8 @@ export default function App() {
                   <label htmlFor="roofType" className="label">Roof type</label>
                   <select id="roofType" className="input" value={inputs.roofType} onChange={(e) => handleChange('roofType', e.target.value)}>
                     <option value="Capsheet">Capsheet</option>
+                    {/* Smooth capsheet for Silicone or Acrylic Standard only */}
+                    {(inputs.coatingSystem === 'Silicone' || (inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Standard')) && <option value="Smooth Capsheet">Smooth capsheet</option>}
                     {/* Single-Ply not available for Aluminum */}
                     {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
                     {/* Previously coated: same application rates as single-ply */}
@@ -3340,9 +3356,9 @@ export default function App() {
                     {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
                     {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
                   </select>
-                  {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet, single-ply and previously coated roofs only.</p>}
+                  {isReinforced && <p className="hint">Reinforced acrylic is valid on granulated capsheet, single-ply and previously coated roofs only.</p>}
                   {inputs.roofType === 'Previously Coated' && <p className="hint">Uses the single-ply application rates.</p>}
-                  {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and capsheet only.</p>}
+                  {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and granulated capsheet only.</p>}
                 </div>
 
                 {/* Fastener encapsulation method — sits right under Roof Type so it's
@@ -3764,7 +3780,7 @@ export default function App() {
                   <li>Topcoat coats 1–3 are separate passes of the same topcoat. Longer warranties add passes or heavier rates, so a coat can be absent at one tier.</li>
                   <li>Rust primer: 0.5 gal per square, the same way. Adhesion primer: 0.2 gal per square, rounded up to whole gallons.</li>
                   <li>Seam sealer and fabric come from seam and penetration linear feet; fastener encapsulation on metal comes from roof area.</li>
-                  <li>Silicone over single-ply or capsheet can stripe seams with topcoat on 10 and 15-year: one layer at 1.5 gal/sq, 2" each side (200 LF per gallon), added to coat 1 before rounding. Penetrations and 20-year seams use butter grade.</li>
+                  <li>Silicone over single-ply, capsheet or smooth capsheet can stripe seams with topcoat on 10 and 15-year: one layer at 1.5 gal/sq, 2" each side (200 LF per gallon), added to coat 1 before rounding. Penetrations and 20-year seams use butter grade.</li>
                   <li>Line cost = quantity × unit price. Totals add the printed lines, so the math can be checked with a calculator.</li>
                 </ul>
               )}
