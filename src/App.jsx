@@ -361,6 +361,11 @@ export default function App() {
             '15': { base: 1.25, top1: 2.5, top2: 0, top3: 0 },
             '20': { base: 1.25, top1: 3.0, top2: 0, top3: 0 },
         },
+        'Smooth Capsheet': {
+            '10': { base: 1.0, top1: 1.5, top2: 0, top3: 0 },
+            '15': { base: 1.0, top1: 2.0, top2: 0, top3: 0 },
+            '20': { base: 1.0, top1: 2.5, top2: 0, top3: 0 },
+        },
         'Sprayfoam': {
             '10': { base: 0, top1: 1.5, top2: 0, top3: 0 },
             '15': { base: 0, top1: 2.0, top2: 0, top3: 0 },
@@ -389,6 +394,7 @@ export default function App() {
                 '15': { base: 2.0, top1: 1.0, top2: 1.5, top3: 1.5 },
                 '20': { base: 2.0, top1: 1.0, top2: 2.0, top3: 2.0 },
             },
+            'Smooth Capsheet': null,
             'Sprayfoam': null, 
             'Metal': null
         },
@@ -397,6 +403,12 @@ export default function App() {
                 '10': { base: 1.75, top1: 2.0, top2: 0, top3: 0 },
                 '15': { base: 2.0, top1: 2.0, top2: 0, top3: 0 },
                 '20': { base: 2.0, top1: 2.0, top2: 1.5, top3: 0 },
+            },
+            // Smooth capsheet: first coat (base), second coat, third coat (20-year)
+            'Smooth Capsheet': {
+                '10': { base: 1.5, top1: 1.5, top2: 0, top3: 0 },
+                '15': { base: 1.5, top1: 2.0, top2: 0, top3: 0 },
+                '20': { base: 1.5, top1: 1.5, top2: 2.0, top3: 0 },
             },
             'Sprayfoam': {
                 '10': { base: 1.5, top1: 1.5, top2: 0, top3: 0 },
@@ -426,6 +438,7 @@ export default function App() {
             '15': null, // Not available
             '20': null  // Not available
         },
+        'Smooth Capsheet': null, // Not supported
         'Sprayfoam': null, // Not supported
         'Single-Ply': null, // Not supported
         'Previously Coated': null // Not supported
@@ -444,7 +457,7 @@ export default function App() {
 
         // Aluminum only supports Metal and Capsheet
         if (value === 'Aluminum') {
-            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply' || inputs.roofType === 'Previously Coated') {
+            if (inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Single-Ply' || inputs.roofType === 'Previously Coated' || inputs.roofType === 'Smooth Capsheet') {
                 newRoofType = 'Metal';
             }
         }
@@ -457,7 +470,7 @@ export default function App() {
         }));
     } else if (field === 'acrylicSystemType') {
         if (value === 'Reinforced') {
-            if (inputs.roofType === 'Metal' || inputs.roofType === 'Sprayfoam') {
+            if (inputs.roofType === 'Metal' || inputs.roofType === 'Sprayfoam' || inputs.roofType === 'Smooth Capsheet') {
                 setInputs(prev => ({ ...prev, [field]: value, roofType: 'Capsheet' }));
                 return;
             }
@@ -1074,7 +1087,7 @@ export default function App() {
     };
 
     let beforeRoof, afterRoof;
-    if (roofType === 'Capsheet') beforeRoof = ROOF_PROPERTIES.blackCapsheet;
+    if (roofType === 'Capsheet' || roofType === 'Smooth Capsheet') beforeRoof = ROOF_PROPERTIES.blackCapsheet;
     else if (roofType === 'Metal') beforeRoof = ROOF_PROPERTIES.darkMetal;
     else beforeRoof = { solarReflectance: 0.15, name: 'Existing Roof' };
 
@@ -2149,6 +2162,7 @@ export default function App() {
   // Available roof types for current coating system (used in multi-section)
   const getAvailableRoofTypes = () => {
     const types = ['Capsheet'];
+    if (inputs.coatingSystem === 'Silicone' || (inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Standard')) types.push('Smooth Capsheet');
     if (inputs.coatingSystem !== 'Aluminum') types.push('Single-Ply', 'Previously Coated');
     if (inputs.coatingSystem !== 'Aluminum' && (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard')) types.push('Sprayfoam');
     if (inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') types.push('Metal');
@@ -3331,6 +3345,8 @@ export default function App() {
                   <label htmlFor="roofType" className="label">Roof type</label>
                   <select id="roofType" className="input" value={inputs.roofType} onChange={(e) => handleChange('roofType', e.target.value)}>
                     <option value="Capsheet">Capsheet</option>
+                    {/* Smooth capsheet for Silicone or Acrylic Standard only */}
+                    {(inputs.coatingSystem === 'Silicone' || (inputs.coatingSystem === 'Acrylic' && inputs.acrylicSystemType === 'Standard')) && <option value="Smooth Capsheet">Smooth capsheet</option>}
                     {/* Single-Ply not available for Aluminum */}
                     {inputs.coatingSystem !== 'Aluminum' && <option value="Single-Ply">Single-Ply</option>}
                     {/* Previously coated: same application rates as single-ply */}
@@ -3340,9 +3356,9 @@ export default function App() {
                     {/* Metal for Silicone, Acrylic Standard, or Aluminum */}
                     {(inputs.coatingSystem === 'Silicone' || inputs.acrylicSystemType === 'Standard' || inputs.coatingSystem === 'Aluminum') && <option value="Metal">Metal</option>}
                   </select>
-                  {isReinforced && <p className="hint">Reinforced acrylic is valid on capsheet, single-ply and previously coated roofs only.</p>}
+                  {isReinforced && <p className="hint">Reinforced acrylic is valid on granulated capsheet, single-ply and previously coated roofs only.</p>}
                   {inputs.roofType === 'Previously Coated' && <p className="hint">Uses the single-ply application rates.</p>}
-                  {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and capsheet only.</p>}
+                  {inputs.coatingSystem === 'Aluminum' && <p className="hint">Aluminum supports metal and granulated capsheet only.</p>}
                 </div>
 
                 {/* Fastener encapsulation method — sits right under Roof Type so it's
