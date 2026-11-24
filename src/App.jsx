@@ -705,11 +705,11 @@ export default function App() {
   // Seam stripe with topcoat: one layer at 1.5 gal/sq (24 wet mils), 2" each side
   // of the seam. A 4" band is 1/3 sq ft per LF = 1/300 square, so 1.5/300 =
   // 0.005 gal per LF, i.e. 200 LF of seam per gallon. Offered on silicone over
-  // single-ply and capsheet for the 10 and 15-year systems; 20-year seams stay butter grade.
+  // single-ply, capsheet and smooth capsheet for the 10 and 15-year systems; 20-year seams stay butter grade.
   const SEAM_STRIPE_LF_PER_GAL = 200;
   const SEAM_STRIPE_TIERS = ['10', '15'];
   const usesSeamStripe = (coatingSystem, roofType, accessoryType, seamTreatment) =>
-    coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet') && accessoryType === 'Butter Grade' && seamTreatment === 'topcoat';
+    coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet' || roofType === 'Smooth Capsheet') && accessoryType === 'Butter Grade' && seamTreatment === 'topcoat';
 
   // --- PER-SECTION CALCULATION HELPER ---
   const calculateForSection = (section, globalInputs) => {
@@ -2502,7 +2502,7 @@ export default function App() {
   };
 
   // Seam treatment choice shows when any roof (or roof section) is silicone over single-ply or capsheet
-  const qualifiesForStripe = (roofType) => inputs.coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet');
+  const qualifiesForStripe = (roofType) => inputs.coatingSystem === 'Silicone' && (roofType === 'Single-Ply' || roofType === 'Capsheet' || roofType === 'Smooth Capsheet');
   const seamTreatmentApplies = inputs.accessoryType === 'Butter Grade' && (useMultiSection && roofSections.length > 0
     ? roofSections.some(sec => qualifiesForStripe(sec.roofType))
     : qualifiesForStripe(inputs.roofType));
@@ -3780,7 +3780,7 @@ export default function App() {
                   <li>Topcoat coats 1–3 are separate passes of the same topcoat. Longer warranties add passes or heavier rates, so a coat can be absent at one tier.</li>
                   <li>Rust primer: 0.5 gal per square, the same way. Adhesion primer: 0.2 gal per square, rounded up to whole gallons.</li>
                   <li>Seam sealer and fabric come from seam and penetration linear feet; fastener encapsulation on metal comes from roof area.</li>
-                  <li>Silicone over single-ply or capsheet can stripe seams with topcoat on 10 and 15-year: one layer at 1.5 gal/sq, 2" each side (200 LF per gallon), added to coat 1 before rounding. Penetrations and 20-year seams use butter grade.</li>
+                  <li>Silicone over single-ply, capsheet or smooth capsheet can stripe seams with topcoat on 10 and 15-year: one layer at 1.5 gal/sq, 2" each side (200 LF per gallon), added to coat 1 before rounding. Penetrations and 20-year seams use butter grade.</li>
                   <li>Line cost = quantity × unit price. Totals add the printed lines, so the math can be checked with a calculator.</li>
                 </ul>
               )}
